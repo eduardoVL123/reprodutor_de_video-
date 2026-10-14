@@ -1,0 +1,563 @@
+/**
+ * src/utils/spatialNavigation.js
+ * Lógica global de navegação D-Pad (Navegação Espacial).
+ *
+ * Camadas (em ordem de prioridade a cada tecla):
+ *  1. Handlers de tecla registrados (`registerKeyHandler`) — ex.: player em tela cheia.
+ *  2. Tecla Voltar → pilha de `registerBackHandler`; fallback: /live e /vod → /dashboard.
+ *  3. Setas dentro de uma grade virtualizada (`registerGrid`) → navegação por índice lógico.
+ *  4. Setas fora da grade (ou na borda dela) → cálculo geométrico + memória de foco por
+ *     painel (`data-focus-group`).
+ *
+ * Compatível com ES2017 / Chromium 53+ (sem Array.prototype.at, Object.hasOwn etc.).
+ */
+
+let isEnabled = false
+let routerRef = null
+
+const backHandlers = []
+const keyHandlers = []
+const focusScopes = []
+const gridApis = new Map() // elemento raiz da grade => api
+const lastFocusedByGroup = new Map() // nome do grupo => { id }
+let pendingGridRoot = null // grade com foco assíncrono em andamento
+
+const FOCUSABLE_SELECTOR = '.tv-focusable, button, a[href], input, select, textarea, [tabindex]'
+
+// ---------------------------------------------------------------------------
+// Normalização de teclas de controle remoto
+// ---------------------------------------------------------------------------
+
+const ACTION_BY_KEY = {
+  ArrowUp: 'up',
+  Up: 'up',
+  ArrowDown: 'down',
+  Down: 'down',
+  ArrowLeft: 'left',
+  Left: 'left',
+  ArrowRight: 'right',
+  Right: 'right',
+  Enter: 'select',
+  Escape: 'back',
+  Esc: 'back',
+  Backspace: 'back',
+  XF86Back: 'back',
+  GoBack: 'back',
+  MediaPlayPause: 'playPause',
+  MediaPlay: 'playPause',
+  MediaPause: 'playPause',
+  ChannelUp: 'channelUp',
+  ChannelDown: 'channelDown',
+  PageUp: 'channelUp',
+  PageDown: 'channelDown',
+}
+
+const ACTION_BY_CODE = {
+  38: 'up',
+  40: 'down',
+  37: 'left',
+  39: 'right',
+  13: 'select',
+  27: 'back',
+  8: 'back',
+  10009: 'back', // Samsung Tizen "Return"
+  461: 'back', // LG webOS "Back"
+  179: 'playPause',
+  415: 'playPause', // Play
+  19: 'playPause', // Pause
+  427: 'channelUp',
+  33: 'channelUp',
+  428: 'channelDown',
+  34: 'channelDown',
+}
+
+function isTextField(el) {
+  if (!el) return false
+  if (el.isContentEditable) return true
+  const tag = (el.tagName || '').toLowerCase()
+  if (tag === 'textarea') return true
+  if (tag !== 'input') return false
+  const type = (el.getAttribute('type') || 'text').toLowerCase()
+  return ['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'image'].indexOf(type) === -1
+}
+
+/**
+ * Traduz `event.key` / `event.keyCode` para uma ação semântica.
+ * @returns {'up'|'down'|'left'|'right'|'select'|'back'|'playPause'|'channelUp'|'channelDown'|null}
+ */
+export function getTvAction(event) {
+  if (!event) return null
+  const code = event.keyCode || event.which || 0
+  const action = ACTION_BY_KEY[event.key] || ACTION_BY_CODE[code] || null
+  if (!action) return null
+  // Backspace dentro de campo de texto apaga caractere; não é "Voltar".
+  if (action === 'back' && (event.key === 'Backspace' || code === 8) && isTextField(document.activeElement)) {
+    return null
+  }
+  return action
+}
+
+/** Tizen só entrega teclas de mídia/canal ao app depois de registradas. */
+function registerTizenKeys() {
+  try {
+    const input = window.tizen && window.tizen.tvinputdevice
+    if (!input) return
+    ;['MediaPlayPause', 'MediaPlay', 'MediaPause', 'ChannelUp', 'ChannelDown'].forEach((k) => {
+      try {
+        input.registerKey(k)
+      } catch (_) {
+        /* tecla inexistente neste modelo */
+      }
+    })
+  } catch (_) {
+    /* fora do Tizen */
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Pilhas públicas (Voltar, teclas, escopo de foco, grades)
+// ---------------------------------------------------------------------------
+
+function pushTo(list, item) {
+  list.push(item)
+  return () => {
+    const i = list.lastIndexOf(item)
+    if (i !== -1) list.splice(i, 1)
+  }
+}
+
+/**
+ * Registra um interceptador da tecla Voltar. O mais recente roda primeiro; se
+ * retornar `true`, o evento é consumido. @returns {Function} cleanup
+ */
+export function registerBackHandler(fn) {
+  return pushTo(backHandlers, fn)
+}
+
+/**
+ * Registra um interceptador genérico `(action, event) => boolean`, consultado
+ * antes da navegação padrão (ex.: player em tela cheia). Ações 'back' que não
+ * forem consumidas seguem para a pilha de Voltar. @returns {Function} cleanup
+ */
+export function registerKeyHandler(fn) {
+  return pushTo(keyHandlers, fn)
+}
+
+/** Restringe a navegação a um contêiner (ex.: overlay modal). @returns {Function} cleanup */
+export function pushFocusScope(el) {
+  return pushTo(focusScopes, el)
+}
+
+/**
+ * Registra uma grade virtualizada. A api deve expor:
+ *   columns(): number, count(): number, currentIndex(): number,
+ *   isPending(): boolean, focusIndex(index): Promise<boolean>
+ * @returns {Function} cleanup
+ */
+export function registerGrid(el, api) {
+  gridApis.set(el, api)
+  return () => {
+    if (gridApis.get(el) === api) gridApis.delete(el)
+    if (pendingGridRoot === el) pendingGridRoot = null
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Utilitários de foco
+// ---------------------------------------------------------------------------
+
+function currentScope() {
+  for (let i = focusScopes.length - 1; i >= 0; i--) {
+    const el = focusScopes[i]
+    if (el && document.body.contains(el)) return el
+  }
+  return document
+}
+
+function centerOf(rect) {
+  return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }
+}
+
+function getScrollParent(el) {
+  if (!el || !el.parentElement) return null
+  if (el.closest) {
+    const named = el.closest('[data-focus-group="home-vitrine"], [data-focus-group="series-view"], [data-focus-group="favorites-view"], main')
+    if (named) return named
+  }
+  let cur = el.parentElement
+  while (cur && cur !== document.body && cur !== document.documentElement) {
+    const s = window.getComputedStyle(cur)
+    if (s.overflowY === 'auto' || s.overflowY === 'scroll') return cur
+    cur = cur.parentElement
+  }
+  return null
+}
+
+function isNavigable(el) {
+  if (!el || el.disabled) return false
+  if (el.getAttribute('tabindex') === '-1') return false
+  const rect = el.getBoundingClientRect()
+  if (rect.width <= 0 || rect.height <= 0) return false
+  if (window.getComputedStyle(el).visibility === 'hidden') return false
+
+  // Fora horizontalmente da tela
+  if (rect.right <= 0 || rect.left >= window.innerWidth) {
+    return false
+  }
+
+  // Recorte estrito de viewport APENAS para elementos dentro de [data-grid-root]
+  // (onde o GridView já gerencia os slots via gridTarget)
+  const root = el.closest ? el.closest('[data-grid-root]') : null
+  if (root) {
+    if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false
+    const r = root.getBoundingClientRect()
+    const c = centerOf(rect)
+    if (c.y < r.top || c.y > r.bottom || c.x < r.left || c.x > r.right) return false
+    return true
+  }
+
+  // Para containers roláveis (como <main> ou data-focus-group="home-vitrine")
+  const scrollParent = getScrollParent(el)
+  if (scrollParent) {
+    const maxBottom = window.innerHeight * 2.2
+    const minTop = -window.innerHeight * 1.5
+    if (rect.top > maxBottom || rect.bottom < minTop) return false
+    return true
+  }
+
+  // Elementos normais fora de container rolável
+  if (rect.bottom <= 0 || rect.top >= window.innerHeight) {
+    return false
+  }
+  return true
+}
+
+function getFocusableElements(root) {
+  const scope = root || document
+  return Array.prototype.filter.call(scope.querySelectorAll(FOCUSABLE_SELECTOR), isNavigable)
+}
+
+function focusEl(el, preventScroll) {
+  if (!el) return
+  try {
+    el.focus(preventScroll ? { preventScroll: true } : undefined)
+  } catch (_) {
+    el.focus()
+  }
+
+  const isGrid = el.closest && el.closest('[data-grid-root]')
+  if (!isGrid) {
+    const container = getScrollParent(el)
+    if (container && container !== document.body && container !== document.documentElement) {
+      // Se o elemento focável for do primeiro grupo (como #hero-play), volta scrollTop = 0
+      if (el.id === 'hero-play' || el.id === 'hero-bookmark' || el.id === 'hero-info') {
+        try {
+          container.scrollTo({ top: 0, behavior: 'smooth' })
+        } catch (_) {
+          container.scrollTop = 0
+        }
+        return
+      }
+
+      const cRect = container.getBoundingClientRect()
+      const elRect = el.getBoundingClientRect()
+
+      // Se estiver próximo das bordas ou fora da área visível do ancestral rolável
+      const padding = 70
+      const isAbove = elRect.top < cRect.top + padding
+      const isBelow = elRect.bottom > cRect.bottom - padding
+
+      if (isAbove || isBelow) {
+        const currentScroll = container.scrollTop
+        const targetScroll = currentScroll + (elRect.top - cRect.top) - (cRect.height / 2) + (elRect.height / 2)
+        try {
+          container.scrollTo({ top: Math.max(0, targetScroll), behavior: 'smooth' })
+        } catch (_) {
+          container.scrollTop = Math.max(0, targetScroll)
+        }
+      }
+    }
+  }
+}
+
+/** Foca o item ativo (`data-focus-active`) ou o primeiro focável do contêiner. */
+export function focusFirstIn(selectorOrElement) {
+  const root = typeof selectorOrElement === 'string' ? document.querySelector(selectorOrElement) : selectorOrElement
+  if (!root) return false
+  const active = root.querySelector('[data-focus-active="true"]')
+  if (active && isNavigable(active)) {
+    focusEl(active)
+    return true
+  }
+  const list = getFocusableElements(root)
+  if (list.length) {
+    focusEl(list[0])
+    return true
+  }
+  return false
+}
+
+function groupElOf(el) {
+  return el && el.closest ? el.closest('[data-focus-group]') : null
+}
+
+function isInDirection(fromRect, el, direction) {
+  const a = centerOf(fromRect)
+  const b = centerOf(el.getBoundingClientRect())
+  const dx = b.x - a.x
+  const dy = b.y - a.y
+  if (direction === 'left') return dx < -0.1
+  if (direction === 'right') return dx > 0.1
+  if (direction === 'up') return dy < -0.1
+  return dy > 0.1
+}
+
+function onFocusIn(e) {
+  const el = e.target
+  if (!el || !el.id) return
+  const group = groupElOf(el)
+  if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id })
+}
+
+/** Elemento lembrado (ou ativo) do painel de destino, se estiver visível e na direção. */
+function rememberedIn(groupEl, fromRect, direction) {
+  const record = lastFocusedByGroup.get(groupEl.getAttribute('data-focus-group'))
+  if (record && record.id) {
+    const el = document.getElementById(record.id)
+    if (el && groupEl.contains(el) && isNavigable(el) && isInDirection(fromRect, el, direction)) return el
+  }
+  const active = groupEl.querySelector('[data-focus-active="true"]')
+  if (active && isNavigable(active) && isInDirection(fromRect, active, direction)) return active
+  return null
+}
+
+/** Busca prioritariamente elemento no Top Nav sem penalidade excessiva no eixo X */
+function findTopNavTarget(topNav, fromRect) {
+  if (!topNav) return null
+
+  // 1. Elemento lembrado no top-nav
+  const remembered = rememberedIn(topNav, fromRect, 'up')
+  if (remembered) return remembered
+
+  // 2. Elemento ativo da aba atual
+  const activeNav = topNav.querySelector('.text-white.font-semibold, [data-focus-active="true"]')
+  if (activeNav && isNavigable(activeNav)) return activeNav
+
+  // 3. Qualquer botão navegável em top-nav mais próximo horizontalmente (sem penalidade * 5)
+  const navItems = getFocusableElements(topNav)
+  if (!navItems.length) return null
+
+  const fromX = centerOf(fromRect).x
+  let closest = navItems[0]
+  let minDist = Infinity
+  for (let i = 0; i < navItems.length; i++) {
+    const it = navItems[i]
+    const dist = Math.abs(centerOf(it.getBoundingClientRect()).x - fromX)
+    if (dist < minDist) {
+      minDist = dist
+      closest = it
+    }
+  }
+  return closest
+}
+
+// ---------------------------------------------------------------------------
+// Navegação
+// ---------------------------------------------------------------------------
+
+/** Próximo índice lógico na grade, ou -1 para delegar à navegação geométrica. */
+function gridTarget(api, direction) {
+  const cols = Math.max(1, api.columns())
+  const count = api.count()
+  const index = api.currentIndex()
+  if (index < 0 || index >= count) return -1
+  const col = index % cols
+
+  if (direction === 'right') return col < cols - 1 && index + 1 < count ? index + 1 : -1
+  if (direction === 'left') return col > 0 ? index - 1 : -1
+  if (direction === 'up') return index - cols >= 0 ? index - cols : -1
+  // down: se a linha seguinte for incompleta, vai para o último item dela.
+  if (index + cols < count) return index + cols
+  const lastRow = Math.floor((count - 1) / cols)
+  return Math.floor(index / cols) < lastRow ? count - 1 : -1
+}
+
+function findBest(fromRect, candidates, direction, current) {
+  const from = centerOf(fromRect)
+  let best = null
+  let bestDistance = Infinity
+
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]
+    if (candidate === current) continue
+    const c = centerOf(candidate.getBoundingClientRect())
+    const dx = c.x - from.x
+    const dy = c.y - from.y
+
+    let ok = false
+    if (direction === 'left' && dx < -0.1) ok = true
+    if (direction === 'right' && dx > 0.1) ok = true
+    if (direction === 'up' && dy < -0.1) ok = true
+    if (direction === 'down' && dy > 0.1) ok = true
+    if (!ok) continue
+
+    // Penaliza distância na dimensão oposta para preferir itens na mesma linha/coluna
+    const distance =
+      direction === 'left' || direction === 'right' ? Math.abs(dx) + Math.abs(dy) * 5 : Math.abs(dy) + Math.abs(dx) * 5
+
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = candidate
+    }
+  }
+  return best
+}
+
+function navigate(direction) {
+  const scope = currentScope()
+  const current = document.activeElement
+
+  // 1) Grade virtualizada (inclusive com foco assíncrono ainda pendente).
+  let gridRoot = null
+  let api = null
+  if (pendingGridRoot && gridApis.has(pendingGridRoot) && gridApis.get(pendingGridRoot).isPending()) {
+    gridRoot = pendingGridRoot
+    api = gridApis.get(gridRoot)
+  } else if (current && current.closest && current.hasAttribute('data-grid-index')) {
+    gridRoot = current.closest('[data-grid-root]')
+    api = gridRoot ? gridApis.get(gridRoot) : null
+  }
+  if (api && scope.contains(gridRoot)) {
+    const target = gridTarget(api, direction)
+    if (target >= 0) {
+      pendingGridRoot = gridRoot
+      api.focusIndex(target)
+      return
+    }
+  } else {
+    gridRoot = null
+  }
+
+  const hasCurrent = current && current !== document.body && scope.contains(current)
+  if (!hasCurrent || (!gridRoot && !isNavigable(current))) {
+    focusFirstIn(scope === document ? document.body : scope)
+    return
+  }
+
+  const fromRect = current.getBoundingClientRect()
+
+  // 2) Subida garantida para Top Navbar quando direção for 'up'
+  if (direction === 'up') {
+    const topNav = scope.querySelector ? scope.querySelector('[data-focus-group="top-nav"]') : null
+    const currentGroup = groupElOf(current)
+    const isAlreadyInTopNav = currentGroup && currentGroup.getAttribute('data-focus-group') === 'top-nav'
+
+    if (topNav && !isAlreadyInTopNav) {
+      // Se estamos na linha 0 de uma grade ou se não há botões intermediários no mesmo painel
+      const localCandidates = getFocusableElements(scope).filter(
+        (el) => !(gridRoot && el.hasAttribute('data-grid-index') && gridRoot.contains(el)),
+      )
+      const localBest = findBest(fromRect, localCandidates, 'up', current)
+
+      // Se não há candidato local ou se o candidato local já é do top-nav, ou se estava na grade na linha 0
+      // sem botão de header local entre eles:
+      const localHeader = current.closest && current.closest('[data-focus-group="header"]')
+      if (!localBest || localBest.closest('[data-focus-group="top-nav"]') || (gridRoot && !localHeader)) {
+        const navTarget = findTopNavTarget(topNav, fromRect)
+        if (navTarget) {
+          focusEl(navTarget)
+          return
+        }
+      }
+    }
+  }
+
+  // 3) Geometria (na borda da grade, ignora os itens da própria grade).
+  const candidates = getFocusableElements(scope).filter(
+    (el) => !(gridRoot && el.hasAttribute('data-grid-index') && gridRoot.contains(el)),
+  )
+  let best = findBest(fromRect, candidates, direction, current)
+  if (!best) {
+    if (direction === 'up') {
+      const topNav = scope.querySelector ? scope.querySelector('[data-focus-group="top-nav"]') : null
+      const navTarget = findTopNavTarget(topNav, fromRect)
+      if (navTarget) {
+        focusEl(navTarget)
+        return
+      }
+    }
+    return
+  }
+
+  // 4) Memória de foco ao trocar de painel.
+  const targetGroup = groupElOf(best)
+  if (targetGroup && targetGroup !== groupElOf(current)) {
+    const preferred = rememberedIn(targetGroup, fromRect, direction)
+    if (preferred) best = preferred
+  }
+  focusEl(best)
+}
+
+function handleBack() {
+  for (let i = backHandlers.length - 1; i >= 0; i--) {
+    try {
+      if (backHandlers[i]() === true) return
+    } catch (err) {
+      console.warn('[spatialNavigation] Handler de Voltar falhou:', err)
+    }
+  }
+  if (!routerRef) return
+  const name = routerRef.currentRoute.value.name
+  if (name === 'live' || name === 'vod') routerRef.replace({ name: 'dashboard' })
+}
+
+function onKeyDown(e) {
+  const action = getTvAction(e)
+  if (!action) return
+
+  for (let i = keyHandlers.length - 1; i >= 0; i--) {
+    let consumed = false
+    try {
+      consumed = keyHandlers[i](action, e) === true
+    } catch (err) {
+      console.warn('[spatialNavigation] Handler de tecla falhou:', err)
+    }
+    if (consumed) {
+      e.preventDefault()
+      return
+    }
+  }
+
+  if (action === 'back') {
+    e.preventDefault()
+    handleBack()
+    return
+  }
+  if (action === 'up' || action === 'down' || action === 'left' || action === 'right') {
+    e.preventDefault()
+    navigate(action)
+  }
+  // 'select' segue o comportamento nativo (clique no botão focado).
+}
+
+// ---------------------------------------------------------------------------
+// Ciclo de vida
+// ---------------------------------------------------------------------------
+
+/** @param {{ router?: import('vue-router').Router }} [options] */
+export function initSpatialNavigation(options) {
+  if (options && options.router) routerRef = options.router
+  if (isEnabled) return
+  isEnabled = true
+  registerTizenKeys()
+  // Captura: roda antes dos listeners dos componentes e pode cancelar o clique do Enter.
+  window.addEventListener('keydown', onKeyDown, true)
+  document.addEventListener('focusin', onFocusIn)
+}
+
+export function stopSpatialNavigation() {
+  if (!isEnabled) return
+  isEnabled = false
+  window.removeEventListener('keydown', onKeyDown, true)
+  document.removeEventListener('focusin', onFocusIn)
+}

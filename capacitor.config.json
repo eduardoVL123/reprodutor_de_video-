@@ -1,0 +1,13 @@
+{
+  "appId": "com.neutrotv.player",
+  "appName": "Neutro TV",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "http",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true,
+    "captureInput": true
+  }
+}

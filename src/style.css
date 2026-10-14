@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Escala fluida: 1rem = 16px em 1920px de largura. Mantém o layout idêntico em
+   TVs 720p/1080p/4K sem precisar de media queries. */
+html {
+  font-size: calc(100vw / 120);
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden; /* sem scrollbars nativas */
+  background-color: #0a0a0a;
+  color: #f1f5f9;
+  font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: none; /* TV: sem ponteiro */
+}
+
+/* Esconde scrollbars em qualquer container rolável. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
+
+@layer components {
+  /* Foco de controle remoto Clean Cinema: fino, elegante e preciso */
+  .tv-focusable {
+    @apply outline-none transition-all duration-150 ease-out;
+  }
+  .tv-focusable:focus,
+  .tv-focusable.is-focused {
+    @apply outline-none ring-2 ring-white scale-[1.02] z-10;
+  }
+
+  /* Botões Clean Cinema */
+  .tv-btn {
+    @apply tv-focusable inline-flex items-center justify-center rounded-lg px-5 py-2.5
+      text-tv-sm font-medium border border-white/15 bg-white/[0.06] text-white transition-colors;
+  }
+  .tv-btn-primary {
+    @apply bg-white text-black border-white font-semibold;
+  }
+
+  /* Inputs de TV Clean Cinema */
+  .tv-input {
+    @apply tv-focusable w-full rounded-lg border border-white/15 bg-[#0a0a0a] px-5 py-3
+      text-tv-sm text-white placeholder:text-neutral-500;
+    cursor: text;
+  }
+  .tv-input:focus {
+    @apply scale-[1.01] border-white ring-1 ring-white;
+  }
+}
