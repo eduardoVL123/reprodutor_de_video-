@@ -4,6 +4,7 @@
   "webDir": "dist",
   "server": {
     "androidScheme": "http",
+    "hostname": "localhost",
     "cleartext": true,
     "allowNavigation": ["*"]
   },
@@ -13,7 +14,7 @@
   },
   "plugins": {
     "CapacitorHttp": {
-      "enabled": true
+      "enabled": false
     }
   }
 }

@@ -1,28 +1,30 @@
 import { ref, getCurrentInstance, onBeforeUnmount } from 'vue'
-import { canUseDevProxy, devProxyUrl } from '@/services/netEnv'
+import { canUseDevProxy, devProxyUrl, maskSecrets } from '@/services/netEnv'
 
 /**
  * Motor de reprodução: <video> + hls.js, com fallback nativo e teardown estrito.
  *
  * - hls.js é carregado sob demanda (import dinâmico) para não pesar a abertura do app.
- * - `destroyEngine()` roda SEMPRE antes de um novo stream: em Tizen/webOS o decoder
+ * - enableWorker: false para evitar quebras de CSP/blob worker em WebViews de Android TV.
+ * - destroyEngine() roda SEMPRE antes de um novo stream: em Tizen/webOS o decoder
  *   de hardware é único e só é liberado com pause + remoção do src + load().
  * - Cada reprodução tem um `token`; eventos de instâncias antigas são ignorados.
- * - Logs e diagnósticos nunca incluem URLs (elas contêm usuário/senha).
+ * - Diagnósticos mostram motor, formato e URL com credenciais mascaradas.
  */
 
 export const PLAYBACK_ERROR =
   'Não foi possível reproduzir esta mídia no momento. Verifique sua conexão ou tente outro item.'
 
 // Buffers conservadores para não estourar a RAM da TV.
+// enableWorker: false é OBRIGATÓRIO em Smart TVs (Web Workers com blob URLs falham por CSP/CORS).
 const HLS_CONFIG = {
-  enableWorker: true,
+  enableWorker: false,
   lowLatencyMode: false,
   backBufferLength: 15,
   maxBufferLength: 30,
   maxMaxBufferLength: 60,
-  manifestLoadingTimeOut: 15000,
-  fragLoadingTimeOut: 20000,
+  manifestLoadingTimeOut: 20000,
+  fragLoadingTimeOut: 25000,
 }
 
 let hlsModulePromise = null
@@ -107,13 +109,16 @@ export function useVideoEngine() {
     }
   }
 
-  function fail(my, reason, detail) {
+  function fail(my, reason, detail, triedUrl, ext) {
     if (my !== token) return
     console.warn('[player] Reprodução falhou:', reason, detail)
     token++
     teardownMedia()
     error.value = PLAYBACK_ERROR
-    errorDetail.value = detail || reason || 'Erro desconhecido na reprodução'
+    const eng = engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native')
+    const format = ext || 'mídia'
+    const masked = triedUrl ? maskSecrets(triedUrl) : '-'
+    errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}`
   }
 
   function startNative(url, desc, my, isFallback) {
@@ -130,8 +135,11 @@ export function useVideoEngine() {
       const codeName = errMsgs[errCode] || 'MEDIA_ERR_UNKNOWN'
       const detail = `HTML5 Video Error Code ${errCode}: ${codeName}`
       const reason = `native code=${errCode}`
-      if (!isFallback && desc.fallbackUrl) switchToFallback(desc, my, reason)
-      else fail(my, reason, detail)
+      if (!isFallback && desc.fallbackUrl) {
+        switchToFallback(desc, my, reason)
+      } else {
+        fail(my, reason, detail, url, desc.containerExtension)
+      }
     }
     video.addEventListener('error', nativeErrorListener)
     video.src = url
@@ -143,7 +151,7 @@ export function useVideoEngine() {
 
   function switchToFallback(desc, my, reason) {
     if (my !== token) return
-    console.warn('[player] Tentando formato alternativo após:', reason)
+    console.warn('[player] Tentando formato alternativo após:', reason, desc.fallbackUrl)
     teardownMedia()
     startNative(desc.fallbackUrl, desc, my, true)
   }
@@ -160,7 +168,7 @@ export function useVideoEngine() {
     })
     instance.on(Hls.Events.ERROR, (_evt, data) => {
       if (my !== token || hls !== instance || !data || !data.fatal) return
-      const reason = `hls ${data.type}/${data.details}` // sem data.url (contém credenciais)
+      const reason = `hls ${data.type}/${data.details}`
       let diagDetail = `HLS ${data.type}: ${data.details}`
 
       if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
@@ -182,8 +190,11 @@ export function useVideoEngine() {
           return
         }
       }
-      if (desc.fallbackUrl) switchToFallback(desc, my, reason)
-      else fail(my, reason, diagDetail)
+      if (desc.fallbackUrl) {
+        switchToFallback(desc, my, reason)
+      } else {
+        fail(my, reason, diagDetail, desc.primaryUrl, desc.containerExtension || 'm3u8')
+      }
     })
 
     instance.attachMedia(video)
@@ -193,7 +204,7 @@ export function useVideoEngine() {
 
   /**
    * @param {HTMLVideoElement} videoElement
-   * @param {{primaryUrl:string, fallbackUrl:string|null, isHls:boolean}|null} desc
+   * @param {{primaryUrl:string, fallbackUrl:string|null, isHls:boolean, containerExtension?:string}|null} desc
    */
   async function attachAndPlay(videoElement, desc) {
     destroyEngine()
@@ -203,7 +214,7 @@ export function useVideoEngine() {
     video = videoElement || null
 
     if (!video || !desc || !desc.primaryUrl) {
-      fail(my, 'descritor de stream inválido', 'Dados de stream ausentes ou parâmetros de reprodução incompletos')
+      fail(my, 'descritor de stream inválido', 'Dados de stream ausentes ou parâmetros de reprodução incompletos', '', '')
       return
     }
 
@@ -214,8 +225,7 @@ export function useVideoEngine() {
         startHls(Hls, desc, my)
         return
       }
-      // Sem MSE: HLS nativo (canPlayType) ou tentativa direta — vários WebViews de
-      // TV tocam HLS nativamente mesmo respondendo '' em canPlayType.
+      // Sem MSE: HLS nativo (canPlayType) ou tentativa direta
       if (!video.canPlayType('application/vnd.apple.mpegurl')) {
         console.info('[player] Sem MSE nem HLS nativo declarado; tentando reprodução direta.')
       }

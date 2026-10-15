@@ -31,6 +31,7 @@ const chunkKey = (s, n) => `chunk:${s}:${n}`
 
 const metaCache = new Map()
 const indexCache = new Map()
+const catCache = new Map()
 const chunkCache = new Map() // Map preserva ordem de inserção => LRU simples
 let generation = 0 // invalida leituras em voo quando o catálogo é trocado
 
@@ -43,6 +44,7 @@ function resetCaches(section) {
   generation++
   metaCache.delete(section)
   indexCache.delete(section)
+  catCache.delete(section)
   Array.from(chunkCache.keys()).forEach((k) => {
     if (k.indexOf(`${section}:`) === 0) chunkCache.delete(k)
   })
@@ -50,29 +52,43 @@ function resetCaches(section) {
 
 export async function getMeta(section) {
   if (metaCache.has(section)) return metaCache.get(section)
-  const meta = await db.getItem(metaKey(section))
-  if (meta) metaCache.set(section, meta)
-  return meta || null
+  try {
+    const meta = await db.getItem(metaKey(section))
+    if (meta) metaCache.set(section, meta)
+    return meta || null
+  } catch (_) {
+    return null
+  }
 }
 
 export async function getCategories(section) {
-  return (await db.getItem(catKey(section))) || []
+  if (catCache.has(section)) return catCache.get(section)
+  try {
+    const cats = (await db.getItem(catKey(section))) || []
+    if (cats && cats.length) catCache.set(section, cats)
+    return cats
+  } catch (_) {
+    return []
+  }
 }
 
 async function removeSection(section) {
-  const meta = await db.getItem(metaKey(section))
-  await db.removeItem(metaKey(section)) // sem meta o catálogo é considerado inexistente
-  if (meta) {
-    for (let n = 0; n < meta.chunkCount; n++) await db.removeItem(chunkKey(section, n))
-  }
-  await db.removeItem(catKey(section))
-  await db.removeItem(idxKey(section))
+  try {
+    const meta = await db.getItem(metaKey(section))
+    await db.removeItem(metaKey(section)) // sem meta o catálogo é considerado inexistente
+    if (meta) {
+      for (let n = 0; n < meta.chunkCount; n++) await db.removeItem(chunkKey(section, n))
+    }
+    await db.removeItem(catKey(section))
+    await db.removeItem(idxKey(section))
+  } catch (_) {}
   resetCaches(section)
 }
 
 /**
- * Grava o JSON bruto em chunks. O `meta` é escrito por último: uma ingestão
- * interrompida nunca deixa um catálogo "meio salvo" parecendo válido.
+ * Grava o JSON bruto em chunks de forma sequencial (loop for).
+ * Se o IndexedDB estourar a cota (QuotaExceededError na Android TV),
+ * mantém os chunks em memória (chunkCache) para que o catálogo ainda funcione.
  */
 export async function saveSection(section, { categories, streams, onProgress }) {
   if (!Array.isArray(categories) || !Array.isArray(streams)) {
@@ -109,7 +125,14 @@ export async function saveSection(section, { categories, streams, onProgress }) 
       if (!index[cat]) index[cat] = []
       index[cat].push(base + k)
     }
-    await db.setItem(chunkKey(section, n), slice)
+
+    try {
+      await db.setItem(chunkKey(section, n), slice)
+    } catch (quotaErr) {
+      console.warn(`[catalogDb] IndexedDB falhou ao persistir chunk ${n} (${quotaErr.message}). Mantendo em memória LRU.`)
+      chunkCache.set(`${section}:${n}`, Promise.resolve(slice))
+    }
+
     if (onProgress) onProgress((n + 1) / chunkCount)
   }
 
@@ -118,16 +141,33 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     counts[cat] = index[cat].length
   })
 
-  await db.setItem(catKey(section), categories)
-  await db.setItem(idxKey(section), index)
-  await db.setItem(metaKey(section), {
+  const metaObj = {
     count: total,
     chunkSize: CHUNK_SIZE,
     chunkCount,
     counts,
     updatedAt: new Date().toISOString(),
-  })
-  resetCaches(section)
+  }
+
+  try {
+    await db.setItem(catKey(section), categories)
+  } catch (_) {
+    catCache.set(section, categories)
+  }
+  try {
+    await db.setItem(idxKey(section), index)
+  } catch (_) {
+    indexCache.set(section, index)
+  }
+  try {
+    await db.setItem(metaKey(section), metaObj)
+  } catch (_) {
+    metaCache.set(section, metaObj)
+  }
+
+  metaCache.set(section, metaObj)
+  indexCache.set(section, index)
+  catCache.set(section, categories)
 }
 
 async function getIndex(section) {

@@ -184,9 +184,23 @@ onMounted(() => {
     </div>
 
     <!-- Erro -->
-    <div v-else-if="state.state === 'error'" class="flex flex-col items-center justify-center flex-1 gap-6">
-      <p class="text-tv-base text-red-400 text-center max-w-[50rem]" role="alert">{{ state.error }}</p>
-      <button id="catalog-retry" type="button" class="tv-btn tv-btn-primary !px-7 !py-3" @click="load(true)">
+    <div v-else-if="state.state === 'error'" class="flex flex-col items-center justify-center flex-1 gap-4 max-w-[50rem] mx-auto text-center px-4">
+      <div class="w-16 h-16 rounded-full bg-red-500/15 flex items-center justify-center text-red-400 mb-2">
+        <svg class="w-8 h-8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10" />
+          <line x1="12" y1="8" x2="12" y2="12" />
+          <line x1="12" y1="16" x2="12.01" y2="16" />
+        </svg>
+      </div>
+      <p class="text-tv-lg text-white font-bold" role="alert">{{ state.error }}</p>
+      <div
+        v-if="state.errorDetail"
+        class="font-mono text-tv-xs text-red-300/90 bg-black/60 border border-red-500/20 rounded p-3 break-all text-left w-full max-h-40 overflow-y-auto"
+      >
+        <span class="text-neutral-400 font-semibold block mb-1">Diagnóstico técnico:</span>
+        {{ state.errorDetail }}
+      </div>
+      <button id="catalog-retry" type="button" class="tv-btn tv-btn-primary !px-7 !py-3 mt-2" @click="load(true)">
         Tentar novamente
       </button>
     </div>

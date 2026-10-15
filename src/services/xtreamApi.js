@@ -268,7 +268,16 @@ function baseFromFinalUrl(finalUrl, requestedBase) {
   if (!finalUrl) return null
   try {
     const resolved = normalizeBaseUrl(String(finalUrl).split('?')[0])
-    return resolved !== requestedBase ? resolved : null
+    if (resolved === requestedBase) return null
+    // Se o requestedBase era http:// e o finalUrl apenas trocou o protocolo para https:// no mesmo host/porta,
+    // preserva http:// como prioridade (RFC-008: muitos painéis Xtream falham ao baixar catálogo em HTTPS).
+    if (/^http:\/\//i.test(requestedBase) && /^https:\/\//i.test(resolved)) {
+      const httpResolved = resolved.replace(/^https:\/\//i, 'http://')
+      if (httpResolved === requestedBase) {
+        return null
+      }
+    }
+    return resolved
   } catch (_) {
     return null
   }
@@ -280,10 +289,29 @@ function baseFromFinalUrl(finalUrl, requestedBase) {
  *          preenchido quando houve redirecionamento para outro host/caminho.
  */
 export async function apiRequest(baseUrl, credentials, { action, params, timeoutMs } = {}) {
-  const url = buildApiUrl(baseUrl, { ...(credentials || {}), action, params })
-  const { res, finalUrl } = await smartFetch(url, { timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS })
-  const data = await readJson(res, url)
-  return { data, resolvedUrl: baseFromFinalUrl(finalUrl, baseUrl) }
+  const execute = async (targetBase) => {
+    const url = buildApiUrl(targetBase, { ...(credentials || {}), action, params })
+    const { res, finalUrl } = await smartFetch(url, { timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS })
+    const data = await readJson(res, url)
+    return { data, resolvedUrl: baseFromFinalUrl(finalUrl, targetBase) }
+  }
+
+  try {
+    return await execute(baseUrl)
+  } catch (err) {
+    // Se a chamada em https:// falhar na busca do catálogo ou API, tenta automaticamente em http:// (RFC-008)
+    if (/^https:\/\//i.test(baseUrl)) {
+      const httpBase = baseUrl.replace(/^https:\/\//i, 'http://')
+      try {
+        console.warn(`[xtream] Chamada em ${baseUrl} (action=${action || 'auth'}) falhou (${err.message}). Tentando fallback em http://...`)
+        return await execute(httpBase)
+      } catch (fallbackErr) {
+        // Se ambos falharem, propaga o erro original
+        throw err
+      }
+    }
+    throw err
+  }
 }
 
 /**

@@ -64,111 +64,18 @@ const heroBackground = computed(() => {
   if (recentHistoryItem.value && recentHistoryItem.value.stream_icon) {
     return recentHistoryItem.value.stream_icon
   }
+  if (vodShowcase.value.length > 0 && vodShowcase.value[0].image) {
+    return vodShowcase.value[0].image
+  }
+  if (liveShowcase.value.length > 0 && liveShowcase.value[0].image) {
+    return liveShowcase.value[0].image
+  }
   return 'https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1920&q=80'
 })
 
-// Showcase carregado do catálogo
+// Showcase carregado exclusivamente do catálogo real (RFC-008)
 const vodShowcase = ref([])
 const liveShowcase = ref([])
-
-// Showcase padrão com streams públicos HTTPS e CORS liberado (RFC-004 fix)
-const defaultVodCards = [
-  {
-    stream_id: 'sample-vod-1',
-    name: 'Além do Horizonte',
-    section: 'vod',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg',
-    image: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg',
-    badge: 'EM DESTAQUE',
-    subtitle: '2026 · Ficção Científica',
-    directUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    container_extension: 'mp4',
-  },
-  {
-    stream_id: 'sample-vod-2',
-    name: 'Órbita',
-    section: 'vod',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg',
-    image: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg',
-    badge: 'NOVO',
-    subtitle: '2026 · Suspense',
-    directUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    container_extension: 'mp4',
-  },
-  {
-    stream_id: 'sample-vod-3',
-    name: 'Depois da Meia-Noite',
-    section: 'vod',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
-    image: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
-    badge: 'EM DESTAQUE',
-    subtitle: '2025 · Drama',
-    directUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    container_extension: 'mp4',
-  },
-  {
-    stream_id: 'sample-vod-4',
-    name: 'Mar Aberto',
-    section: 'vod',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerEscapes.jpg',
-    image: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerEscapes.jpg',
-    badge: 'POPULAR',
-    subtitle: '2026 · Ação',
-    directUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    container_extension: 'mp4',
-  },
-]
-
-const defaultLiveCards = [
-  {
-    stream_id: 'sample-live-1',
-    name: 'NEUTRO NEWS',
-    section: 'live',
-    firstName: 'NEUTRO',
-    secondName: 'NEWS',
-    program: 'Jornal Edição Noite',
-    schedule: '20:00 - 21:30 · Notícias',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerFun.jpg',
-    directUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-    container_extension: 'm3u8',
-  },
-  {
-    stream_id: 'sample-live-2',
-    name: 'ARENA SPORT',
-    section: 'live',
-    firstName: 'ARENA',
-    secondName: 'SPORT',
-    program: 'Liga dos Campeões Ao Vivo',
-    schedule: 'Transmissão em 4K · Esportes',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerJoyBlazes.jpg',
-    directUrl: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
-    container_extension: 'm3u8',
-  },
-  {
-    stream_id: 'sample-live-3',
-    name: 'CINE PRIME',
-    section: 'live',
-    firstName: 'CINE',
-    secondName: 'PRIME',
-    program: 'Festival Grandes Diretores',
-    schedule: '19:45 - 22:15 · Cinema',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/TearsOfSteel.jpg',
-    directUrl: 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8',
-    container_extension: 'm3u8',
-  },
-  {
-    stream_id: 'sample-live-4',
-    name: 'LIFE TV',
-    section: 'live',
-    firstName: 'LIFE',
-    secondName: 'TV',
-    program: 'Planeta Selvagem: Oceanos',
-    schedule: 'Docu-série · Natureza',
-    stream_icon: 'https://storage.googleapis.com/gtv-videos-bucket/sample/images/Sintel.jpg',
-    directUrl: 'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
-    container_extension: 'm3u8',
-  },
-]
 
 // Temporadas e Episódios da Série Ativa
 const availableSeasons = computed(() => {
@@ -201,21 +108,28 @@ const episodesForActiveSeason = computed(() => {
   return []
 })
 
-const displayVodCards = computed(() => {
-  return vodShowcase.value.length >= 4 ? vodShowcase.value : defaultVodCards
-})
-
-const displayLiveCards = computed(() => {
-  return liveShowcase.value.length >= 4 ? liveShowcase.value : defaultLiveCards
-})
-
 async function loadCatalogShowcase(force = false) {
   if (force) {
     vodShowcase.value = []
     liveShowcase.value = []
   }
+
+  // Se as seções estiverem ociosas, inicia a carga no catálogo real (RFC-008)
+  const loads = []
+  if (catalog.status.vod.state === 'idle' || force) {
+    loads.push(catalog.loadSection('vod', { force }))
+  }
+  if (catalog.status.live.state === 'idle' || force) {
+    loads.push(catalog.loadSection('live', { force }))
+  }
+  if (loads.length > 0) {
+    try {
+      await Promise.all(loads)
+    } catch (_) {}
+  }
+
   try {
-    const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 4)
+    const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 8)
     if (vodItems && vodItems.length > 0) {
       vodShowcase.value = vodItems.map((item, idx) => ({
         stream_id: item.stream_id,
@@ -224,14 +138,14 @@ async function loadCatalogShowcase(force = false) {
         image: item.stream_icon || item.cover,
         stream_icon: item.stream_icon || item.cover,
         badge: idx === 0 ? 'EM DESTAQUE' : idx === 1 ? 'NOVO' : '4K',
-        subtitle: 'Filme · 4K UHD',
+        subtitle: item.genre || 'Filme · 4K UHD',
         rawItem: item,
       }))
     }
   } catch (_) {}
 
   try {
-    const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 4)
+    const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 8)
     if (liveItems && liveItems.length > 0) {
       liveShowcase.value = liveItems.map((item) => {
         const parts = (item.name || '').trim().split(' ')
@@ -315,14 +229,14 @@ function handleHeroPlay() {
     player.playItem(recentHistoryItem.value)
     return
   }
-  const heroCard = displayVodCards.value[0]
+  const heroCard = vodShowcase.value[0] || liveShowcase.value[0]
   if (heroCard) {
-    handleCardPlay(heroCard, 'vod')
+    handleCardPlay(heroCard, heroCard.section || 'vod')
   }
 }
 
 function handleHeroBookmark() {
-  const item = recentHistoryItem.value || displayVodCards.value[0]
+  const item = recentHistoryItem.value || vodShowcase.value[0] || liveShowcase.value[0]
   if (item) {
     toggleCardBookmark(item)
   }
@@ -1031,22 +945,20 @@ onBeforeUnmount(() => {
 
             <!-- Título Principal -->
             <h1 class="text-[3.5rem] font-black uppercase tracking-tight leading-[0.95] text-white truncate">
-              {{ recentHistoryItem ? recentHistoryItem.name : (displayVodCards[0]?.name || 'ALÉM DO HORIZONTE') }}
+              {{ recentHistoryItem ? recentHistoryItem.name : (vodShowcase[0]?.name || liveShowcase[0]?.name || 'NEUTRO TV') }}
             </h1>
 
             <!-- Linha de Metadados -->
             <div class="flex items-center gap-3 text-tv-xs text-neutral-300 font-medium">
-              <span class="text-[#22c55e] font-bold">98% relevante</span>
-              <span>2026</span>
-              <span class="px-1.5 py-0.5 border border-white/25 rounded text-[0.7rem] leading-none">14</span>
-              <span>{{ recentHistoryItem?.currentTime ? formatTime(recentHistoryItem.currentTime) : '2h 08min' }}</span>
-              <span class="px-2 py-0.5 border border-white/25 rounded text-[0.7rem] leading-none">4K UHD</span>
-              <span class="text-neutral-400">Dolby Atmos</span>
+              <span class="text-[#22c55e] font-bold">Catálogo Conectado</span>
+              <span class="px-1.5 py-0.5 border border-white/25 rounded text-[0.7rem] leading-none">HD / 4K</span>
+              <span>{{ recentHistoryItem?.currentTime ? formatTime(recentHistoryItem.currentTime) : (vodShowcase[0]?.subtitle || 'Transmissão Direta') }}</span>
+              <span class="px-2 py-0.5 border border-white/25 rounded text-[0.7rem] leading-none">IPTV</span>
             </div>
 
             <!-- Sinopse -->
             <p class="text-tv-sm text-neutral-300 leading-relaxed line-clamp-3 max-w-[32rem]">
-              Em um futuro próximo, uma tripulação de exploradores parte para os confins desconhecidos da galáxia em busca de uma nova esperança para a humanidade.
+              {{ recentHistoryItem ? 'Retome de onde parou em seu perfil.' : (vodShowcase[0]?.name ? `Assista a "${vodShowcase[0].name}" diretamente da sua lista conectada.` : 'Explore milhares de canais ao vivo, filmes e séries em alta definição na sua lista conectada.') }}
             </p>
 
             <!-- Linha de Botões do Hero -->
@@ -1219,9 +1131,59 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div class="grid grid-cols-4 gap-5">
+          <!-- Loading Skeleton -->
+          <div
+            v-if="catalog.status.vod.state === 'loading'"
+            class="grid grid-cols-4 gap-5"
+          >
             <div
-              v-for="card in displayVodCards"
+              v-for="i in 4"
+              :key="'vod-skel-' + i"
+              class="rounded-xl bg-[#121215] border border-white/[0.05] p-2.5 flex flex-col gap-2.5 animate-pulse"
+            >
+              <div class="w-full h-[9.5rem] rounded-lg bg-white/[0.06] flex items-center justify-center">
+                <span class="text-tv-xs text-neutral-500 font-medium">Carregando filmes da sua lista...</span>
+              </div>
+              <div class="px-1 py-1 space-y-2">
+                <div class="h-4 bg-white/[0.06] rounded w-3/4" />
+                <div class="h-3 bg-white/[0.04] rounded w-1/2" />
+              </div>
+            </div>
+          </div>
+
+          <!-- Erro com Tentar Novamente -->
+          <div
+            v-else-if="catalog.status.vod.state === 'error'"
+            class="rounded-xl bg-red-950/20 border border-red-500/20 p-6 flex flex-col items-center justify-center text-center gap-3"
+          >
+            <p class="text-tv-sm text-red-300 font-medium">
+              {{ catalog.status.vod.error || 'Não foi possível carregar os filmes da sua lista.' }}
+            </p>
+            <p v-if="catalog.status.vod.errorDetail" class="text-tv-xs font-mono text-red-400/80 max-w-xl truncate">
+              {{ catalog.status.vod.errorDetail }}
+            </p>
+            <button
+              id="home-retry-vod"
+              type="button"
+              class="tv-btn tv-btn-primary !px-5 !py-2 text-tv-xs mt-1"
+              @click="catalog.loadSection('vod', { force: true })"
+            >
+              Tentar novamente
+            </button>
+          </div>
+
+          <!-- Lista Vazia -->
+          <div
+            v-else-if="vodShowcase.length === 0"
+            class="rounded-xl bg-[#121215] border border-white/[0.05] p-6 text-center text-neutral-400 text-tv-sm"
+          >
+            Nenhum filme disponível nesta lista.
+          </div>
+
+          <!-- Cards Reais -->
+          <div v-else class="grid grid-cols-4 gap-5">
+            <div
+              v-for="card in vodShowcase.slice(0, 4)"
               :id="'vod-card-' + card.stream_id"
               :key="card.stream_id"
               tabindex="0"
@@ -1240,7 +1202,7 @@ onBeforeUnmount(() => {
 
                 <!-- Badge Superior Esquerdo -->
                 <span class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded bg-[#e50914] text-white text-[0.65rem] font-bold uppercase tracking-wider">
-                  {{ card.badge || 'EM DESTAQUE' }}
+                  {{ card.badge || 'FILME' }}
                 </span>
 
                 <!-- Badge Superior Direito -->
@@ -1258,7 +1220,7 @@ onBeforeUnmount(() => {
               <div class="flex items-center justify-between px-1 pb-0.5">
                 <div class="min-w-0 pr-2">
                   <p class="text-tv-sm font-medium text-white truncate">{{ card.name }}</p>
-                  <p class="text-tv-xs text-neutral-500">{{ card.subtitle || '2026 · Aventura' }}</p>
+                  <p class="text-tv-xs text-neutral-500">{{ card.subtitle || 'Filme da Lista' }}</p>
                 </div>
                 <button
                   type="button"
@@ -1302,9 +1264,61 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <div class="grid grid-cols-4 gap-5">
+          <!-- Loading Skeleton -->
+          <div
+            v-if="catalog.status.live.state === 'loading'"
+            class="grid grid-cols-4 gap-5"
+          >
             <div
-              v-for="channel in displayLiveCards"
+              v-for="i in 4"
+              :key="'live-skel-' + i"
+              class="rounded-xl bg-[#121215] border border-white/[0.05] p-5 h-[9.5rem] flex flex-col justify-between animate-pulse"
+            >
+              <div class="flex items-center justify-between">
+                <div class="h-4 bg-white/[0.08] rounded w-24" />
+                <div class="h-3 bg-white/[0.05] rounded w-12" />
+              </div>
+              <div class="space-y-2">
+                <div class="h-4 bg-white/[0.06] rounded w-3/4" />
+                <div class="h-3 bg-white/[0.04] rounded w-1/2" />
+              </div>
+              <div class="w-full h-[2px] bg-white/[0.05] rounded-full" />
+            </div>
+          </div>
+
+          <!-- Erro com Tentar Novamente -->
+          <div
+            v-else-if="catalog.status.live.state === 'error'"
+            class="rounded-xl bg-red-950/20 border border-red-500/20 p-6 flex flex-col items-center justify-center text-center gap-3"
+          >
+            <p class="text-tv-sm text-red-300 font-medium">
+              {{ catalog.status.live.error || 'Não foi possível carregar os canais da sua lista.' }}
+            </p>
+            <p v-if="catalog.status.live.errorDetail" class="text-tv-xs font-mono text-red-400/80 max-w-xl truncate">
+              {{ catalog.status.live.errorDetail }}
+            </p>
+            <button
+              id="home-retry-live"
+              type="button"
+              class="tv-btn tv-btn-primary !px-5 !py-2 text-tv-xs mt-1"
+              @click="catalog.loadSection('live', { force: true })"
+            >
+              Tentar novamente
+            </button>
+          </div>
+
+          <!-- Lista Vazia -->
+          <div
+            v-else-if="liveShowcase.length === 0"
+            class="rounded-xl bg-[#121215] border border-white/[0.05] p-6 text-center text-neutral-400 text-tv-sm"
+          >
+            Nenhum canal ao vivo disponível nesta lista.
+          </div>
+
+          <!-- Cards Reais -->
+          <div v-else class="grid grid-cols-4 gap-5">
+            <div
+              v-for="channel in liveShowcase.slice(0, 4)"
               :id="'live-card-' + channel.stream_id"
               :key="channel.stream_id"
               tabindex="0"
@@ -1313,11 +1327,11 @@ onBeforeUnmount(() => {
             >
               <!-- Topo do Card -->
               <div class="flex items-center justify-between">
-                <span class="text-tv-base font-black tracking-tight uppercase">
+                <span class="text-tv-base font-black tracking-tight uppercase truncate mr-2">
                   <span class="text-white">{{ channel.firstName }} </span>
                   <span class="text-[#e50914]">{{ channel.secondName }}</span>
                 </span>
-                <span class="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-[#10b981]">
+                <span class="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-[#10b981] shrink-0">
                   <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
                   AO VIVO
                 </span>

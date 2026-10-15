@@ -22,7 +22,7 @@ const ACTIONS = {
   series: { categories: 'get_series_categories', streams: 'get_series' },
 }
 
-const initialStatus = () => ({ state: 'idle', step: '', progress: 0, error: '' })
+const initialStatus = () => ({ state: 'idle', step: '', progress: 0, error: '', errorDetail: '' })
 
 /**
  * REGRA DE MEMÓRIA: este store NUNCA guarda os itens (canais/filmes) no estado
@@ -97,6 +97,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     const st = status[section]
     st.state = 'loading'
     st.error = ''
+    st.errorDetail = ''
     st.progress = 0
     try {
       let meta = force ? null : await getMeta(section)
@@ -137,9 +138,10 @@ export const useCatalogStore = defineStore('catalog', () => {
       await publish(section, meta)
       st.state = 'ready'
     } catch (err) {
-      console.warn(`[catalog] Falha ao carregar "${section}":`, err && err.code, err && (err.detail || err.message))
+      console.warn(`[catalog] Falha ao carregar "${section}":`, err && err.code, err && (err.technicalDetail || err.detail || err.message))
       st.state = 'error'
-      st.error = LOAD_ERROR
+      st.error = err?.userMessage || err?.message || 'Erro ao carregar catálogo'
+      st.errorDetail = err?.technicalDetail || (err?.stack ? String(err.stack) : String(err))
     }
   }
 
