@@ -1,7 +1,7 @@
 import { reactive, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
-import { apiRequest, XtreamError } from '@/services/xtreamApi'
+import { apiRequest, XtreamError, fetchM3uText } from '@/services/xtreamApi'
 import { importM3uCatalog } from '@/services/m3uParser'
 import {
   ALL_CATEGORIES,
@@ -105,8 +105,7 @@ export const useCatalogStore = defineStore('catalog', () => {
         if (auth.session?.type === 'm3u') {
           st.step = 'Baixando playlist M3U...'
           const m3uUrl = auth.apiBase || auth.session?.baseUrl
-          const res = await fetch(m3uUrl)
-          const text = await res.text()
+          const { text } = await fetchM3uText(m3uUrl)
           st.step = 'Processando lista M3U...'
           await importM3uCatalog(text, {
             onProgress: (p) => {

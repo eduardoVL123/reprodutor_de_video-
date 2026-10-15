@@ -11,7 +11,7 @@ const player = usePlayerStore()
 const auth = useAuthStore()
 
 const videoRef = ref(null)
-const { error: engineError, attachAndPlay, destroyEngine } = useVideoEngine()
+const { error: engineError, errorDetail: engineErrorDetail, attachAndPlay, destroyEngine } = useVideoEngine()
 
 // Estado do OSD e controles
 const isOsdVisible = ref(true)
@@ -624,9 +624,15 @@ onBeforeUnmount(() => {
             <line x1="12" y1="17" x2="12.01" y2="17" />
           </svg>
         </div>
-        <h3 class="text-tv-xl font-bold text-white mb-4">Falha na Reprodução</h3>
-        <p class="text-tv-base text-tv-muted mb-8 leading-relaxed">
+        <h3 class="text-tv-xl font-bold text-white mb-3">Falha na Reprodução</h3>
+        <p class="text-tv-base text-tv-muted mb-4 leading-relaxed">
           {{ engineError || PLAYBACK_ERROR }}
+        </p>
+        <p
+          v-if="engineErrorDetail"
+          class="font-mono text-tv-xs text-red-300/90 bg-black/60 border border-red-500/20 rounded p-2.5 mb-8 break-all text-left"
+        >
+          Causa técnica: {{ engineErrorDetail }}
         </p>
         <div class="flex items-center justify-center gap-6">
           <button id="player-retry" type="button" class="tv-btn tv-btn-primary" @click="retryPlayback">

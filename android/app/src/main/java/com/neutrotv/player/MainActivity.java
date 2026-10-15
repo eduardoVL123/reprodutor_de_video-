@@ -24,19 +24,17 @@ public class MainActivity extends BridgeActivity {
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {
-            if (event.getAction() == KeyEvent.ACTION_DOWN) {
-                if (getBridge() != null && getBridge().getWebView() != null) {
-                    final WebView webView = getBridge().getWebView();
-                    webView.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            webView.evaluateJavascript(
-                                "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, code: 'Escape', which: 27, bubbles: true }));",
-                                null
-                            );
-                        }
-                    });
-                }
+            if (event.getAction() == KeyEvent.ACTION_DOWN && getBridge() != null && getBridge().getWebView() != null) {
+                final WebView webView = getBridge().getWebView();
+                webView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.evaluateJavascript(
+                            "window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true }));",
+                            null
+                        );
+                    }
+                });
             }
             return true;
         }

@@ -1,4 +1,5 @@
 import { ref, getCurrentInstance, onBeforeUnmount } from 'vue'
+import { canUseDevProxy, devProxyUrl } from '@/services/netEnv'
 
 /**
  * Motor de reprodução: <video> + hls.js, com fallback nativo e teardown estrito.
@@ -7,7 +8,7 @@ import { ref, getCurrentInstance, onBeforeUnmount } from 'vue'
  * - `destroyEngine()` roda SEMPRE antes de um novo stream: em Tizen/webOS o decoder
  *   de hardware é único e só é liberado com pause + remoção do src + load().
  * - Cada reprodução tem um `token`; eventos de instâncias antigas são ignorados.
- * - Logs nunca incluem URLs (elas contêm usuário/senha).
+ * - Logs e diagnósticos nunca incluem URLs (elas contêm usuário/senha).
  */
 
 export const PLAYBACK_ERROR =
@@ -41,6 +42,7 @@ function loadHls() {
 
 export function useVideoEngine() {
   const error = ref('')
+  const errorDetail = ref('')
   const engineType = ref('') // 'hls' | 'native' | ''
 
   let hls = null
@@ -87,6 +89,7 @@ export function useVideoEngine() {
 
   function clearError() {
     error.value = ''
+    errorDetail.value = ''
   }
 
   function safePlay(my) {
@@ -104,21 +107,31 @@ export function useVideoEngine() {
     }
   }
 
-  function fail(my, reason) {
+  function fail(my, reason, detail) {
     if (my !== token) return
-    console.warn('[player] Reprodução falhou:', reason)
+    console.warn('[player] Reprodução falhou:', reason, detail)
     token++
     teardownMedia()
     error.value = PLAYBACK_ERROR
+    errorDetail.value = detail || reason || 'Erro desconhecido na reprodução'
   }
 
   function startNative(url, desc, my, isFallback) {
     engineType.value = 'native'
     nativeErrorListener = () => {
       if (my !== token) return
-      const reason = `native code=${video && video.error ? video.error.code : '?'}`
+      const errCode = video && video.error ? video.error.code : 0
+      const errMsgs = {
+        1: 'MEDIA_ERR_ABORTED (reprodução cancelada)',
+        2: 'MEDIA_ERR_NETWORK (falha na conexão de rede)',
+        3: 'MEDIA_ERR_DECODE (erro na decodificação do vídeo)',
+        4: 'MEDIA_ERR_SRC_NOT_SUPPORTED (formato ou link offline)',
+      }
+      const codeName = errMsgs[errCode] || 'MEDIA_ERR_UNKNOWN'
+      const detail = `HTML5 Video Error Code ${errCode}: ${codeName}`
+      const reason = `native code=${errCode}`
       if (!isFallback && desc.fallbackUrl) switchToFallback(desc, my, reason)
-      else fail(my, reason)
+      else fail(my, reason, detail)
     }
     video.addEventListener('error', nativeErrorListener)
     video.src = url
@@ -148,25 +161,34 @@ export function useVideoEngine() {
     instance.on(Hls.Events.ERROR, (_evt, data) => {
       if (my !== token || hls !== instance || !data || !data.fatal) return
       const reason = `hls ${data.type}/${data.details}` // sem data.url (contém credenciais)
+      let diagDetail = `HLS ${data.type}: ${data.details}`
 
-      if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !networkRetried) {
-        networkRetried = true
-        console.warn('[player] Erro de rede no HLS, tentando novamente:', data.details)
-        instance.startLoad()
-        return
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        const httpCode = data.response ? data.response.code : ''
+        diagDetail = `HLS Network Error: ${data.details}${httpCode ? ` (HTTP ${httpCode})` : ''}`
+        if (!networkRetried) {
+          networkRetried = true
+          console.warn('[player] Erro de rede no HLS, tentando novamente:', data.details)
+          instance.startLoad()
+          return
+        }
       }
-      if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !mediaRetried) {
-        mediaRetried = true
-        console.warn('[player] Erro de mídia no HLS, tentando recuperar:', data.details)
-        instance.recoverMediaError()
-        return
+      if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
+        diagDetail = `HLS Media Error: ${data.details}`
+        if (!mediaRetried) {
+          mediaRetried = true
+          console.warn('[player] Erro de mídia no HLS, tentando recuperar:', data.details)
+          instance.recoverMediaError()
+          return
+        }
       }
       if (desc.fallbackUrl) switchToFallback(desc, my, reason)
-      else fail(my, reason)
+      else fail(my, reason, diagDetail)
     })
 
     instance.attachMedia(video)
-    instance.loadSource(desc.primaryUrl)
+    const sourceUrl = canUseDevProxy() ? devProxyUrl(desc.primaryUrl, { hls: true }) : desc.primaryUrl
+    instance.loadSource(sourceUrl)
   }
 
   /**
@@ -177,10 +199,11 @@ export function useVideoEngine() {
     destroyEngine()
     const my = token
     error.value = ''
+    errorDetail.value = ''
     video = videoElement || null
 
     if (!video || !desc || !desc.primaryUrl) {
-      fail(my, 'descritor de stream inválido')
+      fail(my, 'descritor de stream inválido', 'Dados de stream ausentes ou parâmetros de reprodução incompletos')
       return
     }
 
@@ -202,5 +225,5 @@ export function useVideoEngine() {
 
   if (getCurrentInstance()) onBeforeUnmount(destroyEngine)
 
-  return { error, engineType, attachAndPlay, destroyEngine, clearError }
+  return { error, errorDetail, engineType, attachAndPlay, destroyEngine, clearError }
 }

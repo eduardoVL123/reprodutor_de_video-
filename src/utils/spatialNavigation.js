@@ -81,6 +81,82 @@ function isTextField(el) {
   return ['button', 'submit', 'reset', 'checkbox', 'radio', 'range', 'color', 'file', 'image'].indexOf(type) === -1
 }
 
+export function isEditingTextField(el) {
+  if (!isTextField(el)) return false
+  return !el.readOnly && el.getAttribute('data-tv-editing') !== 'false'
+}
+
+/** Ativa o modo de edição em campo de texto na Smart TV (remove readonly e sobe teclado) */
+export function enterInputEditMode(inputEl) {
+  if (!inputEl || !isTextField(inputEl)) return
+  inputEl.removeAttribute('readonly')
+  inputEl.setAttribute('data-tv-editing', 'true')
+  document.body.classList.add('tv-keyboard-open')
+  inputEl.focus()
+  try {
+    const len = inputEl.value ? inputEl.value.length : 0
+    inputEl.setSelectionRange(len, len)
+  } catch (_) {}
+  setTimeout(() => {
+    try {
+      inputEl.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    } catch (_) {
+      inputEl.scrollIntoView(false)
+    }
+  }, 150)
+}
+
+/** Sai do modo de edição (restaura readonly para fechar teclado sem perder foco) */
+export function exitInputEditMode(inputEl, keepFocus = true) {
+  if (!inputEl || !isTextField(inputEl)) return
+  inputEl.setAttribute('readonly', 'readonly')
+  inputEl.setAttribute('data-tv-editing', 'false')
+  document.body.classList.remove('tv-keyboard-open')
+  if (keepFocus) {
+    try {
+      inputEl.blur()
+      inputEl.focus({ preventScroll: true })
+    } catch (_) {
+      inputEl.focus()
+    }
+  }
+}
+
+export function initTextField(el) {
+  if (!el || !isTextField(el)) return
+  if (!el.hasAttribute('data-tv-editing')) {
+    el.setAttribute('readonly', 'readonly')
+    el.setAttribute('data-tv-editing', 'false')
+  }
+}
+
+export function scanTextFields(root) {
+  const scope = root || document
+  if (!scope || !scope.querySelectorAll) return
+  const list = scope.querySelectorAll('input, textarea')
+  for (let i = 0; i < list.length; i++) {
+    initTextField(list[i])
+  }
+}
+
+function onMouseDown(e) {
+  const el = e.target
+  if (isTextField(el)) {
+    enterInputEditMode(el)
+  }
+}
+
+function onFocusOut(e) {
+  const el = e.target
+  if (isTextField(el) && el.getAttribute('data-tv-editing') === 'true') {
+    if (e.relatedTarget !== el) {
+      el.setAttribute('readonly', 'readonly')
+      el.setAttribute('data-tv-editing', 'false')
+      document.body.classList.remove('tv-keyboard-open')
+    }
+  }
+}
+
 /**
  * Traduz `event.key` / `event.keyCode` para uma ação semântica.
  * @returns {'up'|'down'|'left'|'right'|'select'|'back'|'playPause'|'channelUp'|'channelDown'|null}
@@ -314,6 +390,7 @@ function isInDirection(fromRect, el, direction) {
 
 function onFocusIn(e) {
   const el = e.target
+  if (isTextField(el)) initTextField(el)
   if (!el || !el.id) return
   const group = groupElOf(el)
   if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id })
@@ -512,21 +589,86 @@ function handleBack() {
 }
 
 function onKeyDown(e) {
+  const current = document.activeElement
   const action = getTvAction(e)
-  if (!action) return
 
-  for (let i = keyHandlers.length - 1; i >= 0; i--) {
-    let consumed = false
-    try {
-      consumed = keyHandlers[i](action, e) === true
-    } catch (err) {
-      console.warn('[spatialNavigation] Handler de tecla falhou:', err)
+  // 1. Campo de texto em MODO DE EDIÇÃO: movimentação livre de cursor e controle do teclado
+  if (isEditingTextField(current)) {
+    // Seta Esquerda / Direita: NUNCA prevenir default e NUNCA navegar!
+    // Permite que o WebView mova o cursor nativamente entre os caracteres.
+    if (action === 'left' || action === 'right' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      try {
+        const start = current.selectionStart
+        const end = current.selectionEnd
+        if (typeof start === 'number' && typeof end === 'number') {
+          const delta = action === 'left' || e.key === 'ArrowLeft' ? -1 : 1
+          // Fallback seguro: se após o keydown o WebView da TV não mover o cursor, movemos via JS
+          setTimeout(() => {
+            try {
+              if (
+                current &&
+                document.activeElement === current &&
+                current.selectionStart === start &&
+                current.selectionEnd === end
+              ) {
+                const len = (current.value || '').length
+                const newPos = Math.max(0, Math.min(len, start === end ? start + delta : delta < 0 ? start : end))
+                current.setSelectionRange(newPos, newPos)
+              }
+            } catch (_) {}
+          }, 0)
+        }
+      } catch (_) {}
+      return
     }
-    if (consumed) {
+
+    if (action === 'back') {
       e.preventDefault()
+      exitInputEditMode(current)
+      return
+    }
+    if (action === 'select') {
+      e.preventDefault()
+      exitInputEditMode(current)
+      return
+    }
+    if (action === 'up' || action === 'down') {
+      e.preventDefault()
+      exitInputEditMode(current, false)
+      navigate(action)
+      return
+    }
+    return
+  }
+
+  // 2. Handlers de tecla registrados (ex.: player em tela cheia)
+  if (action) {
+    for (let i = keyHandlers.length - 1; i >= 0; i--) {
+      let consumed = false
+      try {
+        consumed = keyHandlers[i](action, e) === true
+      } catch (err) {
+        console.warn('[spatialNavigation] Handler de tecla falhou:', err)
+      }
+      if (consumed) {
+        e.preventDefault()
+        return
+      }
+    }
+  }
+
+  const inText = isTextField(current)
+
+  // 3. Campo de texto FOCADO mas NÃO editando (apenas foco / teclado fechado)
+  if (inText) {
+    if (action === 'select') {
+      e.preventDefault()
+      enterInputEditMode(current)
       return
     }
   }
+
+  if (!action) return
 
   if (action === 'back') {
     e.preventDefault()
@@ -544,6 +686,8 @@ function onKeyDown(e) {
 // Ciclo de vida
 // ---------------------------------------------------------------------------
 
+let domObserver = null
+
 /** @param {{ router?: import('vue-router').Router }} [options] */
 export function initSpatialNavigation(options) {
   if (options && options.router) routerRef = options.router
@@ -553,6 +697,25 @@ export function initSpatialNavigation(options) {
   // Captura: roda antes dos listeners dos componentes e pode cancelar o clique do Enter.
   window.addEventListener('keydown', onKeyDown, true)
   document.addEventListener('focusin', onFocusIn)
+  document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('mousedown', onMouseDown, true)
+
+  if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
+    domObserver = new MutationObserver((mutations) => {
+      for (let i = 0; i < mutations.length; i++) {
+        const added = mutations[i].addedNodes
+        for (let j = 0; j < added.length; j++) {
+          const node = added[j]
+          if (node.nodeType === 1) {
+            if (isTextField(node)) initTextField(node)
+            scanTextFields(node)
+          }
+        }
+      }
+    })
+    domObserver.observe(document.body, { childList: true, subtree: true })
+  }
+  scanTextFields(document.body)
 }
 
 export function stopSpatialNavigation() {
@@ -560,4 +723,11 @@ export function stopSpatialNavigation() {
   isEnabled = false
   window.removeEventListener('keydown', onKeyDown, true)
   document.removeEventListener('focusin', onFocusIn)
+  document.removeEventListener('focusout', onFocusOut)
+  document.removeEventListener('mousedown', onMouseDown, true)
+  if (domObserver) {
+    domObserver.disconnect()
+    domObserver = null
+  }
 }
+

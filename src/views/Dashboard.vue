@@ -22,6 +22,7 @@ const activeTab = ref('home')
 // Modal de Gerenciamento de Listas
 const isListModalOpen = ref(false)
 const listFormError = ref('')
+const listFormErrorDetail = ref('')
 const isConnecting = ref(false)
 const isSwitching = ref(false)
 let listTriggerId = 'btn-manage-lists'
@@ -171,16 +172,33 @@ const defaultLiveCards = [
 
 // Temporadas e Episódios da Série Ativa
 const availableSeasons = computed(() => {
-  if (!seriesInfo.value || !Array.isArray(seriesInfo.value.seasons) || seriesInfo.value.seasons.length === 0) {
+  if (!seriesInfo.value) return [{ season_number: 1, name: 'Temporada 1', episode_count: 8 }]
+  let seasons = seriesInfo.value.seasons
+  if (seasons && !Array.isArray(seasons) && typeof seasons === 'object') {
+    seasons = Object.values(seasons)
+  }
+  if (!Array.isArray(seasons) || seasons.length === 0) {
+    if (seriesInfo.value.episodes && typeof seriesInfo.value.episodes === 'object') {
+      const keys = Object.keys(seriesInfo.value.episodes)
+      if (keys.length > 0) {
+        return keys.map((k) => ({
+          season_number: parseInt(k, 10) || 1,
+          name: `Temporada ${k}`,
+        }))
+      }
+    }
     return [{ season_number: 1, name: 'Temporada 1', episode_count: 8 }]
   }
-  return seriesInfo.value.seasons
+  return seasons
 })
 
 const episodesForActiveSeason = computed(() => {
   if (!seriesInfo.value || !seriesInfo.value.episodes) return []
-  const eps = seriesInfo.value.episodes[String(activeSeasonNumber.value)] || []
-  return Array.isArray(eps) ? eps : []
+  const eps = seriesInfo.value.episodes[String(activeSeasonNumber.value)]
+  if (!eps) return []
+  if (Array.isArray(eps)) return eps
+  if (typeof eps === 'object') return Object.values(eps)
+  return []
 })
 
 const displayVodCards = computed(() => {
@@ -235,6 +253,15 @@ async function loadCatalogShowcase(force = false) {
     }
   } catch (_) {}
 }
+
+watch(
+  () => [catalog.status.vod.state, catalog.status.live.state],
+  ([vodState, liveState]) => {
+    if (vodState === 'ready' || liveState === 'ready') {
+      loadCatalogShowcase()
+    }
+  },
+)
 
 function handleCardPlay(card, section) {
   if (card.directUrl) {
@@ -327,6 +354,7 @@ function openListModal() {
   listTriggerId = document.activeElement?.id || 'btn-manage-lists'
   isListModalOpen.value = true
   listFormError.value = ''
+  listFormErrorDetail.value = ''
   listForm.value = { label: '', dns: '', username: '', password: '' }
 
   nextTick(() => {
@@ -368,9 +396,11 @@ async function handleSwitchList(listId) {
   try {
     isSwitching.value = true
     listFormError.value = ''
+    listFormErrorDetail.value = ''
     const ok = await auth.switchList(listId)
     if (!ok) {
       listFormError.value = auth.error || 'Não foi possível alternar para a lista selecionada.'
+      listFormErrorDetail.value = auth.errorDetail || ''
       return
     }
     vodShowcase.value = []
@@ -383,6 +413,7 @@ async function handleSwitchList(listId) {
     await loadCatalogShowcase(true)
   } catch (err) {
     listFormError.value = err.message || 'Falha ao alternar para a lista selecionada.'
+    listFormErrorDetail.value = err.detail || String(err)
   } finally {
     isSwitching.value = false
   }
@@ -391,21 +422,25 @@ async function handleSwitchList(listId) {
 async function handleRemoveList(listId) {
   try {
     listFormError.value = ''
+    listFormErrorDetail.value = ''
     await auth.removeList(listId)
   } catch (err) {
     listFormError.value = err.message || 'Falha ao excluir a lista.'
+    listFormErrorDetail.value = err.detail || String(err)
   }
 }
 
 async function handleAddNewList() {
   if (!listForm.value.dns) {
     listFormError.value = 'Informe o Link Curto ou URL do Servidor.'
+    listFormErrorDetail.value = 'Campo DNS vazio.'
     return
   }
 
   try {
     isConnecting.value = true
     listFormError.value = ''
+    listFormErrorDetail.value = ''
     const ok = await auth.login({
       dns: listForm.value.dns,
       username: listForm.value.username,
@@ -414,6 +449,7 @@ async function handleAddNewList() {
     })
     if (!ok) {
       listFormError.value = auth.error || 'Não foi possível conectar a esta lista. Verifique os dados.'
+      listFormErrorDetail.value = auth.errorDetail || ''
       return
     }
     vodShowcase.value = []
@@ -426,6 +462,7 @@ async function handleAddNewList() {
     await loadCatalogShowcase(true)
   } catch (err) {
     listFormError.value = err.message || 'Falha ao conectar com o servidor.'
+    listFormErrorDetail.value = err.detail || String(err)
   } finally {
     isConnecting.value = false
   }
@@ -1357,15 +1394,23 @@ onBeforeUnmount(() => {
         <!-- Mensagem de Erro -->
         <div
           v-if="listFormError"
-          class="mt-4 p-3 rounded-lg bg-red-500/15 border border-red-500/30 text-red-300 text-tv-xs flex items-center gap-2"
+          class="mt-4 p-4 rounded-xl bg-red-500/15 border border-red-500/30 text-red-300 text-tv-xs flex flex-col gap-2"
           role="alert"
         >
-          <svg class="w-4 h-4 text-red-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10" />
-            <line x1="12" y1="8" x2="12" y2="12" />
-            <line x1="12" y1="16" x2="12.01" y2="16" />
-          </svg>
-          <span>{{ listFormError }}</span>
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-red-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="8" x2="12" y2="12" />
+              <line x1="12" y1="16" x2="12.01" y2="16" />
+            </svg>
+            <span class="font-semibold">{{ listFormError }}</span>
+          </div>
+          <p
+            v-if="listFormErrorDetail"
+            class="font-mono text-tv-xs text-red-300/90 bg-black/50 border border-red-500/20 rounded p-2.5 break-all"
+          >
+            Causa técnica: {{ listFormErrorDetail }}
+          </p>
         </div>
 
         <!-- Conteúdo do Modal: 2 Colunas -->
@@ -1460,11 +1505,14 @@ onBeforeUnmount(() => {
 
           <!-- Coluna 2: Adicionar Nova Lista -->
           <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08]">
-            <h3 class="text-tv-sm font-bold text-neutral-200 mb-3 uppercase tracking-wider text-[0.75rem]">
+            <h3 class="text-tv-sm font-bold text-neutral-200 mb-1 uppercase tracking-wider text-[0.75rem]">
               Adicionar Nova Lista
             </h3>
+            <p class="text-[0.7rem] text-neutral-400 mb-3">
+              Navegue com as setas e pressione OK para abrir o teclado
+            </p>
 
-            <form class="space-y-3.5 overflow-y-auto pr-2" @submit.prevent="handleAddNewList">
+            <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem]" @submit.prevent="handleAddNewList">
               <div>
                 <label for="new-list-label" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
                   Nome / Apelido (opcional)
@@ -1473,6 +1521,8 @@ onBeforeUnmount(() => {
                   id="new-list-label"
                   v-model="listForm.label"
                   type="text"
+                  readonly="readonly"
+                  data-tv-editing="false"
                   class="tv-input w-full"
                   placeholder="Ex: Minha Lista VIP"
                 />
@@ -1486,6 +1536,8 @@ onBeforeUnmount(() => {
                   id="new-list-dns"
                   v-model="listForm.dns"
                   type="text"
+                  readonly="readonly"
+                  data-tv-editing="false"
                   class="tv-input w-full"
                   placeholder="Ex: n.tv/vip ou servidor.com:8080"
                 />
@@ -1499,6 +1551,8 @@ onBeforeUnmount(() => {
                   id="new-list-user"
                   v-model="listForm.username"
                   type="text"
+                  readonly="readonly"
+                  data-tv-editing="false"
                   class="tv-input w-full"
                   placeholder="Seu usuário"
                 />
@@ -1512,6 +1566,8 @@ onBeforeUnmount(() => {
                   id="new-list-pass"
                   v-model="listForm.password"
                   type="password"
+                  readonly="readonly"
+                  data-tv-editing="false"
                   class="tv-input w-full"
                   placeholder="Sua senha"
                 />
@@ -1758,6 +1814,8 @@ onBeforeUnmount(() => {
                 id="input-profile-name"
                 v-model="newProfileName"
                 type="text"
+                readonly="readonly"
+                data-tv-editing="false"
                 class="tv-input w-full"
                 placeholder="Ex: Quarto, Família, Kids"
                 @keyup.enter="handleCreateProfile"

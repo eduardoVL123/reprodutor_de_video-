@@ -105,18 +105,40 @@ export const usePlayerStore = defineStore('player', () => {
       storage.get(queueKey),
       storage.get(historyKey),
     ])
-      .then(([savedQueue, savedHistory]) => {
+      .then(async ([savedQueue, savedHistory]) => {
         if (gen !== generation) return
-        if (Array.isArray(savedQueue)) {
-          customQueue.value = savedQueue
+        let finalQueue = savedQueue
+        let finalHistory = savedHistory
+        const profileId = (() => {
+          try {
+            return useProfileStore().activeProfileId
+          } catch (_) {
+            return ''
+          }
+        })()
+        if ((!finalQueue || !finalQueue.length) && (!profileId || profileId === 'p1')) {
+          try {
+            const legacyQueue = await storage.get('player:customQueue')
+            if (Array.isArray(legacyQueue) && legacyQueue.length > 0) finalQueue = legacyQueue
+          } catch (_) {}
+        }
+        if ((!finalHistory || !finalHistory.length) && (!profileId || profileId === 'p1')) {
+          try {
+            const legacyHistory = await storage.get('player:watchHistory')
+            if (Array.isArray(legacyHistory) && legacyHistory.length > 0) finalHistory = legacyHistory
+          } catch (_) {}
+        }
+
+        if (Array.isArray(finalQueue)) {
+          customQueue.value = finalQueue
             .map((it) => toPlainItem(it, it && it.section))
             .filter(Boolean)
             .slice(0, CUSTOM_QUEUE_MAX)
         } else {
           customQueue.value = []
         }
-        if (Array.isArray(savedHistory)) {
-          watchHistory.value = savedHistory
+        if (Array.isArray(finalHistory)) {
+          watchHistory.value = finalHistory
             .map((it) => ({
               ...toPlainItem(it, it && it.section),
               currentTime: Number(it.currentTime || 0),

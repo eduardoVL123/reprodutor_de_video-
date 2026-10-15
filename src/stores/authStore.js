@@ -6,6 +6,7 @@ import { clearCatalog } from '@/services/catalogDb'
 import {
   authenticate,
   resolveShortInput,
+  fetchM3uText,
   GENERIC_CONNECTION_ERROR,
   MISSING_CREDENTIALS_ERROR,
 } from '@/services/xtreamApi'
@@ -46,6 +47,7 @@ export const useAuthStore = defineStore('auth', () => {
   const hydrated = ref(false)
   const loading = ref(false)
   const error = ref('')
+  const errorDetail = ref('')
 
   const isAuthenticated = computed(() => session.value !== null)
   const username = computed(() => session.value?.username ?? '')
@@ -95,6 +97,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (loading.value) return false
     loading.value = true
     error.value = ''
+    errorDetail.value = ''
 
     try {
       const resolved = await resolveShortInput({ dns, username: user, password })
@@ -258,12 +261,13 @@ export const useAuthStore = defineStore('auth', () => {
       hydrated.value = true
       return true
     } catch (err) {
-      console.warn('[auth] Falha no login:', err && err.code, err && err.detail)
-      if (err && err.code === 'missing_credentials') {
+      console.warn('[auth] Falha no login:', err && (err.code || err.message), err && (err.technicalDetail || err.detail))
+      if (err && (err.code === 'missing_credentials' || err.code === 'MISSING_CREDENTIALS')) {
         error.value = MISSING_CREDENTIALS_ERROR
       } else {
-        error.value = err?.message || GENERIC_CONNECTION_ERROR
+        error.value = err?.userMessage || err?.message || GENERIC_CONNECTION_ERROR
       }
+      errorDetail.value = err?.technicalDetail || err?.detail || String(err?.message || err || '')
       return false
     } finally {
       loading.value = false
@@ -281,6 +285,7 @@ export const useAuthStore = defineStore('auth', () => {
 
     loading.value = true
     error.value = ''
+    errorDetail.value = ''
     try {
       if (item.type === 'm3u') {
         const next = {
@@ -309,8 +314,7 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (_) {}
 
         try {
-          const res = await fetch(item.resolvedUrl || item.baseUrl)
-          const text = await res.text()
+          const { text } = await fetchM3uText(item.resolvedUrl || item.baseUrl)
           await importM3uCatalog(text)
         } catch (fetchErr) {
           console.warn('[auth] Falha ao recarregar M3U:', fetchErr)
@@ -359,7 +363,8 @@ export const useAuthStore = defineStore('auth', () => {
       return true
     } catch (err) {
       console.warn('[auth] Falha ao alternar lista:', err)
-      error.value = err?.message || GENERIC_CONNECTION_ERROR
+      error.value = err?.userMessage || err?.message || GENERIC_CONNECTION_ERROR
+      errorDetail.value = err?.technicalDetail || err?.detail || String(err?.message || err || '')
       return false
     } finally {
       loading.value = false
@@ -388,6 +393,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout() {
     session.value = null
     error.value = ''
+    errorDetail.value = ''
     try {
       const catalogStore = useCatalogStore()
       await catalogStore.resetCatalogState()
@@ -407,6 +413,7 @@ export const useAuthStore = defineStore('auth', () => {
 
   function clearError() {
     error.value = ''
+    errorDetail.value = ''
   }
 
   return {
@@ -415,6 +422,7 @@ export const useAuthStore = defineStore('auth', () => {
     hydrated,
     loading,
     error,
+    errorDetail,
     isAuthenticated,
     username,
     currentListId,

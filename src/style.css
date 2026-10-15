@@ -59,4 +59,9 @@ body,
   .tv-input:focus {
     @apply scale-[1.01] border-white ring-1 ring-white;
   }
+  .tv-input[data-tv-editing="true"] {
+    border-color: #e50914 !important;
+    background-color: #18181c !important;
+    box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.35);
+  }
 }

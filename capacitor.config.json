@@ -4,10 +4,16 @@
   "webDir": "dist",
   "server": {
     "androidScheme": "http",
-    "cleartext": true
+    "cleartext": true,
+    "allowNavigation": ["*"]
   },
   "android": {
     "allowMixedContent": true,
-    "captureInput": true
+    "captureInput": false
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
   }
 }

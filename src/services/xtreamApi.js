@@ -1,32 +1,119 @@
 /**
  * Cliente da API Xtream Codes (genérico, sem nenhum endereço pré-configurado).
  *
- * Redirecionamentos (301/302/307/308): `fetch` com `redirect: 'follow'` os segue
- * automaticamente. Quando houver redirecionamento, `response.redirected` e
- * `response.url` revelam o host final, que guardamos como `resolvedUrl` para que
- * as próximas chamadas (catálogo de 50.000+ itens) não paguem o salto extra.
+ * REGRA DE OURO (RFC-007): com usuário e senha preenchidos NUNCA fazemos fetch na
+ * raiz "/" do servidor — vamos direto em `/player_api.php`. Servidores reais
+ * redirecionam a raiz para páginas bloqueadas/HTTPS inválidos e isso quebrava o login.
  *
- * CORS: em apps empacotados (Tizen/webOS) o WebView não aplica CORS do mesmo modo
- * que um navegador; no navegador de desenvolvimento, o proxy do DNS curto
- * (RFC §4.1) é quem deve liberar os cabeçalhos.
+ * Redirecionamentos (301/302/307/308): `fetch` com `redirect: 'follow'` os segue
+ * automaticamente. O host final (via `X-Final-Url` do proxy ou `response.url`) é
+ * guardado como `resolvedUrl` para que as próximas chamadas não paguem o salto extra.
+ *
+ * CORS:
+ *  - APK Android TV: `CapacitorHttp` intercepta o `fetch` (motor nativo, sem CORS).
+ *  - PC (vite em localhost): `smartFetch` refaz a chamada via `/__proxy__`.
+ *  - Tizen/webOS empacotados: o WebView não aplica CORS do mesmo modo.
+ *
+ * Erros: toda falha vira um `XtreamError` com `code`, `userMessage` (português,
+ * para o usuário) e `technicalDetail` (diagnóstico, SEMPRE com a senha mascarada).
  */
+
+import { canUseDevProxy, devProxyUrl, maskSecrets } from '@/services/netEnv'
 
 export const GENERIC_CONNECTION_ERROR =
   'Falha ao conectar. Verifique seus dados ou a conexão com a internet.'
 
 export const DEFAULT_TIMEOUT_MS = 15000
+export const PLAYLIST_TIMEOUT_MS = 90000
 
 export const MISSING_CREDENTIALS_ERROR =
   'Este link exige Usuário e Senha. Preencha os campos abaixo.'
 
+export const ERROR_CODES = {
+  AUTH_INVALID_CREDENTIALS: 'AUTH_INVALID_CREDENTIALS',
+  AUTH_ACCOUNT_EXPIRED: 'AUTH_ACCOUNT_EXPIRED',
+  HTTP_ERROR: 'HTTP_ERROR',
+  TIMEOUT_ERROR: 'TIMEOUT_ERROR',
+  CORS_OR_NETWORK_ERROR: 'CORS_OR_NETWORK_ERROR',
+  INVALID_FORMAT_ERROR: 'INVALID_FORMAT_ERROR',
+  EMPTY_M3U_ERROR: 'EMPTY_M3U_ERROR',
+  INVALID_URL_ERROR: 'INVALID_URL_ERROR',
+  MISSING_CREDENTIALS: 'MISSING_CREDENTIALS',
+  INVALID_INPUT: 'INVALID_INPUT',
+  NO_SESSION: 'NO_SESSION',
+}
+
+// Compatibilidade com códigos antigos (minúsculos) ainda usados em chamadas legadas.
+const LEGACY_CODES = {
+  invalid_url: ERROR_CODES.INVALID_URL_ERROR,
+  invalid_input: ERROR_CODES.INVALID_INPUT,
+  timeout: ERROR_CODES.TIMEOUT_ERROR,
+  network: ERROR_CODES.CORS_OR_NETWORK_ERROR,
+  http: ERROR_CODES.HTTP_ERROR,
+  bad_response: ERROR_CODES.INVALID_FORMAT_ERROR,
+  unauthorized: ERROR_CODES.AUTH_INVALID_CREDENTIALS,
+  missing_credentials: ERROR_CODES.MISSING_CREDENTIALS,
+}
+
+function buildUserMessage(code, ctx) {
+  switch (code) {
+    case ERROR_CODES.AUTH_INVALID_CREDENTIALS:
+      return 'Usuário ou senha incorretos recusados pelo servidor.'
+    case ERROR_CODES.AUTH_ACCOUNT_EXPIRED:
+      return `Conta inativa ou expirada no servidor (Status: ${ctx.accountStatus || 'desconhecido'}).`
+    case ERROR_CODES.HTTP_ERROR:
+      return `O servidor retornou erro HTTP ${ctx.status || '?'} (${ctx.statusText || 'sem descrição'}).`
+    case ERROR_CODES.TIMEOUT_ERROR:
+      return `Tempo limite esgotado (${ctx.timeoutSec || '?'}s). O servidor demorou muito para responder.`
+    case ERROR_CODES.CORS_OR_NETWORK_ERROR:
+      return 'Falha de conexão com o servidor (DNS incorreto, servidor fora do ar ou bloqueio de rede/CORS).'
+    case ERROR_CODES.INVALID_FORMAT_ERROR:
+      return 'O servidor respondeu, mas não enviou dados Xtream Codes nem uma lista #EXTM3U válida.'
+    case ERROR_CODES.EMPTY_M3U_ERROR:
+      return 'A lista #EXTM3U foi baixada, mas não contém nenhum canal ou vídeo válido.'
+    case ERROR_CODES.INVALID_URL_ERROR:
+      return 'Endereço inválido. Informe algo como "servidor.com:8080" ou "http://servidor.com".'
+    case ERROR_CODES.MISSING_CREDENTIALS:
+      return MISSING_CREDENTIALS_ERROR
+    case ERROR_CODES.INVALID_INPUT:
+      return ctx.raw || 'Preencha os campos obrigatórios.'
+    case ERROR_CODES.NO_SESSION:
+      return 'Nenhuma lista ativa. Conecte-se novamente.'
+    default:
+      return GENERIC_CONNECTION_ERROR
+  }
+}
+
 export class XtreamError extends Error {
-  /** @param {string} code  invalid_url | invalid_input | timeout | network | http | bad_response | unauthorized | missing_credentials */
-  constructor(code, detail = '') {
-    const msg = code === 'missing_credentials' ? MISSING_CREDENTIALS_ERROR : GENERIC_CONNECTION_ERROR
-    super(msg) // mensagem sempre amigável e única para o usuário
+  /**
+   * @param {string} code  um dos ERROR_CODES (aceita os códigos legados minúsculos)
+   * @param {string|{raw?:string, host?:string, endpoint?:string, status?:number,
+   *          statusText?:string, timeoutSec?:number, accountStatus?:string}} [info]
+   */
+  constructor(code, info) {
+    const normalized = LEGACY_CODES[code] || code || 'UNKNOWN_ERROR'
+    const ctx = typeof info === 'string' ? { raw: info } : info || {}
+    const userMessage = buildUserMessage(normalized, ctx)
+    super(userMessage)
     this.name = 'XtreamError'
-    this.code = code
-    this.detail = detail // somente para diagnóstico em console (nunca contém a senha)
+    this.code = normalized
+    this.userMessage = userMessage
+    this.technicalDetail = maskSecrets(
+      `[${normalized}] Host: ${ctx.host || '-'} | Endpoint: ${ctx.endpoint || '-'} | Detalhe: ${ctx.raw || '-'}`,
+    )
+    this.detail = this.technicalDetail // compatibilidade com logs antigos
+    this.status = ctx.status || 0
+  }
+}
+
+/** Host e endpoint (sem credenciais) de uma URL, para diagnóstico. */
+function describeUrl(url) {
+  try {
+    const u = new URL(url)
+    const action = u.searchParams.get('action')
+    return { host: u.origin, endpoint: `${u.pathname}${action ? `?action=${action}` : ''}` }
+  } catch (_) {
+    return { host: String(url || '-'), endpoint: '-' }
   }
 }
 
@@ -38,8 +125,8 @@ export class XtreamError extends Error {
  * @returns {string} base sem barra final, ex.: "http://dominio.xyz:8080"
  */
 export function normalizeBaseUrl(input) {
-  const raw = String(input ?? '').trim()
-  if (!raw) throw new XtreamError('invalid_url', 'DNS vazio')
+  const raw = String(input == null ? '' : input).trim()
+  if (!raw) throw new XtreamError(ERROR_CODES.INVALID_URL_ERROR, 'DNS vazio')
 
   const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`
 
@@ -47,16 +134,14 @@ export function normalizeBaseUrl(input) {
   try {
     url = new URL(withScheme)
   } catch (_) {
-    throw new XtreamError('invalid_url', 'URL malformada')
+    throw new XtreamError(ERROR_CODES.INVALID_URL_ERROR, `URL malformada: ${raw}`)
   }
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new XtreamError('invalid_url', 'Protocolo não suportado')
+    throw new XtreamError(ERROR_CODES.INVALID_URL_ERROR, `Protocolo não suportado: ${url.protocol}`)
   }
-  if (!url.hostname) throw new XtreamError('invalid_url', 'Host ausente')
+  if (!url.hostname) throw new XtreamError(ERROR_CODES.INVALID_URL_ERROR, 'Host ausente')
 
-  const path = url.pathname
-    .replace(/\/(player_api|get|panel_api)\.php$/i, '')
-    .replace(/\/+$/, '')
+  const path = url.pathname.replace(/\/(player_api|get|panel_api)\.php$/i, '').replace(/\/+$/, '')
 
   return `${url.origin}${path}`
 }
@@ -78,14 +163,21 @@ export function buildApiUrl(baseUrl, { username, password, action, params } = {}
  * fetch com timeout garantido. Usa Promise.race (e não só AbortController) porque
  * WebViews de TVs mais antigas (Chromium < 66) não têm AbortController.
  */
-function fetchWithTimeout(url, timeoutMs) {
+function fetchWithTimeout(url, timeoutMs, accept, diagUrl) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const where = describeUrl(diagUrl || url)
   let timer
 
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
       if (controller) controller.abort()
-      reject(new XtreamError('timeout', `Sem resposta em ${timeoutMs}ms`))
+      reject(
+        new XtreamError(ERROR_CODES.TIMEOUT_ERROR, {
+          ...where,
+          timeoutSec: Math.round(timeoutMs / 1000),
+          raw: `Sem resposta em ${timeoutMs}ms`,
+        }),
+      )
     }, timeoutMs)
   })
 
@@ -95,10 +187,11 @@ function fetchWithTimeout(url, timeoutMs) {
     credentials: 'omit',
     cache: 'no-store',
     signal: controller ? controller.signal : undefined,
-    headers: { Accept: 'application/json' },
+    headers: { Accept: accept || 'application/json, text/plain, */*' },
   }).catch((err) => {
     if (err instanceof XtreamError) throw err
-    throw new XtreamError('network', err && err.message)
+    const raw = `${(err && err.name) || 'Error'}: ${(err && err.message) || 'falha de rede'}`
+    throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, { ...where, raw })
   })
 
   return Promise.race([request, timeout]).then(
@@ -114,49 +207,116 @@ function fetchWithTimeout(url, timeoutMs) {
 }
 
 /**
+ * fetch "inteligente":
+ *  1. tenta direto (no APK o CapacitorHttp já elimina o CORS);
+ *  2. se falhar por rede/CORS no PC (localhost), refaz via `/__proxy__`.
+ * @returns {Promise<{ res: Response, finalUrl: string, viaProxy: boolean }>}
+ */
+export async function smartFetch(url, { timeoutMs = DEFAULT_TIMEOUT_MS, accept } = {}) {
+  try {
+    const res = await fetchWithTimeout(url, timeoutMs, accept)
+    return { res, finalUrl: res.url || url, viaProxy: false }
+  } catch (err) {
+    if (!(err instanceof XtreamError) || err.code !== ERROR_CODES.CORS_OR_NETWORK_ERROR || !canUseDevProxy()) {
+      throw err
+    }
+    const directDetail = err.technicalDetail
+    const res = await fetchWithTimeout(devProxyUrl(url), timeoutMs, accept, url)
+    if (res.headers.get('X-Proxy-Error')) {
+      let proxyMsg = ''
+      try {
+        proxyMsg = await res.text()
+      } catch (_) {}
+      throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, {
+        ...describeUrl(url),
+        raw: `${proxyMsg || `Proxy HTTP ${res.status}`} (tentativa direta: ${directDetail})`,
+      })
+    }
+    return { res, finalUrl: res.headers.get('X-Final-Url') || url, viaProxy: true }
+  }
+}
+
+/** Lê o corpo como JSON validando HTTP e formato. */
+async function readJson(res, url) {
+  const where = describeUrl(url)
+  if (!res.ok) {
+    throw new XtreamError(ERROR_CODES.HTTP_ERROR, {
+      ...where,
+      status: res.status,
+      statusText: res.statusText,
+      raw: `HTTP ${res.status} ${res.statusText || ''}`.trim(),
+    })
+  }
+  let text = ''
+  try {
+    text = await res.text()
+  } catch (err) {
+    throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, { ...where, raw: `Corpo interrompido: ${err && err.message}` })
+  }
+  try {
+    return JSON.parse(text)
+  } catch (_) {
+    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 80)
+    throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, {
+      ...where,
+      raw: `Resposta não é JSON. Início: "${snippet || '(vazio)'}"`,
+    })
+  }
+}
+
+function baseFromFinalUrl(finalUrl, requestedBase) {
+  if (!finalUrl) return null
+  try {
+    const resolved = normalizeBaseUrl(String(finalUrl).split('?')[0])
+    return resolved !== requestedBase ? resolved : null
+  } catch (_) {
+    return null
+  }
+}
+
+/**
  * Requisição genérica ao `player_api.php`.
  * @returns {Promise<{ data: any, resolvedUrl: string|null }>} `resolvedUrl` só vem
- *          preenchido quando houve redirecionamento.
+ *          preenchido quando houve redirecionamento para outro host/caminho.
  */
 export async function apiRequest(baseUrl, credentials, { action, params, timeoutMs } = {}) {
-  const url = buildApiUrl(baseUrl, { ...credentials, action, params })
-  const res = await fetchWithTimeout(url, timeoutMs || DEFAULT_TIMEOUT_MS)
-
-  if (!res.ok) throw new XtreamError('http', `HTTP ${res.status}`)
-
-  let data
-  try {
-    data = await res.json()
-  } catch (_) {
-    throw new XtreamError('bad_response', 'Resposta não é JSON válido')
-  }
-
-  let resolvedUrl = null
-  if (res.redirected && res.url) {
-    try {
-      resolvedUrl = normalizeBaseUrl(res.url.split('?')[0])
-    } catch (_) {
-      resolvedUrl = null
-    }
-  }
-  return { data, resolvedUrl }
+  const url = buildApiUrl(baseUrl, { ...(credentials || {}), action, params })
+  const { res, finalUrl } = await smartFetch(url, { timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS })
+  const data = await readJson(res, url)
+  return { data, resolvedUrl: baseFromFinalUrl(finalUrl, baseUrl) }
 }
 
 /**
  * Busca detalhes, temporadas e episódios de uma série no Xtream Codes.
  * @param {{ apiBase: string, credentials: { username: string, password: string }, seriesId: string|number, timeoutMs?: number }} params
- * @returns {Promise<any>}
  */
 export async function fetchSeriesInfo({ apiBase, credentials, seriesId, timeoutMs }) {
   if (!apiBase || !credentials || seriesId === undefined || seriesId === null) {
-    throw new XtreamError('invalid_input', 'Parâmetros insuficientes para buscar informações da série')
+    throw new XtreamError(ERROR_CODES.NO_SESSION, 'Parâmetros insuficientes para buscar informações da série')
   }
   const { data } = await apiRequest(apiBase, credentials, {
     action: 'get_series_info',
     params: { series_id: seriesId },
     timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS,
   })
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, {
+      ...describeUrl(buildApiUrl(apiBase, { action: 'get_series_info' })),
+      raw: `get_series_info retornou ${Array.isArray(data) ? 'uma lista vazia' : typeof data}`,
+    })
+  }
   return data
+}
+
+/** Variante http://host:8080 usada quando o host padrão falha (redirect HTTPS com SSL inválido). */
+function port8080Variant(baseUrl) {
+  try {
+    const u = new URL(baseUrl)
+    if (u.port) return null
+    return `http://${u.hostname}:8080${u.pathname.replace(/\/+$/, '')}`
+  } catch (_) {
+    return null
+  }
 }
 
 /**
@@ -165,136 +325,202 @@ export async function fetchSeriesInfo({ apiBase, credentials, seriesId, timeoutM
  * @returns {Promise<{baseUrl:string, resolvedUrl:string|null, userInfo:object, serverInfo:object}>}
  */
 export async function authenticate({ dns, username, password, timeoutMs }) {
-  const user = String(username ?? '').trim()
-  const pass = String(password ?? '')
-  if (!user || !pass) throw new XtreamError('invalid_input', 'Usuário ou senha vazios')
+  const user = String(username == null ? '' : username).trim()
+  const pass = String(password == null ? '' : password)
+  if (!user || !pass) throw new XtreamError(ERROR_CODES.INVALID_INPUT, 'Preencha usuário e senha.')
 
   const baseUrl = normalizeBaseUrl(dns)
-  const { data, resolvedUrl } = await apiRequest(
-    baseUrl,
-    { username: user, password: pass },
-    { timeoutMs },
-  )
+  const candidates = [baseUrl]
+  const alt = port8080Variant(baseUrl)
+  if (alt && alt !== baseUrl) candidates.push(alt)
+
+  let result = null
+  let usedBase = baseUrl
+  let lastErr = null
+  for (let i = 0; i < candidates.length; i++) {
+    try {
+      result = await apiRequest(candidates[i], { username: user, password: pass }, { timeoutMs })
+      usedBase = candidates[i]
+      break
+    } catch (err) {
+      lastErr = err
+      const retryable = err && err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR
+      if (!retryable || i === candidates.length - 1) throw err
+      console.warn('[xtream] Host padrão falhou, tentando porta 8080:', err.technicalDetail)
+    }
+  }
+  if (!result) throw lastErr || new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, 'Sem resposta')
+
+  const data = result.data
+  const where = describeUrl(buildApiUrl(usedBase, {}))
+  const isEmpty =
+    data === null ||
+    data === false ||
+    (Array.isArray(data) && data.length === 0) ||
+    (typeof data === 'object' && !Array.isArray(data) && Object.keys(data).length === 0)
+  if (isEmpty) {
+    throw new XtreamError(ERROR_CODES.AUTH_INVALID_CREDENTIALS, { ...where, raw: 'player_api.php respondeu vazio' })
+  }
 
   const info = data && data.user_info
-  const authorized = info && typeof info === 'object' && String(info.auth) === '1'
-  const status = info && info.status ? String(info.status).toLowerCase() : 'active'
-
-  if (!authorized || status !== 'active') {
-    throw new XtreamError('unauthorized', `auth=${info && info.auth} status=${status}`)
+  if (!info || typeof info !== 'object') {
+    throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, { ...where, raw: 'JSON sem o campo "user_info"' })
+  }
+  if (String(info.auth) !== '1') {
+    throw new XtreamError(ERROR_CODES.AUTH_INVALID_CREDENTIALS, { ...where, raw: `user_info.auth=${info.auth}` })
+  }
+  const rawStatus = info.status ? String(info.status) : 'Active'
+  if (rawStatus.toLowerCase() !== 'active') {
+    throw new XtreamError(ERROR_CODES.AUTH_ACCOUNT_EXPIRED, {
+      ...where,
+      accountStatus: rawStatus,
+      raw: `user_info.status=${rawStatus} exp_date=${info.exp_date || '-'}`,
+    })
   }
 
   return {
     baseUrl,
-    resolvedUrl,
+    resolvedUrl: result.resolvedUrl || (usedBase !== baseUrl ? usedBase : null),
     userInfo: info,
     serverInfo: (data && data.server_info) || {},
   }
 }
 
+/** Baixa uma playlist #EXTM3U (com proxy/CORS tratado) e valida o cabeçalho. */
+export async function fetchM3uText(url, { timeoutMs = PLAYLIST_TIMEOUT_MS } = {}) {
+  const { res, finalUrl } = await smartFetch(url, { timeoutMs, accept: '*/*' })
+  const where = describeUrl(url)
+  if (!res.ok) {
+    throw new XtreamError(ERROR_CODES.HTTP_ERROR, {
+      ...where,
+      status: res.status,
+      statusText: res.statusText,
+      raw: `HTTP ${res.status} ao baixar a playlist`,
+    })
+  }
+  const text = await res.text()
+  if (!text || text.replace(/^\uFEFF/, '').trim().indexOf('#EXTM3U') !== 0) {
+    const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80)
+    throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, {
+      ...where,
+      raw: `Cabeçalho #EXTM3U ausente. Início: "${snippet || '(vazio)'}"`,
+    })
+  }
+  return { text, finalUrl }
+}
+
+function credsFromUrl(urlString) {
+  try {
+    const u = new URL(urlString)
+    const qUser = u.searchParams.get('username')
+    const qPass = u.searchParams.get('password')
+    return qUser && qPass ? { username: qUser, password: qPass } : null
+  } catch (_) {
+    return null
+  }
+}
+
 /**
- * Resolvedor Inteligente de Link Curto (RFC-005):
- * - Normaliza protocolo (http:// ou https://)
- * - Segue redirecionamentos 301/302/307/308
- * - Auto-extrai username e password de URLs encurtadas (ex.: get.php?username=... ou /v)
- * - Detecta listas M3U puras (#EXTM3U)
+ * Resolvedor de entrada (Link Curto / URL Xtream / Playlist M3U):
+ *  - Com usuário e senha (e URL que não seja playlist): NÃO faz nenhum fetch aqui;
+ *    o `authenticate` chama `/player_api.php` diretamente.
+ *  - URL com `?username=&password=` embutidos: extrai as credenciais sem fetch.
+ *  - Link curto de 1 campo, `.m3u`, `.m3u8` ou `get.php`: baixa seguindo
+ *    redirecionamentos e detecta credenciais na URL final ou uma lista #EXTM3U.
  * @returns {Promise<{ mode: 'xtream'|'m3u', resolvedUrl: string, baseUrl: string, username?: string, password?: string, m3uText?: string }>}
  */
 export async function resolveShortInput({ dns, username = '', password = '', timeoutMs = DEFAULT_TIMEOUT_MS }) {
-  const raw = String(dns ?? '').trim()
-  if (!raw) throw new XtreamError('invalid_input', 'Link ou URL vazio')
+  const raw = String(dns == null ? '' : dns).trim()
+  if (!raw) throw new XtreamError(ERROR_CODES.INVALID_INPUT, 'Informe o Link Curto ou URL do Servidor.')
 
-  let user = String(username ?? '').trim()
-  let pass = String(password ?? '')
+  const user = String(username == null ? '' : username).trim()
+  const pass = String(password == null ? '' : password)
 
-  // 1. Garante protocolo inicial
   const hasProtocol = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
   let targetUrl = hasProtocol ? raw : `http://${raw}`
 
-  // Verifica se a URL de entrada já tem parâmetros de username e password
+  let parsed
   try {
-    const parsed = new URL(targetUrl)
-    const qUser = parsed.searchParams.get('username')
-    const qPass = parsed.searchParams.get('password')
-    if (qUser && qPass) {
-      user = qUser
-      pass = qPass
-      const resolved = normalizeBaseUrl(targetUrl)
-      return {
-        mode: 'xtream',
-        resolvedUrl: resolved,
-        baseUrl: resolved,
-        username: user,
-        password: pass,
-      }
-    }
-  } catch (_) {}
+    parsed = new URL(targetUrl)
+  } catch (_) {
+    throw new XtreamError(ERROR_CODES.INVALID_URL_ERROR, `URL malformada: ${raw}`)
+  }
 
-  // 2. Realiza fetch seguindo redirecionamentos
-  let res = null
+  // 1. Credenciais embutidas na própria URL (ex.: get.php?username=..&password=..)
+  const embedded = credsFromUrl(targetUrl)
+  if (embedded) {
+    const base = normalizeBaseUrl(targetUrl)
+    return { mode: 'xtream', resolvedUrl: base, baseUrl: base, ...embedded }
+  }
+
+  const isPlaylistUrl = /\.(m3u8?)$/i.test(parsed.pathname) || /\/get\.php$/i.test(parsed.pathname)
+
+  // 2. REGRA DE OURO: usuário + senha => direto no player_api.php, sem tocar na raiz.
+  if (user && pass && !isPlaylistUrl) {
+    const base = normalizeBaseUrl(targetUrl)
+    return { mode: 'xtream', resolvedUrl: base, baseUrl: base, username: user, password: pass }
+  }
+
+  // 3. Link curto / playlist: baixa seguindo redirecionamentos.
+  let fetched
   try {
-    res = await fetchWithTimeout(targetUrl, timeoutMs)
+    fetched = await smartFetch(targetUrl, { timeoutMs: Math.max(timeoutMs, PLAYLIST_TIMEOUT_MS), accept: '*/*' })
   } catch (err) {
-    if (!hasProtocol) {
-      try {
-        const httpsUrl = `https://${raw}`
-        res = await fetchWithTimeout(httpsUrl, timeoutMs)
-        targetUrl = httpsUrl
-      } catch (_) {
-        throw err
-      }
-    } else {
-      throw err
+    if (hasProtocol || !(err instanceof XtreamError) || err.code !== ERROR_CODES.CORS_OR_NETWORK_ERROR) throw err
+    const httpsUrl = `https://${raw}`
+    fetched = await smartFetch(httpsUrl, { timeoutMs: Math.max(timeoutMs, PLAYLIST_TIMEOUT_MS), accept: '*/*' })
+    targetUrl = httpsUrl
+  }
+
+  const { res, finalUrl } = fetched
+
+  // 3a. Credenciais na URL final pós-redirect
+  const finalCreds = credsFromUrl(finalUrl)
+  if (finalCreds) {
+    return {
+      mode: 'xtream',
+      resolvedUrl: normalizeBaseUrl(finalUrl),
+      baseUrl: normalizeBaseUrl(targetUrl),
+      ...finalCreds,
     }
   }
 
-  const finalUrlString = (res && res.url) || targetUrl
+  if (!res.ok) {
+    throw new XtreamError(ERROR_CODES.HTTP_ERROR, {
+      ...describeUrl(finalUrl),
+      status: res.status,
+      statusText: res.statusText,
+      raw: `HTTP ${res.status} ao resolver o link`,
+    })
+  }
 
-  // 3. Inspeciona a URL pós-redirect para credenciais
-  try {
-    const finalParsed = new URL(finalUrlString)
-    const qUser = finalParsed.searchParams.get('username')
-    const qPass = finalParsed.searchParams.get('password')
-    if (qUser && qPass) {
-      user = qUser
-      pass = qPass
-      const resolved = normalizeBaseUrl(finalUrlString)
-      return {
-        mode: 'xtream',
-        resolvedUrl: resolved,
-        baseUrl: normalizeBaseUrl(targetUrl),
-        username: user,
-        password: pass,
-      }
-    }
-  } catch (_) {}
-
-  // 4. Inspeciona o corpo da resposta para detecção de lista #EXTM3U
+  // 3b. Lista #EXTM3U pura
   let text = ''
   try {
     text = await res.text()
   } catch (_) {}
-
-  if (text && text.trim().startsWith('#EXTM3U')) {
+  if (text && text.replace(/^\uFEFF/, '').trim().indexOf('#EXTM3U') === 0) {
     return {
       mode: 'm3u',
       m3uText: text,
-      resolvedUrl: finalUrlString,
+      resolvedUrl: finalUrl,
       baseUrl: targetUrl,
       username: user || 'M3U Playlist',
       password: pass || '',
     }
   }
 
-  // 5. Se for Xtream e o usuário não informou credenciais
+  // 3c. Servidor Xtream (link curto) sem credenciais informadas
   if (!user || !pass) {
-    throw new XtreamError('missing_credentials', 'Link curto exige usuário e senha')
+    throw new XtreamError(ERROR_CODES.MISSING_CREDENTIALS, {
+      ...describeUrl(finalUrl),
+      raw: 'O link não contém credenciais nem uma lista #EXTM3U',
+    })
   }
 
-  const resolvedBase = normalizeBaseUrl(finalUrlString)
   return {
     mode: 'xtream',
-    resolvedUrl: resolvedBase,
+    resolvedUrl: normalizeBaseUrl(finalUrl),
     baseUrl: normalizeBaseUrl(targetUrl),
     username: user,
     password: pass,
