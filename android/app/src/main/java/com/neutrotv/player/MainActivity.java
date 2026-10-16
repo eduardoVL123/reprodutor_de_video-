@@ -1,5 +1,6 @@
 package com.neutrotv.player;
 
+import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -9,6 +10,7 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
+import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
@@ -82,8 +84,20 @@ public class MainActivity extends BridgeActivity {
 
             if (!webViewConfigured) {
                 webView.setWebViewClient(new CustomBridgeWebViewClient(getBridge()));
+                webView.setWebChromeClient(new CustomBridgeWebChromeClient(getBridge()));
                 webViewConfigured = true;
             }
+        }
+    }
+
+    private class CustomBridgeWebChromeClient extends BridgeWebChromeClient {
+        public CustomBridgeWebChromeClient(Bridge bridge) {
+            super(bridge);
+        }
+
+        @Override
+        public Bitmap getDefaultVideoPoster() {
+            return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
         }
     }
 

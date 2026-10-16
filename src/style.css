@@ -31,6 +31,21 @@ body,
   display: none;
 }
 
+/* Elimina o poster cinza e controles nativos da WebView em Android TV / Tizen / webOS */
+video {
+  background-color: #000000 !important;
+}
+video::-webkit-media-controls,
+video::-webkit-media-controls-enclosure,
+video::-webkit-media-controls-panel,
+video::-webkit-media-controls-overlay-play-button,
+video::-webkit-media-controls-start-playback-button {
+  display: none !important;
+  -webkit-appearance: none !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 @layer components {
   /* Foco de controle remoto Clean Cinema: fino, elegante e preciso */
   .tv-focusable {

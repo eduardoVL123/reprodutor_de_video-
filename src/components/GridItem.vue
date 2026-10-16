@@ -21,7 +21,7 @@ const image = computed(() => {
   if (!it) return ''
   if (it.stream_icon) return it.stream_icon
   if (it.cover) return it.cover
-  if (it.stream_id !== undefined && it.stream_id !== null && props.variant !== 'category') {
+  if (it.stream_id !== undefined && it.stream_id !== null && props.variant === 'poster') {
     return `https://picsum.photos/seed/tv-${it.stream_id}/400/600`
   }
   return ''
@@ -41,6 +41,15 @@ const label = computed(() => {
   return props.variant === 'category' ? it.category_name : it.name
 })
 
+const channelFirstName = computed(() => {
+  const parts = (label.value || '').trim().split(/\s+/)
+  return parts[0] || 'CANAL'
+})
+const channelSecondName = computed(() => {
+  const parts = (label.value || '').trim().split(/\s+/)
+  return parts.slice(1).join(' ') || 'AO VIVO'
+})
+
 const initial = computed(() => (label.value || '?').trim().charAt(0).toUpperCase())
 const showImage = computed(() => !!image.value && !imgFailed.value)
 </script>
@@ -48,9 +57,12 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
 <template>
   <button
     type="button"
-    class="tv-focusable block w-full h-full text-left rounded-xl border overflow-hidden
-           bg-[#121215] transition-colors"
-    :class="active ? 'border-[#e50914] bg-[#e50914]/15' : 'border-white/[0.08]'"
+    class="tv-focusable block w-full h-full text-left rounded-xl border overflow-hidden transition-colors"
+    :class="[
+      variant === 'category'
+        ? (active ? 'border-[#e50914] bg-[#e50914]/15 text-white font-bold' : 'border-white/[0.06] bg-[#121215]/80 text-neutral-300')
+        : (active ? 'border-[#e50914] bg-[#e50914]/15 bg-[#121215]' : 'border-white/[0.08] bg-[#121215]')
+    ]"
     :id="idPrefix ? `${idPrefix}-${index}` : undefined"
     :data-item-index="index"
     :data-grid-index="index"
@@ -58,33 +70,47 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
     @click="emit('select', item, index)"
   >
     <!-- Categoria -->
-    <div v-if="variant === 'category'" class="flex items-center justify-between h-full px-6">
-      <span class="text-tv-base font-semibold truncate pr-4 text-white">{{ label }}</span>
-      <span class="text-tv-sm text-neutral-400 shrink-0">{{ item && item.count }}</span>
+    <div v-if="variant === 'category'" class="flex items-center justify-between h-full px-4">
+      <span class="text-tv-sm font-medium truncate pr-3" :class="active ? 'text-white font-bold' : 'text-neutral-300'">
+        {{ label }}
+      </span>
     </div>
 
     <!-- Canal -->
-    <div v-else-if="variant === 'channel'" class="relative w-full h-full flex items-center gap-4 px-4 overflow-hidden">
-      <div
-        class="relative shrink-0 w-[5.5rem] h-[5.5rem] rounded-lg overflow-hidden bg-[#1a1a20] border border-white/10"
-      >
-        <img
-          v-if="showImage"
-          :key="image"
-          :src="image"
-          alt=""
-          loading="lazy"
-          referrerpolicy="no-referrer"
-          class="w-full h-full object-cover"
-          @error="onImgError"
-        />
-        <div v-else class="w-full h-full flex items-center justify-center">
-          <span class="text-tv-lg font-bold text-neutral-300">{{ initial }}</span>
+    <div v-else-if="variant === 'channel'" class="relative w-full h-full p-5 flex flex-col justify-between text-left overflow-hidden bg-[#121215]">
+      <!-- Topo do Card -->
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2.5 min-w-0 pr-2">
+          <img
+            v-if="showImage"
+            :key="image"
+            :src="image"
+            alt=""
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            class="w-8 h-8 rounded bg-black/40 object-contain p-0.5 shrink-0 border border-white/5"
+            @error="onImgError"
+          />
+          <span class="text-tv-base font-black tracking-tight uppercase truncate">
+            <span class="text-white">{{ channelFirstName }} </span>
+            <span class="text-[#e50914]">{{ channelSecondName }}</span>
+          </span>
         </div>
+        <span class="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-[#10b981] shrink-0">
+          <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+          AO VIVO
+        </span>
       </div>
-      <div class="min-w-0 flex-1">
-        <p class="text-tv-base font-semibold truncate text-white">{{ label }}</p>
-        <p class="text-tv-xs text-neutral-400">Canal {{ item && item.num }}</p>
+
+      <!-- Meio do Card -->
+      <div class="min-w-0">
+        <p class="text-tv-sm font-medium text-white truncate">{{ label || 'Transmissão contínua' }}</p>
+        <p class="text-tv-xs text-neutral-500 mt-0.5 truncate">Canal {{ item?.num || index + 1 }} · Ao vivo</p>
+      </div>
+
+      <!-- Base do Card: Barra fina de 2px -->
+      <div class="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
+        <div class="h-full w-2/5 bg-[#e50914]" />
       </div>
     </div>
 

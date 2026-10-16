@@ -11,14 +11,28 @@ const player = usePlayerStore()
 const auth = useAuthStore()
 
 const videoRef = ref(null)
-const { error: engineError, errorDetail: engineErrorDetail, attachAndPlay, destroyEngine } = useVideoEngine()
+const {
+  error: engineError,
+  errorDetail: engineErrorDetail,
+  loadingProgress,
+  loadingStage,
+  attachAndPlay,
+  destroyEngine,
+} = useVideoEngine()
 
-// Estado do OSD e controles
+// Estado do OSD, controles e renderização de frame (RFC-009)
+const hasRenderedFrame = ref(false)
 const isOsdVisible = ref(true)
 const isQueueDrawerOpen = ref(false)
-const showZappingBanner = ref(false)
 const isPaused = ref(false)
 const isBuffering = ref(false)
+const lastFocusedControlId = ref('osd-play-pause')
+
+function onControlsFocusIn(e) {
+  if (e.target && e.target.id) {
+    lastFocusedControlId.value = e.target.id
+  }
+}
 
 // Tempo e progresso (VOD / Filas)
 const currentTime = ref(0)
@@ -30,7 +44,6 @@ const autoAdvance = ref(null) // { nextItem: object, secondsLeft: number, timer:
 
 // Timers e Escopos de Foco
 let osdTimer = null
-let zappingTimer = null
 let cleanupBack = null
 let cleanupKey = null
 let popPlayerScope = null
@@ -60,11 +73,6 @@ function formatTime(sec) {
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(remS)}` : `${pad(m)}:${pad(remS)}`
 }
 
-const timeDisplay = computed(() => {
-  if (isLive.value) return 'AO VIVO'
-  return `${formatTime(currentTime.value)} / ${formatTime(duration.value)}`
-})
-
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0
   return Math.min(100, Math.max(0, (currentTime.value / duration.value) * 100))
@@ -80,14 +88,6 @@ function resetOsdTimer() {
       isOsdVisible.value = false
     }
   }, 4000)
-}
-
-function showZapping(name) {
-  if (zappingTimer) clearTimeout(zappingTimer)
-  showZappingBanner.value = true
-  zappingTimer = setTimeout(() => {
-    showZappingBanner.value = false
-  }, 3000)
 }
 
 // Watch History / Continuar Assistindo (RFC-003)
@@ -111,6 +111,7 @@ async function startPlayback() {
   }
 
   cancelAutoAdvance()
+  hasRenderedFrame.value = false
   currentTime.value = 0
   duration.value = 0
   isPaused.value = false
@@ -120,10 +121,6 @@ async function startPlayback() {
 
   const item = player.currentItem
   if (!item) return
-
-  if (isLive.value) {
-    showZapping(item.name)
-  }
 
   resetOsdTimer()
 
@@ -166,10 +163,11 @@ watch(
       })
     } else {
       lastPlayedToken = -1
+      hasRenderedFrame.value = false
+      isBuffering.value = false
       cancelAutoAdvance()
       destroyEngine()
       if (osdTimer) clearTimeout(osdTimer)
-      if (zappingTimer) clearTimeout(zappingTimer)
       if (popPlayerScope) {
         popPlayerScope()
         popPlayerScope = null
@@ -279,6 +277,9 @@ function onDurationChange() {
 
 function onTimeUpdate() {
   if (videoRef.value) {
+    if (videoRef.value.currentTime > 0) {
+      hasRenderedFrame.value = true
+    }
     currentTime.value = videoRef.value.currentTime
     const now = Date.now()
     if (now - lastSaveTime >= 10000) {
@@ -314,6 +315,7 @@ function onWaiting() {
 
 function onPlaying() {
   isBuffering.value = false
+  hasRenderedFrame.value = true
 }
 
 // Auto-Advance
@@ -477,6 +479,22 @@ onMounted(() => {
         seek(10)
         return true
       }
+      if (action === 'down') {
+        const target =
+          document.getElementById(lastFocusedControlId.value) ||
+          document.getElementById('osd-play-pause')
+        if (target) {
+          target.focus()
+          return true
+        }
+      }
+      if (action === 'up') {
+        const topClose = document.getElementById('osd-top-close')
+        if (topClose) {
+          topClose.focus()
+          return true
+        }
+      }
     }
 
     // Qualquer tecla acorda o OSD (se não estiver em modo zapping puro)
@@ -537,7 +555,6 @@ onBeforeUnmount(() => {
   if (cleanupBack) cleanupBack()
   if (cleanupKey) cleanupKey()
   if (osdTimer) clearTimeout(osdTimer)
-  if (zappingTimer) clearTimeout(zappingTimer)
   if (popPlayerScope) popPlayerScope()
   if (popDrawerScope) popDrawerScope()
   if (popAutoAdvanceScope) popAutoAdvanceScope()
@@ -558,8 +575,12 @@ onBeforeUnmount(() => {
     <div class="absolute inset-0 flex items-center justify-center bg-black">
       <video
         ref="videoRef"
-        class="w-full h-full object-contain"
+        :class="[
+          'w-full h-full object-contain transition-opacity duration-300',
+          hasRenderedFrame ? 'opacity-100' : 'opacity-0',
+        ]"
         playsinline
+        poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="
         @loadedmetadata="onLoadedMetadata"
         @timeupdate="onTimeUpdate"
         @durationchange="onDurationChange"
@@ -571,40 +592,39 @@ onBeforeUnmount(() => {
       />
     </div>
 
-    <!-- Spinner de Carregamento / Buffering -->
-    <div
-      v-if="isBuffering && !engineError"
-      class="absolute inset-0 flex items-center justify-center pointer-events-none bg-black/50"
-      role="status"
-    >
-      <svg class="w-24 h-24 animate-spin text-tv-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
-        <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-      </svg>
-    </div>
-
-    <!-- Banner de Zapping Rápido (Live TV) -->
+    <!-- Tela de Carregamento Black Cinema + Barra de Progressão Real (RFC-009) -->
     <transition
       enter-active-class="transition-opacity duration-200"
       enter-from-class="opacity-0"
       enter-to-class="opacity-100"
+      leave-active-class="transition-opacity duration-300"
+      leave-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
       <div
-        v-if="showZappingBanner && !isOsdVisible"
-        class="absolute top-10 left-12 z-20 flex items-center gap-6 rounded-xl border border-white/10
-               bg-[#121215]/95 px-7 py-4 shadow-2xl"
+        v-if="(isBuffering || !hasRenderedFrame) && !engineError"
+        class="absolute inset-0 z-20 flex flex-col items-center justify-center select-none pointer-events-none"
+        :class="!hasRenderedFrame ? 'bg-black' : 'bg-black/90'"
+        role="status"
+        aria-live="polite"
       >
-        <svg class="w-8 h-8 text-[#e50914] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
-          <polyline points="17 2 12 7 7 2" />
-        </svg>
-        <div>
-          <span class="inline-flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-[#10b981] mb-1">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
-            AO VIVO
-          </span>
-          <h2 class="text-tv-lg font-bold text-white tracking-tight">{{ player.currentItem?.name }}</h2>
+        <!-- Nome do Item Atual -->
+        <h2 class="text-tv-lg font-bold text-white tracking-tight mb-3 text-center max-w-[42rem] truncate px-4">
+          {{ player.currentItem?.name || 'Carregando transmissão...' }}
+        </h2>
+
+        <!-- Subtítulo da Etapa e Percentual -->
+        <div class="flex items-center justify-between w-[28rem] mb-2 px-1 text-tv-xs text-neutral-400">
+          <span class="truncate pr-2 font-medium">{{ loadingStage }}</span>
+          <span class="font-mono font-semibold text-white shrink-0">{{ Math.round(loadingProgress) }}%</span>
+        </div>
+
+        <!-- Trilho da Barra de Progresso Real (Clean Cinema) -->
+        <div class="w-[28rem] h-1.5 rounded-full bg-white/10 overflow-hidden shadow-inner">
+          <div
+            class="h-full bg-[#e50914] transition-all duration-200 ease-out rounded-full"
+            :style="{ width: loadingProgress + '%' }"
+          />
         </div>
       </div>
     </transition>
@@ -660,7 +680,7 @@ onBeforeUnmount(() => {
         class="absolute inset-0 flex flex-col justify-between pointer-events-auto bg-gradient-to-t from-black/90 via-transparent to-black/80 p-12 z-10"
       >
         <!-- Topo do OSD -->
-        <header class="flex items-center justify-between">
+        <header data-focus-row="osd-header" class="flex items-center justify-between">
           <div class="flex items-center gap-6">
             <button
               id="osd-top-close"
@@ -683,10 +703,7 @@ onBeforeUnmount(() => {
                   AO VIVO
                 </span>
                 <span v-else class="text-tv-sm text-tv-accent-soft font-semibold">
-                  {{ player.mode === 'queue' ? 'Minha Fila' : (player.currentSection === 'series' ? 'Série / Episódio' : 'Filme / Vídeo') }}
-                </span>
-                <span v-if="player.totalCount > 1" class="text-tv-sm text-tv-muted">
-                  Item {{ player.absoluteIndex + 1 }} de {{ player.totalCount }}
+                  {{ player.mode === 'queue' ? 'Favoritos' : (player.currentSection === 'series' ? 'Série / Episódio' : 'Filme / Vídeo') }}
                 </span>
               </div>
               <h1 class="text-tv-xl font-bold text-white mt-1 max-w-[65rem] truncate">
@@ -694,16 +711,12 @@ onBeforeUnmount(() => {
               </h1>
             </div>
           </div>
-
-          <div class="text-tv-lg font-mono font-medium text-white/90">
-            {{ timeDisplay }}
-          </div>
         </header>
 
         <!-- Base do OSD -->
         <footer class="flex flex-col gap-6">
           <!-- Barra de Progresso (VOD / Filas) -->
-          <div v-if="!isLive && duration > 0" class="w-full">
+          <div v-if="!isLive && duration > 0" data-focus-row="osd-progress-row" class="w-full">
             <div
               id="osd-progress"
               role="slider"
@@ -725,7 +738,11 @@ onBeforeUnmount(() => {
           </div>
 
           <!-- Botões de Controle -->
-          <div class="flex items-center justify-between">
+          <div
+            data-focus-row="osd-controls"
+            class="flex items-center justify-between"
+            @focusin="onControlsFocusIn"
+          >
             <div class="flex items-center gap-4">
               <!-- Anterior -->
               <button
@@ -805,7 +822,7 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <!-- Fila e Minha Lista -->
+            <!-- Fila e Favoritos -->
             <div class="flex items-center gap-4">
               <button
                 id="osd-queue"
@@ -822,7 +839,7 @@ onBeforeUnmount(() => {
                   <line x1="3" y1="12" x2="3.01" y2="12" />
                   <line x1="3" y1="18" x2="3.01" y2="18" />
                 </svg>
-                <span>Fila ({{ player.queue.length }})</span>
+                <span>Fila</span>
               </button>
 
               <button
@@ -839,7 +856,7 @@ onBeforeUnmount(() => {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                <span>{{ isBookmarked ? 'Na Minha Lista' : 'Minha Lista' }}</span>
+                <span>{{ isBookmarked ? 'Nos Favoritos' : 'Favoritos' }}</span>
               </button>
 
               <button
@@ -879,7 +896,7 @@ onBeforeUnmount(() => {
           <div>
             <h2 class="text-tv-lg font-bold text-white">Fila de Reprodução</h2>
             <p class="text-tv-sm text-tv-muted">
-              {{ player.queue.length }} itens • {{ player.mode === 'live' ? 'Canais' : 'Vídeos' }}
+              {{ player.mode === 'live' ? 'Canais' : 'Vídeos' }}
             </p>
           </div>
           <button

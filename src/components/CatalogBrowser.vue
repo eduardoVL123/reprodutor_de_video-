@@ -1,13 +1,14 @@
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import GridView from '@/components/GridView.vue'
 import GridItem from '@/components/GridItem.vue'
+import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
 import { ALL_CATEGORIES } from '@/services/catalogDb'
-import { focusFirstIn } from '@/utils/spatialNavigation'
+import { focusFirstIn, registerKeyHandler, isNavigable } from '@/utils/spatialNavigation'
 
 /**
  * Navegador de catálogo (categorias + grade virtualizada) usado por LiveTV e VOD.
@@ -19,8 +20,6 @@ const props = defineProps({
   embedded: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['select-item'])
-
 const router = useRouter()
 const auth = useAuthStore()
 const catalog = useCatalogStore()
@@ -28,6 +27,8 @@ const player = usePlayerStore()
 
 const activeCategory = ref(ALL_CATEGORIES)
 const contentGridRef = ref(null)
+/** Filme/série aberto na tela de detalhes: { item, index, categoryId } | null. */
+const detailsTarget = ref(null)
 
 const isLive = computed(() => props.section === 'live')
 const state = computed(() => catalog.status[props.section])
@@ -35,12 +36,10 @@ const categoryList = computed(() => catalog.categories[props.section] || [])
 const itemCount = computed(() => catalog.countFor(props.section, activeCategory.value))
 const gridKey = computed(() => `${auth.currentListId}:${props.section}:${activeCategory.value}`)
 
-// Layout: canais em lista (1 coluna); filmes e séries em matriz de 4 colunas (CT 3.2).
-// Orçamento de DOM da tela inteira (categorias + grade) ≤ 20 elementos (CT 4.1).
 const layout = computed(() =>
   isLive.value
-    ? { columns: 1, rowHeight: 8.5, gap: 1, maxDomItems: 8, variant: 'channel' }
-    : { columns: 4, rowHeight: 30, gap: 1.5, maxDomItems: 12, variant: 'poster' },
+    ? { columns: 3, rowHeight: 10, gap: 1.25, maxDomItems: 12, variant: 'channel' }
+    : { columns: 4, rowHeight: 24, gap: 1.25, maxDomItems: 12, variant: 'poster' },
 )
 
 const loadItems = (start, count) =>
@@ -60,8 +59,9 @@ async function chooseCategory(cat) {
 
 function handleSelectItem(item, index) {
   if (!item) return
-  if (props.section === 'series') {
-    emit('select-item', { item, index, categoryId: activeCategory.value })
+  // Filmes e séries abrem a tela de detalhes; só a TV ao Vivo toca direto.
+  if (!isLive.value) {
+    detailsTarget.value = { item, index, categoryId: activeCategory.value }
     return
   }
   player.playFromCatalog({
@@ -80,7 +80,6 @@ function playQueue() {
 
 const load = (force = false) => catalog.loadSection(props.section, { force })
 const progressPct = computed(() => Math.round((state.value.progress || 0) * 100))
-const fmt = (n) => Number(n || 0).toLocaleString('pt-BR')
 
 // Foco Inicial Automático por Tela (CT 4.3 e Seção 2.2 D)
 watch(
@@ -107,9 +106,84 @@ watch(
   },
 )
 
+let cleanupKeyHandler = null
+
 onMounted(() => {
   player.hydrate()
   load()
+
+  cleanupKeyHandler = registerKeyHandler((action) => {
+    const current = document.activeElement
+    if (!current) return false
+
+    const inCategories = current.closest && current.closest('[data-focus-group="categories"]')
+    const inContent = current.closest && current.closest('[data-focus-group="content"]')
+
+    if (inCategories) {
+      if (action === 'right') {
+        if (contentGridRef.value) {
+          contentGridRef.value.focusIndex(0)
+          return true
+        }
+        if (focusFirstIn('[data-focus-group="content"]')) {
+          return true
+        }
+      }
+      if (action === 'up') {
+        const idx = parseInt(current.getAttribute('data-grid-index') || '0', 10)
+        if (idx === 0) {
+          const btn =
+            document.getElementById('catalog-refresh') ||
+            document.getElementById('catalog-back') ||
+            document.querySelector('[data-focus-row="navbar"] [data-focus-active="true"], #nav-home')
+          if (btn && isNavigable(btn)) {
+            btn.focus()
+            return true
+          }
+        }
+      }
+    }
+
+    if (inContent) {
+      const idxRaw = current.getAttribute('data-grid-index')
+      const idx = idxRaw !== null ? parseInt(idxRaw, 10) : -1
+      const cols = layout.value.columns
+
+      if (action === 'left') {
+        // Se estiver na coluna 0 (index % columns === 0)
+        if (idx >= 0 && idx % cols === 0) {
+          const catActive = document.querySelector('[data-focus-group="categories"] [data-focus-active="true"]')
+          if (catActive && isNavigable(catActive)) {
+            catActive.focus()
+            return true
+          }
+          if (focusFirstIn('[data-focus-group="categories"]')) {
+            return true
+          }
+        }
+      }
+
+      if (action === 'up') {
+        // Se estiver na linha 0 (index < columns)
+        if (idx >= 0 && idx < cols) {
+          const btn =
+            document.getElementById('catalog-refresh') ||
+            document.getElementById('catalog-queue') ||
+            document.querySelector('[data-focus-row="navbar"] [data-focus-active="true"], #nav-home')
+          if (btn && isNavigable(btn)) {
+            btn.focus()
+            return true
+          }
+        }
+      }
+    }
+
+    return false
+  })
+})
+
+onBeforeUnmount(() => {
+  if (cleanupKeyHandler) cleanupKeyHandler()
 })
 </script>
 
@@ -118,7 +192,7 @@ onMounted(() => {
     class="flex flex-col w-full h-full bg-[#0a0a0a]"
     :class="embedded ? 'px-8 py-3' : 'px-12 py-8'"
   >
-    <header data-focus-group="header" class="flex items-center gap-6 shrink-0" :class="embedded ? 'h-[3.5rem] mb-2' : 'h-[5.5rem]'">
+    <header data-focus-group="header" data-focus-row="catalog-header" class="flex items-center gap-6 shrink-0" :class="embedded ? 'h-[4.5rem] mb-2' : 'h-[5.5rem]'">
       <button
         v-if="!embedded"
         id="catalog-back"
@@ -132,12 +206,9 @@ onMounted(() => {
         Voltar
       </button>
       <h1 v-if="!embedded && title" class="text-tv-xl font-bold text-white tracking-tight">{{ title }}</h1>
-      <span v-if="state.state === 'ready'" class="text-tv-base text-neutral-400 font-medium">
-        {{ fmt(itemCount) }} itens disponíveis
-      </span>
 
       <div class="ml-auto flex items-center gap-4">
-        <!-- Botão Minha Fila -->
+        <!-- Botão Favoritos -->
         <button
           v-if="!embedded"
           id="catalog-queue"
@@ -147,7 +218,7 @@ onMounted(() => {
           :disabled="player.customQueue.length === 0"
           @click="playQueue"
         >
-          Minha Lista ({{ player.customQueue.length }})
+          Favoritos
         </button>
 
         <button
@@ -155,10 +226,10 @@ onMounted(() => {
           id="catalog-refresh"
           type="button"
           class="tv-btn text-tv-sm flex items-center gap-2"
-          :class="embedded ? '!px-4 !py-2' : '!px-6 !py-2.5'"
+          :class="embedded ? '!px-6 !py-3' : '!px-6 !py-2.5'"
           @click="load(true)"
         >
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="23 4 23 10 17 10" />
             <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
           </svg>
@@ -207,14 +278,14 @@ onMounted(() => {
 
     <!-- Pronto -->
     <div v-else class="flex flex-1 min-h-0 gap-8 mt-4">
-      <aside data-focus-group="categories" class="w-[26rem] shrink-0" aria-label="Categorias">
+      <aside data-focus-group="categories" class="w-[20rem] shrink-0" aria-label="Categorias">
         <GridView
           :count="categoryList.length"
           :load-items="loadCategories"
           :columns="1"
-          :row-height="8.5"
-          :gap="1.5"
-          :max-dom-items="7"
+          :row-height="4.2"
+          :gap="0.6"
+          :max-dom-items="10"
           :reset-key="section"
           data-grid="categories"
           @select="chooseCategory"
@@ -258,5 +329,14 @@ onMounted(() => {
         </GridView>
       </div>
     </div>
+
+    <MediaDetailsModal
+      v-if="detailsTarget"
+      :item="detailsTarget.item"
+      :section="section"
+      :category-id="detailsTarget.categoryId"
+      :index-in-category="detailsTarget.index"
+      @close="detailsTarget = null"
+    />
   </section>
 </template>

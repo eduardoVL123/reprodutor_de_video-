@@ -1,4 +1,5 @@
 import localforage from 'localforage'
+import { normalizeText } from '@/utils/normalizeText'
 
 /**
  * Persistência do catálogo (50.000+ itens) em IndexedDB, SEM carregar tudo em RAM.
@@ -8,6 +9,7 @@ import localforage from 'localforage'
  *   categories:<secao>    JSON bruto das categorias (poucas centenas)
  *   index:<secao>         { catId: [posicaoGlobal, ...] }  (apenas inteiros)
  *   chunk:<secao>:<n>     JSON BRUTO de até CHUNK_SIZE itens
+ *   search:<secao>        [nomeNormalizado, ...] na ordem da posição global (busca)
  *
  * Ler uma "janela" de ~20 itens toca em 1–2 chunks; só poucos chunks ficam num
  * cache LRU. O array completo existe apenas durante a ingestão (resposta da rede).
@@ -28,10 +30,12 @@ const metaKey = (s) => `meta:${s}`
 const catKey = (s) => `categories:${s}`
 const idxKey = (s) => `index:${s}`
 const chunkKey = (s, n) => `chunk:${s}:${n}`
+const searchKey = (s) => `search:${s}`
 
 const metaCache = new Map()
 const indexCache = new Map()
 const catCache = new Map()
+const searchCache = new Map() // seção => Promise<string[]> (inclui construções em andamento)
 const chunkCache = new Map() // Map preserva ordem de inserção => LRU simples
 let generation = 0 // invalida leituras em voo quando o catálogo é trocado
 
@@ -45,6 +49,7 @@ function resetCaches(section) {
   metaCache.delete(section)
   indexCache.delete(section)
   catCache.delete(section)
+  searchCache.delete(section)
   Array.from(chunkCache.keys()).forEach((k) => {
     if (k.indexOf(`${section}:`) === 0) chunkCache.delete(k)
   })
@@ -81,6 +86,7 @@ async function removeSection(section) {
     }
     await db.removeItem(catKey(section))
     await db.removeItem(idxKey(section))
+    await db.removeItem(searchKey(section))
   } catch (_) {}
   resetCaches(section)
 }
@@ -99,6 +105,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   const total = streams.length
   const chunkCount = Math.ceil(total / CHUNK_SIZE)
   const index = {}
+  const searchIndex = new Array(total)
 
   for (let n = 0; n < chunkCount; n++) {
     const base = n * CHUNK_SIZE
@@ -124,6 +131,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
       const cat = categoryOf(slice[k])
       if (!index[cat]) index[cat] = []
       index[cat].push(base + k)
+      searchIndex[base + k] = normalizeText(slice[k] && slice[k].name)
     }
 
     try {
@@ -160,6 +168,11 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     indexCache.set(section, index)
   }
   try {
+    await db.setItem(searchKey(section), searchIndex)
+  } catch (err) {
+    console.warn(`[catalogDb] Índice de busca de "${section}" mantido só em memória (${err && err.message}).`)
+  }
+  try {
     await db.setItem(metaKey(section), metaObj)
   } catch (_) {
     metaCache.set(section, metaObj)
@@ -168,6 +181,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   metaCache.set(section, metaObj)
   indexCache.set(section, index)
   catCache.set(section, categories)
+  searchCache.set(section, Promise.resolve(searchIndex))
 }
 
 async function getIndex(section) {
@@ -221,7 +235,17 @@ export async function getItems(section, categoryId, start, count) {
     const list = (await getIndex(section))[String(categoryId)] || []
     positions = list.slice(start, start + count)
   }
+  return readPositions(section, meta, positions)
+}
 
+/** Itens nas posições globais informadas (ex.: resultados da busca), na mesma ordem. */
+export async function getItemsAt(section, positions) {
+  const meta = await getMeta(section)
+  if (!meta || !positions || !positions.length) return []
+  return readPositions(section, meta, positions)
+}
+
+async function readPositions(section, meta, positions) {
   const chunkNos = []
   positions.forEach((p) => {
     const n = Math.floor(p / meta.chunkSize)
@@ -249,6 +273,50 @@ export async function getItems(section, categoryId, start, count) {
   return items
 }
 
+/** Monta o índice de busca varrendo os chunks (catálogos salvos antes do índice existir). */
+async function buildSearchIndex(section, meta) {
+  const names = new Array(meta.count)
+  for (let n = 0; n < meta.chunkCount; n++) {
+    const chunk = await readChunk(section, n)
+    for (let k = 0; k < chunk.length; k++) {
+      names[n * meta.chunkSize + k] = normalizeText(chunk[k] && chunk[k].name)
+    }
+  }
+  try {
+    await db.setItem(searchKey(section), names)
+  } catch (err) {
+    console.warn(`[catalogDb] Índice de busca de "${section}" mantido só em memória (${err && err.message}).`)
+  }
+  return names
+}
+
+/**
+ * Nomes normalizados da seção, indexados pela posição global (vazio se a seção
+ * não foi baixada). Fica em memória depois da primeira leitura.
+ */
+export function getSearchIndex(section) {
+  if (searchCache.has(section)) return searchCache.get(section)
+  const gen = generation
+  const promise = (async () => {
+    const meta = await getMeta(section)
+    if (!meta) return []
+    const saved = await db.getItem(searchKey(section))
+    if (Array.isArray(saved) && saved.length === meta.count) return saved
+    return buildSearchIndex(section, meta)
+  })().then(
+    (names) => {
+      if (gen !== generation || !names.length) searchCache.delete(section)
+      return names
+    },
+    (err) => {
+      searchCache.delete(section)
+      throw err
+    },
+  )
+  searchCache.set(section, promise)
+  return promise
+}
+
 /** Remove todo o catálogo (logout / troca de conta). */
 export async function clearCatalog() {
   try {
@@ -259,5 +327,6 @@ export async function clearCatalog() {
   generation++
   metaCache.clear()
   indexCache.clear()
+  searchCache.clear()
   chunkCache.clear()
 }

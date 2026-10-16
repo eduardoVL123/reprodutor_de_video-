@@ -165,6 +165,28 @@ const getSeriesInfo = (seriesId) => {
   }
 }
 
+const getVodInfo = (vodId) => {
+  const id = parseInt(vodId, 10) || 1
+  const genre = GENRES[id % GENRES.length]
+  const name = `Filme de ${genre} ${id}`
+  return {
+    info: {
+      name,
+      movie_image: getCoverUrl(id, 'vod'),
+      backdrop_path: [getCoverUrl(id, 'vod')],
+      plot: `Quando um segredo de família vem à tona, uma investigadora precisa atravessar o país em uma corrida contra o tempo. Um longa de ${genre.toLowerCase()} intenso sobre lealdade, escolhas impossíveis e o preço da verdade.`,
+      cast: 'Ana Ribeiro, Bruno Carvalho, Camila Duarte, Diego Martins',
+      director: 'Helena Costa',
+      genre,
+      releasedate: '2024-05-17',
+      duration: '2h 14min',
+      duration_secs: 8040,
+      rating: ((id % 50) / 10).toFixed(1),
+    },
+    movie_data: { stream_id: id, name, container_extension: 'mp4' },
+  }
+}
+
 const send = (res, status, body, extra = {}) => {
   res.writeHead(status, {
     'Content-Type': 'application/json; charset=utf-8',
@@ -310,6 +332,10 @@ https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlaze
       case 'get_series_info': {
         const sId = url.searchParams.get('series_id')
         return send(res, 200, JSON.stringify(getSeriesInfo(sId)))
+      }
+      case 'get_vod_info': {
+        const vodId = url.searchParams.get('vod_id')
+        return send(res, 200, JSON.stringify(getVodInfo(vodId)))
       }
       default: return send(res, 200, '[]')
     }

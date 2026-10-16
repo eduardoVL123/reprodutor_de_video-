@@ -349,16 +349,22 @@ export const usePlayerStore = defineStore('player', () => {
     }
   }
 
-  async function playFromCustomQueue(index = 0) {
+  /**
+   * Toca a Minha Fila a partir de `startItem` (ou do início). Séries ficam de fora:
+   * são contêineres de episódios, não um vídeo reproduzível.
+   */
+  async function playFromCustomQueue(startItem = null) {
     await hydrate()
-    if (!customQueue.value.length) return false
+    const playable = customQueue.value.filter((it) => it.section !== 'series').slice(0, QUEUE_MAX)
+    if (!playable.length) return false
     seq++
     if (!isOpen.value) rememberFocus()
     mode.value = 'queue'
     context.value = null
-    queue.value = customQueue.value.slice(0, QUEUE_MAX)
+    queue.value = playable
     isOpen.value = true
-    setCurrent(Math.min(Math.max(0, index), queue.value.length - 1))
+    const start = startItem ? playable.findIndex((it) => sameItem(it, startItem)) : 0
+    setCurrent(Math.max(0, start))
     return true
   }
 

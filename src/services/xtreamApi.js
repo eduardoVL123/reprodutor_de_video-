@@ -336,6 +336,69 @@ export async function fetchSeriesInfo({ apiBase, credentials, seriesId, timeoutM
   return data
 }
 
+const DEFAULT_VOD_PLOT = 'Sinopse disponível pronta para reprodução em alta definição.'
+
+/** Converte segundos para "2h 14min" / "48min" ('' se inválido). */
+function formatDurationSecs(totalSecs) {
+  const secs = Number(totalSecs) || 0
+  if (secs <= 0) return ''
+  const h = Math.floor(secs / 3600)
+  const m = Math.floor((secs % 3600) / 60)
+  return h > 0 ? `${h}h ${m}min` : `${m}min`
+}
+
+const asObject = (value) => (value && typeof value === 'object' && !Array.isArray(value) ? value : {})
+
+/**
+ * Normaliza `data.info` / `data.movie_data` (get_vod_info ou get_series_info) para a
+ * tela de detalhes. Com `data` nulo, devolve só os dados básicos do próprio item.
+ */
+export function normalizeVodInfo(data, item) {
+  const base = item || {}
+  const info = asObject(data && data.info)
+  const movie = asObject(data && data.movie_data)
+  const backdrop = Array.isArray(info.backdrop_path) ? info.backdrop_path[0] : info.backdrop_path
+  const cover = base.stream_icon || base.cover || ''
+  return {
+    name: movie.name || info.name || base.name || '',
+    plot: info.plot || info.description || info.overview || base.plot || DEFAULT_VOD_PLOT,
+    backdrop: backdrop || info.movie_image || info.cover_big || info.cover || cover,
+    poster: info.movie_image || info.cover_big || info.cover || cover,
+    rating: info.rating || base.rating || '',
+    year: String(info.releasedate || info.releaseDate || '').slice(0, 4),
+    duration: info.duration || formatDurationSecs(info.duration_secs),
+    genre: info.genre || base.genre || '',
+    cast: info.cast || info.actors || '',
+    director: info.director || '',
+    container_extension: movie.container_extension || base.container_extension || 'mp4',
+  }
+}
+
+/**
+ * Metadados de um filme (sinopse, elenco, direção...). Nunca rejeita: listas M3U
+ * (`directUrl`), servidores sem `get_vod_info` ou falhas de rede devolvem os dados
+ * básicos do próprio `item`.
+ * @param {{ apiBase: string, credentials: { username: string, password: string }, vodId: string|number, item: object, timeoutMs?: number }} params
+ */
+export async function fetchVodInfo({ apiBase, credentials, vodId, item, timeoutMs }) {
+  const basic = normalizeVodInfo(null, item)
+  const hasSession = apiBase && credentials && credentials.username && credentials.password
+  if (!hasSession || vodId === undefined || vodId === null || (item && item.directUrl)) return basic
+
+  try {
+    const { data } = await apiRequest(apiBase, credentials, {
+      action: 'get_vod_info',
+      params: { vod_id: vodId },
+      timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS,
+    })
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return basic
+    return normalizeVodInfo(data, item)
+  } catch (err) {
+    console.warn('[xtream] get_vod_info indisponível; usando dados básicos do item:', (err && err.technicalDetail) || err)
+    return basic
+  }
+}
+
 /** Variante http://host:8080 usada quando o host padrão falha (redirect HTTPS com SSL inválido). */
 function port8080Variant(baseUrl) {
   try {

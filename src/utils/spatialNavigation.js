@@ -269,7 +269,7 @@ function getScrollParent(el) {
   return null
 }
 
-function isNavigable(el) {
+export function isNavigable(el) {
   if (!el || el.disabled) return false
   if (el.getAttribute('tabindex') === '-1') return false
   const rect = el.getBoundingClientRect()
@@ -388,12 +388,30 @@ function isInDirection(fromRect, el, direction) {
   return dy > 0.1
 }
 
+const lastFocusedByRow = new Map() // nome da row => { id }
+
 function onFocusIn(e) {
   const el = e.target
   if (isTextField(el)) initTextField(el)
   if (!el || !el.id) return
   const group = groupElOf(el)
   if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id })
+  const row = el.closest ? el.closest('[data-focus-row]') : null
+  if (row) {
+    const rowName = row.getAttribute('data-focus-row')
+    if (rowName) lastFocusedByRow.set(rowName, { id: el.id })
+  }
+}
+
+/** Elemento lembrado da linha de destino, se estiver visível e navegável. */
+function rememberedInRow(rowEl) {
+  const rowName = rowEl.getAttribute('data-focus-row')
+  const record = lastFocusedByRow.get(rowName)
+  if (record && record.id) {
+    const el = document.getElementById(record.id)
+    if (el && rowEl.contains(el) && isNavigable(el)) return el
+  }
+  return null
 }
 
 /** Elemento lembrado (ou ativo) do painel de destino, se estiver visível e na direção. */
@@ -459,34 +477,155 @@ function gridTarget(api, direction) {
   return Math.floor(index / cols) < lastRow ? count - 1 : -1
 }
 
+/**
+ * Determina se dois elementos pertencem à mesma linha horizontal.
+ * 1. Prioriza data-focus-row compartilhado (se ambos tiverem e forem iguais => true; se forem diferentes => false).
+ * 2. Se nenhum tiver data-focus-row, avalia sobreposição vertical significativa (>= 35% da menor altura).
+ */
+export function areInSameHorizontalRow(elA, elB, rectA, rectB) {
+  if (!elA || !elB) return false
+
+  const rowA = elA.closest ? elA.closest('[data-focus-row]') : null
+  const rowB = elB.closest ? elB.closest('[data-focus-row]') : null
+
+  if (rowA && rowB) {
+    return rowA === rowB
+  }
+  if (rowA || rowB) {
+    return false
+  }
+
+  const rA = rectA || elA.getBoundingClientRect()
+  const rB = rectB || elB.getBoundingClientRect()
+
+  const overlapY = Math.min(rA.bottom, rB.bottom) - Math.max(rA.top, rB.top)
+  const minHeight = Math.min(rA.height, rB.height)
+  return minHeight > 0 && overlapY > minHeight * 0.35
+}
+
 function findBest(fromRect, candidates, direction, current) {
-  const from = centerOf(fromRect)
+  const currentCenter = centerOf(fromRect)
+
+  // =========================================================================
+  // NAVEGAÇÃO HORIZONTAL (LEFT / RIGHT) — REGRA DE OURO DA LINHA HORIZONTAL
+  // =========================================================================
+  if (direction === 'left' || direction === 'right') {
+    // PASSO 1 (Prioridade Absoluta — Mesma Linha):
+    // Filtra candidatos na mesma linha horizontal e na direção correta.
+    let sameRowBest = null
+    let sameRowMinDist = Infinity
+
+    for (let i = 0; i < candidates.length; i++) {
+      const cand = candidates[i]
+      if (cand === current) continue
+      const candRect = cand.getBoundingClientRect()
+      const candCenter = centerOf(candRect)
+
+      const isDirectionOk =
+        direction === 'right'
+          ? candCenter.x > currentCenter.x + 2
+          : candCenter.x < currentCenter.x - 2
+
+      if (!isDirectionOk) continue
+
+      if (areInSameHorizontalRow(current, cand, fromRect, candRect)) {
+        const distX = Math.abs(candCenter.x - currentCenter.x)
+        if (distX < sameRowMinDist) {
+          sameRowMinDist = distX
+          sameRowBest = cand
+        }
+      }
+    }
+
+    if (sameRowBest) {
+      return sameRowBest
+    }
+
+    // PASSO 2 (Transição entre Painéis Laterais, ex.: Categorias ↔ Grade de Conteúdo):
+    // Somente se NÃO houver mais nenhum candidato na mesma linha horizontal.
+    const currentGroup = groupElOf(current)
+    let bestCandidate = null
+    let minScore = Infinity
+
+    for (let i = 0; i < candidates.length; i++) {
+      const cand = candidates[i]
+      if (cand === current) continue
+      const candRect = cand.getBoundingClientRect()
+      const candCenter = centerOf(candRect)
+
+      const isDirectionOk =
+        direction === 'right'
+          ? candCenter.x > currentCenter.x + 2
+          : candCenter.x < currentCenter.x - 2
+
+      if (!isDirectionOk) continue
+
+      const candGroup = groupElOf(cand)
+      const isDiffGroup = candGroup && currentGroup && candGroup !== currentGroup
+
+      // BLOQUEIO DE FUGA VERTICAL:
+      // Em movimentos 'left' ou 'right', NUNCA permita focar um elemento que esteja
+      // inteiramente acima ou inteiramente abaixo do atual se estiver dentro do mesmo grupo/painel.
+      const isEntirelyAbove = candRect.bottom <= fromRect.top + 4
+      const isEntirelyBelow = candRect.top >= fromRect.bottom - 4
+
+      if (!isDiffGroup && (isEntirelyAbove || isEntirelyBelow)) {
+        continue
+      }
+
+      const dx = Math.abs(candCenter.x - currentCenter.x)
+      const dy = Math.abs(candCenter.y - currentCenter.y)
+      // Se for transição entre painéis laterais distintos, prioriza menor diferença vertical |dy|
+      const score = isDiffGroup ? dy * 3 + dx : dx + dy * 5
+
+      if (score < minScore) {
+        minScore = score
+        bestCandidate = cand
+      }
+    }
+
+    return bestCandidate
+  }
+
+  // =========================================================================
+  // NAVEGAÇÃO VERTICAL (UP / DOWN)
+  // =========================================================================
+  const currentRow = current.closest ? current.closest('[data-focus-row]') : null
   let best = null
   let bestDistance = Infinity
 
   for (let i = 0; i < candidates.length; i++) {
-    const candidate = candidates[i]
-    if (candidate === current) continue
-    const c = centerOf(candidate.getBoundingClientRect())
-    const dx = c.x - from.x
-    const dy = c.y - from.y
+    const cand = candidates[i]
+    if (cand === current) continue
 
-    let ok = false
-    if (direction === 'left' && dx < -0.1) ok = true
-    if (direction === 'right' && dx > 0.1) ok = true
-    if (direction === 'up' && dy < -0.1) ok = true
-    if (direction === 'down' && dy > 0.1) ok = true
-    if (!ok) continue
+    // Fora do mesmo data-focus-row
+    const candRow = cand.closest ? cand.closest('[data-focus-row]') : null
+    if (currentRow && candRow && currentRow === candRow) {
+      continue
+    }
 
-    // Penaliza distância na dimensão oposta para preferir itens na mesma linha/coluna
-    const distance =
-      direction === 'left' || direction === 'right' ? Math.abs(dx) + Math.abs(dy) * 5 : Math.abs(dy) + Math.abs(dx) * 5
+    const candRect = cand.getBoundingClientRect()
+    const candCenter = centerOf(candRect)
+
+    if (direction === 'up') {
+      if (candCenter.y >= fromRect.top + 4) continue
+    } else if (direction === 'down') {
+      if (candCenter.y <= fromRect.bottom - 4) continue
+    }
+
+    // Correção para Elementos de Largura Total (w-full como #osd-progress):
+    // Clampa currentCenter.x dentro da faixa horizontal [candRect.left, candRect.right]
+    const clampedX = Math.max(candRect.left, Math.min(currentCenter.x, candRect.right))
+    const dx = Math.abs(clampedX - currentCenter.x)
+    const dy = Math.abs(candCenter.y - currentCenter.y)
+    const distance = dy + dx * 5
 
     if (distance < bestDistance) {
       bestDistance = distance
-      best = candidate
+      best = cand
     }
   }
+
   return best
 }
 
@@ -522,6 +661,7 @@ function navigate(direction) {
   }
 
   const fromRect = current.getBoundingClientRect()
+  const currentRow = current.closest ? current.closest('[data-focus-row]') : null
 
   // 2) Subida garantida para Top Navbar quando direção for 'up'
   if (direction === 'up') {
@@ -566,11 +706,17 @@ function navigate(direction) {
     return
   }
 
-  // 4) Memória de foco ao trocar de painel.
+  // 4) Memória de foco ao trocar de painel ou linha.
   const targetGroup = groupElOf(best)
   if (targetGroup && targetGroup !== groupElOf(current)) {
     const preferred = rememberedIn(targetGroup, fromRect, direction)
     if (preferred) best = preferred
+  } else if (direction === 'up' || direction === 'down') {
+    const targetRow = best && best.closest ? best.closest('[data-focus-row]') : null
+    if (targetRow && targetRow !== currentRow) {
+      const preferredRow = rememberedInRow(targetRow)
+      if (preferredRow) best = preferredRow
+    }
   }
   focusEl(best)
 }
