@@ -1,6 +1,5 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { usePlayerStore } from '@/stores/playerStore'
@@ -11,16 +10,13 @@ import { ALL_CATEGORIES } from '@/services/catalogDb'
 import { focusFirstIn, registerKeyHandler, isNavigable } from '@/utils/spatialNavigation'
 
 /**
- * Navegador de catálogo (categorias + grade virtualizada) usado por LiveTV e VOD.
+ * Navegador de catálogo (categorias + grade virtualizada) das abas TV ao vivo, Filmes e Séries do Dashboard.
  * Integração com Fases 4 (D-Pad, memória de foco entre painéis) e 5 (Player).
  */
 const props = defineProps({
   section: { type: String, required: true }, // 'live' | 'vod' | 'series'
-  title: { type: String, default: '' },
-  embedded: { type: Boolean, default: false },
 })
 
-const router = useRouter()
 const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
@@ -70,12 +66,6 @@ function handleSelectItem(item, index) {
     item,
     indexInCategory: index,
   })
-}
-
-function playQueue() {
-  if (player.customQueue.length > 0) {
-    player.playFromCustomQueue()
-  }
 }
 
 const load = (force = false) => catalog.loadSection(props.section, { force })
@@ -134,7 +124,6 @@ onMounted(() => {
         if (idx === 0) {
           const btn =
             document.getElementById('catalog-refresh') ||
-            document.getElementById('catalog-back') ||
             document.querySelector('[data-focus-row="navbar"] [data-focus-active="true"], #nav-home')
           if (btn && isNavigable(btn)) {
             btn.focus()
@@ -168,7 +157,6 @@ onMounted(() => {
         if (idx >= 0 && idx < cols) {
           const btn =
             document.getElementById('catalog-refresh') ||
-            document.getElementById('catalog-queue') ||
             document.querySelector('[data-focus-row="navbar"] [data-focus-active="true"], #nav-home')
           if (btn && isNavigable(btn)) {
             btn.focus()
@@ -188,45 +176,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section
-    class="flex flex-col w-full h-full bg-[#0a0a0a]"
-    :class="embedded ? 'px-8 py-3' : 'px-12 py-8'"
-  >
-    <header data-focus-group="header" data-focus-row="catalog-header" class="flex items-center gap-6 shrink-0" :class="embedded ? 'h-[4.5rem] mb-2' : 'h-[5.5rem]'">
-      <button
-        v-if="!embedded"
-        id="catalog-back"
-        type="button"
-        class="tv-btn !px-6 !py-2.5"
-        @click="router.replace({ name: 'dashboard' })"
-      >
-        <svg class="w-4 h-4 mr-2" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="15 18 9 12 15 6" />
-        </svg>
-        Voltar
-      </button>
-      <h1 v-if="!embedded && title" class="text-tv-xl font-bold text-white tracking-tight">{{ title }}</h1>
-
+  <section class="flex flex-col w-full h-full bg-[#07070a] px-16 py-3">
+    <header data-focus-group="header" data-focus-row="catalog-header" class="flex items-center gap-6 shrink-0 h-[4.5rem] mb-2">
       <div class="ml-auto flex items-center gap-4">
-        <!-- Botão Favoritos -->
-        <button
-          v-if="!embedded"
-          id="catalog-queue"
-          type="button"
-          class="tv-btn !px-6 !py-2.5"
-          :class="player.customQueue.length > 0 ? 'text-amber-400 border-amber-400/40' : 'text-neutral-500 opacity-60'"
-          :disabled="player.customQueue.length === 0"
-          @click="playQueue"
-        >
-          Favoritos
-        </button>
-
         <button
           v-if="state.state === 'ready'"
           id="catalog-refresh"
           type="button"
-          class="tv-btn text-tv-sm flex items-center gap-2"
-          :class="embedded ? '!px-6 !py-3' : '!px-6 !py-2.5'"
+          class="tv-btn text-tv-sm flex items-center gap-2 !px-6 !py-3"
           @click="load(true)"
         >
           <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

@@ -54,6 +54,19 @@ export function toPlainItem(item, section) {
   }
 }
 
+/** Entrada do "Continuar assistindo" (item plano + progresso), ou `null` se o item for inválido. */
+function toHistoryEntry(item) {
+  const plain = item ? toPlainItem(item, item.section) : null
+  if (!plain) return null
+  return {
+    ...plain,
+    currentTime: Number(item.currentTime || 0),
+    duration: Number(item.duration || 0),
+    progressPct: Number(item.progressPct || 0),
+    updatedAt: Number(item.updatedAt || Date.now()),
+  }
+}
+
 const sameItem = (a, b) => !!a && !!b && String(a.stream_id) === String(b.stream_id) && a.section === b.section
 
 /**
@@ -139,13 +152,7 @@ export const usePlayerStore = defineStore('player', () => {
         }
         if (Array.isArray(finalHistory)) {
           watchHistory.value = finalHistory
-            .map((it) => ({
-              ...toPlainItem(it, it && it.section),
-              currentTime: Number(it.currentTime || 0),
-              duration: Number(it.duration || 0),
-              progressPct: Number(it.progressPct || 0),
-              updatedAt: Number(it.updatedAt || Date.now()),
-            }))
+            .map((it) => toHistoryEntry(it))
             .filter(Boolean)
             .slice(0, WATCH_HISTORY_MAX)
         } else {
@@ -166,13 +173,7 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   function persistWatchHistory() {
-    const plain = watchHistory.value.map((it) => ({
-      ...toPlainItem(it, it.section),
-      currentTime: Number(it.currentTime || 0),
-      duration: Number(it.duration || 0),
-      progressPct: Number(it.progressPct || 0),
-      updatedAt: Number(it.updatedAt || Date.now()),
-    }))
+    const plain = watchHistory.value.map((it) => toHistoryEntry(it)).filter(Boolean)
     return storage
       .set(getHistoryKey(), plain)
       .catch((err) => console.warn('[player] Falha ao salvar histórico:', err))

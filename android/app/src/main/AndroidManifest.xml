@@ -13,8 +13,14 @@
         android:name="android.hardware.touchscreen"
         android:required="false" />
 
+    <!--
+        usesCleartextTraffic: servidores de mídia de usuários costumam ser só http://, então o
+        tráfego sem TLS precisa continuar permitido. allowBackup=false: o IndexedDB guarda as
+        credenciais cifradas das listas e não deve ir para o backup do Google.
+    -->
     <application
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -30,6 +36,8 @@
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
             android:exported="true">
 
             <intent-filter>

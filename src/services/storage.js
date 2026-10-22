@@ -16,17 +16,20 @@ export const STORAGE_KEYS = Object.freeze({
   FTUE_ACCEPTED: 'ftue:accepted',
 })
 
+/** Sobe quando o Aviso Legal / Privacidade muda: quem aceitou uma versão anterior vê o aviso de novo. */
+export const FTUE_VERSION = 2
+
 export const storage = {
   get: (key) => store.getItem(key),
   set: (key, value) => store.setItem(key, value),
   remove: (key) => store.removeItem(key),
 }
 
-/** Retorna `true` se o usuário já aceitou o Aviso Legal. */
+/** Retorna `true` se o usuário já aceitou a versão atual do Aviso Legal. */
 export async function hasAcceptedFtue() {
   try {
     const record = await store.getItem(STORAGE_KEYS.FTUE_ACCEPTED)
-    return Boolean(record && record.accepted === true)
+    return Boolean(record && record.accepted === true && Number(record.version) >= FTUE_VERSION)
   } catch (err) {
     // Se o storage falhar, a opção segura (compliance) é exibir o aviso novamente.
     console.error('[storage] Falha ao ler aceite do FTUE:', err)
@@ -39,6 +42,6 @@ export async function acceptFtue() {
   await store.setItem(STORAGE_KEYS.FTUE_ACCEPTED, {
     accepted: true,
     acceptedAt: new Date().toISOString(),
-    version: 1,
+    version: FTUE_VERSION,
   })
 }

@@ -283,6 +283,13 @@ function baseFromFinalUrl(finalUrl, requestedBase) {
   }
 }
 
+/** Falha de transporte (rede/TLS/gateway) em vez de uma resposta legítima do servidor. */
+function isTransportFailure(err) {
+  if (!err) return false
+  if (err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR) return true
+  return err.code === ERROR_CODES.HTTP_ERROR && err.status >= 500
+}
+
 /**
  * Requisição genérica ao `player_api.php`.
  * @returns {Promise<{ data: any, resolvedUrl: string|null }>} `resolvedUrl` só vem
@@ -299,13 +306,15 @@ export async function apiRequest(baseUrl, credentials, { action, params, timeout
   try {
     return await execute(baseUrl)
   } catch (err) {
-    // Se a chamada em https:// falhar na busca do catálogo ou API, tenta automaticamente em http:// (RFC-008)
-    if (/^https:\/\//i.test(baseUrl)) {
+    // Painéis com https quebrado (certificado inválido, redirecionamento) funcionam em http:// (RFC-008).
+    // Só rebaixa quando o https nem chegou a responder: um erro HTTP 4xx (ex.: credenciais recusadas)
+    // não pode reenviar usuário e senha em texto puro.
+    if (/^https:\/\//i.test(baseUrl) && isTransportFailure(err)) {
       const httpBase = baseUrl.replace(/^https:\/\//i, 'http://')
       try {
         console.warn(`[xtream] Chamada em ${baseUrl} (action=${action || 'auth'}) falhou (${err.message}). Tentando fallback em http://...`)
         return await execute(httpBase)
-      } catch (fallbackErr) {
+      } catch (_) {
         // Se ambos falharem, propaga o erro original
         throw err
       }
@@ -336,7 +345,7 @@ export async function fetchSeriesInfo({ apiBase, credentials, seriesId, timeoutM
   return data
 }
 
-const DEFAULT_VOD_PLOT = 'Sinopse disponível pronta para reprodução em alta definição.'
+const DEFAULT_VOD_PLOT = 'Sem sinopse disponível.'
 
 /** Converte segundos para "2h 14min" / "48min" ('' se inválido). */
 function formatDurationSecs(totalSecs) {

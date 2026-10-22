@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="rootEl" class="flex w-full h-full gap-10 px-12 pt-6 pb-4 bg-[#0a0a0a] text-white" aria-label="Buscar">
+  <section ref="rootEl" class="flex w-full h-full gap-10 px-16 pt-6 pb-4 bg-[#07070a] text-white" aria-label="Buscar">
     <!-- Consulta + teclado na tela -->
     <div class="w-[34rem] shrink-0 flex flex-col" data-focus-group="search-keyboard">
       <div data-focus-row="search-input-row">
@@ -323,7 +323,7 @@ onBeforeUnmount(() => {
           placeholder="Buscar filmes, séries e canais"
         />
       </div>
-      <p class="mt-2 text-tv-sm text-neutral-500">OK no campo abre o teclado do sistema e a busca por voz</p>
+      <p class="mt-2 text-tv-sm text-neutral-500">Use as letras abaixo ou aperte OK no campo para abrir o teclado do aparelho</p>
 
       <div class="mt-5 space-y-2.5">
         <div
@@ -494,7 +494,7 @@ onBeforeUnmount(() => {
                   <!-- O card de canal já traz "AO VIVO" no próprio layout -->
                   <span
                     v-if="r.section !== 'live'"
-                    class="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 rounded text-[0.7rem] font-bold tracking-wider pointer-events-none bg-black/70 border border-white/20 text-white"
+                    class="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 rounded text-tv-xs font-bold tracking-wider pointer-events-none bg-black/70 border border-white/20 text-white"
                   >
                     {{ SECTION_BADGES[r.section] }}
                   </span>

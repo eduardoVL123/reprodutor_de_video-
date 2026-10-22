@@ -3,13 +3,16 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
-import { pushFocusScope, registerBackHandler, registerKeyHandler } from '@/utils/spatialNavigation'
+import { pushFocusScope, registerBackHandler } from '@/utils/spatialNavigation'
+import { formatTime } from '@/utils/formatTime'
+import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 
 /**
- * Tela de detalhes em tela cheia (RFC-012) para filmes (`vod`) e séries (`series`).
- * Nada toca ao abrir: a reprodução começa só pelos botões de ação. Ao fechar, o foco
- * volta ao elemento que abriu a tela; ao fechar o player por cima dela, volta ao
- * botão de ação usado (ou ao episódio escolhido).
+ * Tela de detalhes em tela cheia (RFC-014 layout 2.0) para filmes (`vod`) e séries (`series`).
+ * Fundo em tela cheia com vinheta; informações à esquerda; botões "Assistir/Continuar",
+ * "Do início" (se houver progresso), "Minha lista" e "Voltar".
+ * Série: temporadas em abas horizontais e episódios em fileira horizontal de miniaturas 16:9
+ * com número, título, duração e progresso.
  */
 const props = defineProps({
   item: { type: Object, required: true },
@@ -26,7 +29,6 @@ const auth = useAuthStore()
 const player = usePlayerStore()
 
 const rootEl = ref(null)
-const episodesListEl = ref(null)
 const isSeries = computed(() => props.section === 'series')
 const info = ref(normalizeVodInfo(null, props.item))
 const isLoadingInfo = ref(true)
@@ -39,7 +41,6 @@ let loadingPromise = null
 let previousFocusedEl = null
 let popScope = null
 let cleanupBack = null
-let cleanupKey = null
 
 const mediaId = computed(() => {
   const it = props.item
@@ -95,7 +96,7 @@ const seasons = computed(() => {
 
 const currentEpisodes = computed(() => episodesOf(activeSeasonKey.value))
 
-/** Episódio mais recente desta série no histórico do perfil (o histórico já vem do mais novo ao mais antigo). */
+/** Episódio mais recente desta série no histórico do perfil */
 const seriesResume = computed(() => {
   const byId = new Map()
   seasons.value.forEach((season) => {
@@ -118,7 +119,6 @@ const seriesPlayLabel = computed(() => {
 
 const episodeTitle = (ep) => ep.title || ep.name || `Episódio ${ep.episode_num}`
 const episodeImage = (ep) => (ep.info && ep.info.movie_image) || info.value.poster
-const episodePlot = (ep) => (ep.info && ep.info.plot) || 'Episódio disponível em alta definição.'
 
 function episodeDuration(ep) {
   const secs = Number(ep.info && ep.info.duration_secs) || 0
@@ -131,13 +131,19 @@ function episodeProgressPct(ep) {
   return entry && entry.currentTime > 0 ? Math.min(100, entry.progressPct || 0) : 0
 }
 
+function episodeRemainingText(ep) {
+  const entry = historyEntry(ep.id, 'series')
+  const dur = Number(ep.info && ep.info.duration_secs) || 0
+  if (entry && entry.currentTime > 0 && dur > 0) {
+    const remMin = Math.ceil(Math.max(0, dur - entry.currentTime) / 60)
+    return `faltam ${remMin} min`
+  }
+  return ''
+}
+
 function selectSeason(key) {
   activeSeasonKey.value = key
 }
-
-watch(activeSeasonKey, () => {
-  if (episodesListEl.value) episodesListEl.value.scrollTop = 0
-})
 
 watch(
   () => info.value.backdrop,
@@ -172,7 +178,6 @@ function playMovie() {
 
 function playFromStart() {
   player.removeFromHistory(mediaId.value, 'vod')
-  // O player devolve o foco ao elemento ativo; o botão "do início" some sem progresso salvo.
   focusPrimary()
   playMovie()
 }
@@ -204,14 +209,6 @@ async function playSeries() {
 
 function playEpisode(index) {
   playEpisodeList(activeSeasonKey.value, index)
-}
-
-function onEpisodeFocus(event) {
-  try {
-    event.target.scrollIntoView({ block: 'nearest' })
-  } catch (_) {
-    event.target.scrollIntoView(false)
-  }
 }
 
 // ---------- Metadados ----------
@@ -254,20 +251,11 @@ function retryLoad() {
   loadingPromise = loadDetails()
 }
 
-// ---------- Foco, Voltar e D-Pad ----------
 function close() {
   emit('close')
 }
 
-/** Setas laterais na lista de episódios não "fogem" para os botões do cabeçalho. */
-function onModalKey(action) {
-  if (player.isOpen) return false
-  if (action !== 'left' && action !== 'right') return false
-  const el = document.activeElement
-  return !!(el && el.closest && el.closest('[data-focus-group="series-episodes"]'))
-}
-
-// Player fechado por cima da tela: garante que o foco volte para dentro dela.
+// Player fechado por cima da tela: restaura o foco
 watch(
   () => player.isOpen,
   (open) => {
@@ -287,7 +275,6 @@ onMounted(() => {
     close()
     return true
   })
-  cleanupKey = registerKeyHandler(onModalKey)
   nextTick(focusPrimary)
   loadingPromise = loadDetails()
 })
@@ -295,68 +282,59 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (popScope) popScope()
   if (cleanupBack) cleanupBack()
-  if (cleanupKey) cleanupKey()
   const el = previousFocusedEl
   previousFocusedEl = null
   nextTick(() => {
     if (el && document.body.contains(el)) el.focus()
   })
 })
-
-function formatTime(sec) {
-  if (!sec || isNaN(sec) || sec < 0) return '00:00'
-  const s = Math.floor(sec)
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const remS = s % 60
-  const pad = (n) => String(n).padStart(2, '0')
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(remS)}` : `${pad(m)}:${pad(remS)}`
-}
 </script>
 
 <template>
   <div
     ref="rootEl"
-    class="fixed inset-0 z-40 bg-[#0a0a0a] text-white overflow-hidden select-none"
+    class="fixed inset-0 z-40 bg-[#07070a] text-white overflow-hidden select-none"
     role="dialog"
     aria-modal="true"
     :aria-label="info.name"
     data-focus-group="media-details"
   >
-    <!-- Backdrop cinematográfico à direita -->
-    <img
-      v-if="info.backdrop && !backdropFailed"
-      :key="info.backdrop"
-      :src="info.backdrop"
-      alt=""
-      referrerpolicy="no-referrer"
-      class="absolute top-0 right-0 w-[68%] object-cover opacity-55 pointer-events-none"
-      :class="isSeries ? 'h-[62%]' : 'h-full'"
-      @error="backdropFailed = true"
-    />
-    <div class="absolute inset-0 bg-gradient-to-r from-[#0a0a0a] via-[#0a0a0a]/90 to-transparent pointer-events-none" />
-    <div
-      class="absolute inset-x-0 top-0 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/30 to-transparent pointer-events-none"
-      :class="isSeries ? 'h-[62%]' : 'h-full'"
-    />
+    <!-- Backdrop cinematográfico à direita em tela cheia com vinheta -->
+    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+      <img
+        v-if="info.backdrop && !backdropFailed"
+        :key="info.backdrop"
+        :src="info.backdrop"
+        alt=""
+        referrerpolicy="no-referrer"
+        class="absolute top-0 right-0 w-[68%] h-full object-cover object-center opacity-60 pointer-events-none"
+        @error="backdropFailed = true"
+      />
+      <div
+        v-else
+        class="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_30%,#1e40af_0%,#312e81_25%,#0b0b1a_55%,#07070a_80%)] opacity-80"
+      />
+      <div class="absolute inset-0 tv-vignette pointer-events-none" />
+    </div>
 
     <!-- ===================== FILME ===================== -->
-    <div v-if="!isSeries" class="relative z-10 px-14 py-12 flex flex-col justify-between h-full max-w-[56rem]">
+    <div v-if="!isSeries" class="relative z-10 px-20 py-12 flex flex-col justify-between h-full max-w-[56rem]">
       <div>
         <div class="flex items-center gap-2.5">
-          <span class="text-[#e50914] font-black text-tv-base tracking-widest">N</span>
+          <svg class="w-5 h-5 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
           <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">FILME</span>
         </div>
 
-        <h1 class="text-[3.2rem] font-black uppercase tracking-tight leading-[1.0] text-white mt-2 line-clamp-2">
+        <h1 class="text-tv-hero font-black uppercase text-white mt-2 line-clamp-2">
           {{ info.name }}
         </h1>
 
-        <div class="flex items-center gap-3.5 text-tv-sm text-neutral-300 mt-4 font-medium">
-          <span v-if="hasRating" class="text-[#22c55e] font-bold">Nota {{ info.rating }}</span>
+        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-4 font-medium flex-wrap">
+          <span v-if="hasRating" class="text-[#4ade80] font-bold">Nota {{ info.rating }}</span>
+          <span v-if="hasRating && (info.year || info.duration)" class="w-1 h-1 rounded-full bg-neutral-500" />
           <span v-if="info.year">{{ info.year }}</span>
+          <span v-if="info.year && info.duration" class="w-1 h-1 rounded-full bg-neutral-500" />
           <span>{{ info.duration || 'Longa-metragem' }}</span>
-          <span class="px-2 py-0.5 border border-white/25 rounded text-tv-xs">4K UHD</span>
           <span v-if="info.genre" class="truncate">{{ info.genre }}</span>
         </div>
 
@@ -386,11 +364,11 @@ function formatTime(sec) {
           </div>
         </template>
 
-        <div data-focus-row="movie-details-actions" class="flex items-center gap-3 mt-8">
+        <div data-focus-row="movie-details-actions" class="flex items-center gap-3.5 mt-8">
           <button
             id="details-play-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
             @click="playMovie"
           >
             <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
@@ -401,7 +379,7 @@ function formatTime(sec) {
             v-if="hasMovieProgress"
             id="details-restart-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-7 rounded-lg bg-neutral-800/85 border border-white/15 text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
             @click="playFromStart"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -414,7 +392,7 @@ function formatTime(sec) {
           <button
             id="details-fav-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-7 rounded-lg bg-neutral-800/85 border border-white/15 text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
             @click="toggleBookmark"
           >
             <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -424,13 +402,13 @@ function formatTime(sec) {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            <span>{{ isBookmarked ? 'Nos Favoritos' : 'Favoritos' }}</span>
+            <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
           </button>
 
           <button
             id="details-back-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-7 rounded-lg bg-neutral-800/85 border border-white/15 text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
             @click="close"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -444,42 +422,41 @@ function formatTime(sec) {
     </div>
 
     <!-- ===================== SÉRIE ===================== -->
-    <div v-else class="relative z-10 flex flex-col h-full">
-      <!-- Cabeçalho da série -->
-      <header class="px-14 pt-10 shrink-0 max-w-[60rem]">
+    <div v-else class="relative z-10 flex flex-col h-full justify-between pb-8">
+      <!-- Cabeçalho e Sinopse da série -->
+      <header class="px-20 pt-10 shrink-0 max-w-[62rem]">
         <div class="flex items-center gap-2.5">
-          <span class="text-[#e50914] font-black text-tv-base tracking-widest">N</span>
+          <svg class="w-5 h-5 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
           <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">SÉRIE</span>
         </div>
 
-        <h1 class="text-[3.2rem] font-black uppercase tracking-tight leading-[1.0] text-white mt-2 line-clamp-2">
+        <h1 class="text-tv-hero font-black uppercase text-white mt-1.5 line-clamp-2">
           {{ info.name }}
         </h1>
 
-        <div class="flex items-center gap-3.5 text-tv-sm text-neutral-300 mt-4 font-medium">
-          <span v-if="hasRating" class="text-[#22c55e] font-bold">Nota {{ info.rating }}</span>
+        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-3 font-medium flex-wrap">
+          <span v-if="hasRating" class="text-[#4ade80] font-bold">Nota {{ info.rating }}</span>
+          <span v-if="hasRating && (info.year || seasons.length)" class="w-1 h-1 rounded-full bg-neutral-500" />
           <span v-if="info.year">{{ info.year }}</span>
-          <span v-if="seasons.length">{{ seasons.length }} {{ seasons.length === 1 ? 'Temporada' : 'Temporadas' }}</span>
-          <span class="px-2 py-0.5 border border-white/25 rounded text-tv-xs">4K UHD</span>
+          <span v-if="info.year && seasons.length" class="w-1 h-1 rounded-full bg-neutral-500" />
+          <span v-if="seasons.length">{{ seasons.length }} {{ seasons.length === 1 ? 'temporada' : 'temporadas' }}</span>
           <span v-if="info.genre" class="truncate">{{ info.genre }}</span>
         </div>
 
-        <div v-if="isLoadingInfo" class="mt-4 space-y-3 animate-pulse" aria-hidden="true">
+        <div v-if="isLoadingInfo" class="mt-3 space-y-2 animate-pulse" aria-hidden="true">
           <div class="h-4 rounded bg-white/[0.08] w-full" />
           <div class="h-4 rounded bg-white/[0.06] w-3/4" />
         </div>
         <template v-else>
-          <p class="text-tv-sm text-neutral-200 leading-relaxed line-clamp-2 mt-4">{{ info.plot }}</p>
-          <p v-if="info.cast" class="mt-2 text-tv-xs text-neutral-400 line-clamp-1">
-            <span class="text-neutral-500 font-semibold">Elenco:</span> {{ info.cast }}
-          </p>
+          <p class="text-tv-sm text-neutral-200 leading-relaxed line-clamp-2 mt-3">{{ info.plot }}</p>
         </template>
 
-        <div data-focus-row="series-details-actions" class="flex items-center gap-3 mt-6">
+        <!-- Botões de Ação da Série -->
+        <div data-focus-row="series-details-actions" class="flex items-center gap-3.5 mt-5">
           <button
             id="series-play-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
             @click="playSeries"
           >
             <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
@@ -489,7 +466,7 @@ function formatTime(sec) {
           <button
             id="series-fav-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-7 rounded-lg bg-neutral-800/85 border border-white/15 text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
             @click="toggleBookmark"
           >
             <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -499,13 +476,13 @@ function formatTime(sec) {
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-            <span>{{ isBookmarked ? 'Nos Favoritos' : 'Favoritos' }}</span>
+            <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
           </button>
 
           <button
             id="series-back-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] px-7 rounded-lg bg-neutral-800/85 border border-white/15 text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
             @click="close"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -527,7 +504,7 @@ function formatTime(sec) {
       </div>
 
       <!-- Erro ao carregar -->
-      <div v-else-if="loadError" class="flex-1 flex flex-col items-center justify-center gap-4 text-center px-14">
+      <div v-else-if="loadError" class="flex-1 flex flex-col items-center justify-center gap-4 text-center px-20">
         <p class="text-tv-base text-red-300 font-medium" role="alert">{{ loadError }}</p>
         <div data-focus-row="series-error-actions">
           <button id="series-retry-btn" type="button" class="tv-btn tv-btn-primary !px-6 !py-2.5" @click="retryLoad">
@@ -536,83 +513,80 @@ function formatTime(sec) {
         </div>
       </div>
 
-      <template v-else>
-        <!-- Seletor horizontal de temporadas -->
-        <div data-focus-row="series-seasons" class="px-14 mt-7 shrink-0 flex items-center gap-3 overflow-x-auto py-1.5">
+      <!-- Temporadas em abas e Episódios em Fileira 16:9 (Mockup Detalhes de série) -->
+      <div v-else class="px-20 mt-4 shrink-0 space-y-4">
+        <!-- Seletor de Temporadas -->
+        <div data-focus-row="series-seasons" class="flex items-center gap-3 overflow-x-auto py-1">
           <button
             v-for="season in seasons"
             :id="'season-tab-' + season.key"
             :key="season.key"
             type="button"
-            class="tv-focusable shrink-0 px-6 py-2.5 rounded-lg border text-tv-sm transition-colors"
+            class="tv-focusable shrink-0 px-6 py-2 rounded-lg text-tv-sm font-semibold transition-colors"
             :class="
               season.key === activeSeasonKey
-                ? 'bg-[#e50914] border-[#e50914] text-white font-bold'
-                : 'border-white/10 bg-white/[0.04] text-neutral-300 font-semibold'
+                ? 'bg-white text-black font-bold'
+                : 'tv-btn-glass text-neutral-300'
             "
             @click="selectSeason(season.key)"
           >
             Temporada {{ season.number }}
           </button>
-          <span v-if="seasons.length" class="ml-3 shrink-0 text-tv-xs text-neutral-400 font-medium">
+          <span v-if="seasons.length" class="pl-2 shrink-0 text-tv-xs text-neutral-400 font-medium">
             {{ currentEpisodes.length }} {{ currentEpisodes.length === 1 ? 'episódio' : 'episódios' }}
           </span>
         </div>
 
-        <!-- Lista de episódios -->
-        <div
-          ref="episodesListEl"
-          class="flex-1 min-h-0 overflow-y-auto px-14 pt-4 pb-10 space-y-3"
-          data-focus-group="series-episodes"
-        >
-          <button
-            v-for="(ep, index) in currentEpisodes"
-            :id="'episode-card-' + ep.id"
-            :key="ep.id"
-            type="button"
-            class="tv-focusable w-full max-w-[72rem] flex items-center gap-6 p-3 rounded-xl bg-[#121215] border border-white/[0.08] text-left group"
-            @focus="onEpisodeFocus"
-            @click="playEpisode(index)"
+        <!-- Fileira Deslizante de Episódios com HorizontalRail -->
+        <div data-focus-group="series-episodes" class="min-h-[14rem]">
+          <HorizontalRail
+            v-if="currentEpisodes.length > 0"
+            :items="currentEpisodes"
+            id-prefix="episode-card"
+            :item-key="(ep) => ep.id"
+            :gap="1.2"
+            @select="(_, idx) => playEpisode(idx)"
           >
-            <div class="w-[13rem] h-[7.2rem] rounded-lg overflow-hidden bg-[#1a1a20] relative shrink-0">
-              <img
-                v-if="episodeImage(ep)"
-                :src="episodeImage(ep)"
-                alt=""
-                loading="lazy"
-                referrerpolicy="no-referrer"
-                class="w-full h-full object-cover"
-                @error="$event.target.style.display = 'none'"
-              />
-              <div class="absolute inset-0 bg-black/35 group-focus:bg-black/10 flex items-center justify-center transition-colors">
-                <div class="w-10 h-10 rounded-full border border-white/70 bg-black/40 flex items-center justify-center">
-                  <svg class="w-4 h-4 fill-white ml-0.5" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <template #item="{ item: ep }">
+              <div class="w-[17rem] text-left group">
+                <!-- Card Miniatura 16:9 -->
+                <div class="w-[17rem] h-[9.56rem] rounded-xl overflow-hidden bg-[#141418] border border-white/10 relative">
+                  <img
+                    v-if="episodeImage(ep)"
+                    :src="episodeImage(ep)"
+                    alt=""
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    class="w-full h-full object-cover"
+                    @error="$event.target.style.display = 'none'"
+                  />
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
+                  <span class="tv-badge">
+                    E{{ ep.episode_num }}
+                  </span>
+                  <div v-if="episodeProgressPct(ep) > 0" class="tv-progress">
+                    <i :style="{ width: episodeProgressPct(ep) + '%' }" />
+                  </div>
+                </div>
+
+                <!-- Título e duração abaixo da miniatura -->
+                <div class="mt-2.5">
+                  <p class="text-tv-sm font-bold text-white truncate">
+                    {{ ep.episode_num }}. {{ episodeTitle(ep) }}
+                  </p>
+                  <p class="text-tv-xs text-tv-meta mt-0.5">
+                    {{ episodeRemainingText(ep) || episodeDuration(ep) }}
+                  </p>
                 </div>
               </div>
-              <span class="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-white text-[0.65rem] font-bold">
-                E{{ ep.episode_num }}
-              </span>
-              <div v-if="episodeProgressPct(ep) > 0" class="absolute bottom-0 inset-x-0 h-1 bg-white/15">
-                <div class="h-full bg-[#e50914]" :style="{ width: episodeProgressPct(ep) + '%' }" />
-              </div>
-            </div>
+            </template>
+          </HorizontalRail>
 
-            <div class="flex-1 min-w-0 py-1">
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-tv-base font-bold text-white truncate">{{ ep.episode_num }}. {{ episodeTitle(ep) }}</span>
-                <span v-if="episodeDuration(ep)" class="text-tv-xs text-neutral-400 font-mono shrink-0">
-                  {{ episodeDuration(ep) }}
-                </span>
-              </div>
-              <p class="text-tv-xs text-neutral-400 line-clamp-2 mt-1.5">{{ episodePlot(ep) }}</p>
-            </div>
-          </button>
-
-          <p v-if="!currentEpisodes.length" class="text-center py-12 text-tv-sm text-neutral-400">
+          <p v-else class="py-8 text-tv-sm text-neutral-400">
             Nenhum episódio encontrado para esta temporada.
           </p>
         </div>
-      </template>
+      </div>
     </div>
   </div>
 </template>

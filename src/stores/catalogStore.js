@@ -14,7 +14,6 @@ import {
 
 // Listas grandes (50.000+ itens) podem demorar bem mais que um login.
 const CATALOG_TIMEOUT_MS = 120000
-const LOAD_ERROR = 'Não foi possível carregar a lista. Verifique a conexão e tente novamente.'
 
 const ACTIONS = {
   live: { categories: 'get_live_categories', streams: 'get_live_streams' },
@@ -39,6 +38,31 @@ export const useCatalogStore = defineStore('catalog', () => {
   const counts = shallowRef({ live: {}, vod: {}, series: {} })
 
   const inflight = {}
+  let m3uImport = null // download + importação da playlist, compartilhado pelas 3 seções
+
+  /** Uma playlist M3U serve às três seções: baixa e importa uma única vez, mesmo com cargas simultâneas. */
+  function importM3uOnce() {
+    if (!m3uImport) {
+      const running = (async () => {
+        const { text } = await fetchM3uText(auth.apiBase || auth.session?.baseUrl)
+        await importM3uCatalog(text, {
+          onProgress: (p) => {
+            status[p.section].progress = p.progress
+          },
+        })
+      })()
+      m3uImport = running.then(
+        () => {
+          m3uImport = null
+        },
+        (err) => {
+          m3uImport = null
+          throw err
+        },
+      )
+    }
+    return m3uImport
+  }
 
   // ---------- Chamadas à API (JSON bruto, sem transformar) ----------
   async function requestList(action) {
@@ -66,7 +90,7 @@ export const useCatalogStore = defineStore('catalog', () => {
         ...it,
         stream_id: sId,
         series_id: sId,
-        stream_icon: it.cover || it.stream_icon || (sId ? `https://picsum.photos/seed/series-${sId}/400/600` : ''),
+        stream_icon: it.cover || it.stream_icon || '',
         name: it.name || it.title || '',
         container_extension: 'mp4',
         section: 'series',
@@ -104,15 +128,8 @@ export const useCatalogStore = defineStore('catalog', () => {
 
       if (!meta) {
         if (auth.session?.type === 'm3u') {
-          st.step = 'Baixando playlist M3U...'
-          const m3uUrl = auth.apiBase || auth.session?.baseUrl
-          const { text } = await fetchM3uText(m3uUrl)
-          st.step = 'Processando lista M3U...'
-          await importM3uCatalog(text, {
-            onProgress: (p) => {
-              if (p.section === section) st.progress = p.progress
-            },
-          })
+          st.step = 'Baixando e processando a playlist M3U...'
+          await importM3uOnce()
           meta = await getMeta(section)
         } else {
           st.step = 'Baixando categorias...'
@@ -171,9 +188,10 @@ export const useCatalogStore = defineStore('catalog', () => {
     Object.keys(inflight).forEach((k) => {
       delete inflight[k]
     })
-    status.live = { state: 'idle', progress: 0, step: '', error: '' }
-    status.vod = { state: 'idle', progress: 0, step: '', error: '' }
-    status.series = { state: 'idle', progress: 0, step: '', error: '' }
+    m3uImport = null
+    status.live = initialStatus()
+    status.vod = initialStatus()
+    status.series = initialStatus()
     categories.value = { live: [], vod: [], series: [] }
     totals.value = { live: 0, vod: 0, series: 0 }
     counts.value = { live: {}, vod: {}, series: {} }

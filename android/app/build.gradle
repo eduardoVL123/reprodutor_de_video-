@@ -7,8 +7,8 @@ android {
         applicationId "com.neutrotv.player"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "1.1"
+        versionCode 3
+        versionName "1.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -27,6 +27,16 @@ android {
             keyAlias 'neutrodebug'
             keyPassword 'android'
         }
+        // Release: a chave de publicação nunca é versionada; vem de variáveis de ambiente
+        // (NEUTRO_KEYSTORE_FILE, NEUTRO_KEYSTORE_PASSWORD, NEUTRO_KEY_ALIAS, NEUTRO_KEY_PASSWORD).
+        if (System.getenv('NEUTRO_KEYSTORE_FILE')) {
+            release {
+                storeFile file(System.getenv('NEUTRO_KEYSTORE_FILE'))
+                storePassword System.getenv('NEUTRO_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('NEUTRO_KEY_ALIAS')
+                keyPassword System.getenv('NEUTRO_KEY_PASSWORD')
+            }
+        }
     }
     buildTypes {
         debug {
@@ -35,6 +45,9 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (System.getenv('NEUTRO_KEYSTORE_FILE')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

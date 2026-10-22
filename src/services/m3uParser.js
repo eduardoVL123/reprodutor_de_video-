@@ -84,7 +84,7 @@ export function parseM3u(text) {
           stream_id: `m3u_${section}_${count}`,
           num: count,
           name: currentMeta.name,
-          stream_icon: currentMeta.logo || `https://picsum.photos/seed/m3u-${count}/400/600`,
+          stream_icon: currentMeta.logo,
           category_id: categoryId,
           directUrl: url,
           container_extension: ext,
@@ -116,7 +116,7 @@ export function parseM3u(text) {
 }
 
 /**
- * Processa a lista M3U e salva as seções 'live' e 'vod' no IndexedDB.
+ * Processa a lista M3U e salva as seções 'live', 'vod' e 'series' (sempre vazia) no IndexedDB.
  */
 export async function importM3uCatalog(m3uText, { onProgress } = {}) {
   const { liveStreams, vodStreams, liveCategories, vodCategories } = parseM3u(m3uText)
@@ -138,6 +138,10 @@ export async function importM3uCatalog(m3uText, { onProgress } = {}) {
       if (onProgress) onProgress({ section: 'vod', progress: p })
     },
   })
+
+  // M3U não tem séries: grava a seção vazia para as três terem catálogo válido.
+  await saveSection('series', { categories: [], streams: [] })
+  if (onProgress) onProgress({ section: 'series', progress: 1 })
 
   return {
     liveCount: liveStreams.length,

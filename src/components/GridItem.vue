@@ -19,12 +19,7 @@ const imgFailed = ref(false)
 const image = computed(() => {
   const it = props.item
   if (!it) return ''
-  if (it.stream_icon) return it.stream_icon
-  if (it.cover) return it.cover
-  if (it.stream_id !== undefined && it.stream_id !== null && props.variant === 'poster') {
-    return `https://picsum.photos/seed/tv-${it.stream_id}/400/600`
-  }
-  return ''
+  return it.stream_icon || it.cover || ''
 })
 
 watch(image, () => {
@@ -96,9 +91,9 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
             <span class="text-[#e50914]">{{ channelSecondName }}</span>
           </span>
         </div>
-        <span class="flex items-center gap-1.5 text-[0.65rem] font-bold uppercase tracking-wider text-[#10b981] shrink-0">
+        <span class="flex items-center gap-1.5 text-tv-xs font-bold uppercase tracking-wider text-[#10b981] shrink-0">
           <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
-          AO VIVO
+          <span>AO VIVO</span>
         </span>
       </div>
 

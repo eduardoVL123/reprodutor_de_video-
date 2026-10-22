@@ -20,7 +20,6 @@ body,
   font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
-  cursor: none; /* TV: sem ponteiro */
 }
 
 /* Esconde scrollbars em qualquer container rolável. */
@@ -47,13 +46,14 @@ video::-webkit-media-controls-start-playback-button {
 }
 
 @layer components {
-  /* Foco de controle remoto Clean Cinema: fino, elegante e preciso */
+  /* Foco de controle remoto: anel branco separado do elemento por uma faixa escura, para
+     aparecer também em botões brancos (Entrar, Assistir agora, Aceitar). */
   .tv-focusable {
     @apply outline-none transition-all duration-150 ease-out;
   }
   .tv-focusable:focus,
   .tv-focusable.is-focused {
-    @apply outline-none ring-2 ring-white scale-[1.02] z-10;
+    @apply outline-none ring-2 ring-white ring-offset-[3px] ring-offset-[#0a0a0a] scale-[1.02] z-10;
   }
 
   /* Botões Clean Cinema */
@@ -78,5 +78,59 @@ video::-webkit-media-controls-start-playback-button {
     border-color: #e50914 !important;
     background-color: #18181c !important;
     box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.35);
+  }
+
+  /* ---------- Base do 2.0 (RFC-014) ---------- */
+
+  /* "Vidro" sem backdrop-filter (ausente no Chromium < 76 das TVs): fundo translúcido sólido. */
+  .tv-glass {
+    @apply bg-white/[0.12] border border-white/[0.14];
+  }
+  .tv-btn-glass {
+    @apply tv-btn tv-glass;
+  }
+
+  /* Metadados curtos: classificação, qualidade informada pela lista etc. */
+  .tv-chip {
+    @apply inline-flex items-center rounded border border-white/30 px-2 text-tv-xs text-neutral-300;
+  }
+
+  /* Selos sobre capas */
+  .tv-badge {
+    @apply absolute top-3 left-3 z-10 rounded bg-black/60 border border-white/25 px-2 text-tv-xs font-extrabold uppercase tracking-wider text-white;
+  }
+  .tv-badge-live {
+    @apply bg-tv-accent border-transparent;
+  }
+
+  /* Barra de progresso ("continuar assistindo", episódios) */
+  .tv-progress {
+    @apply absolute inset-x-0 bottom-0 h-1 bg-white/25;
+  }
+  .tv-progress > i {
+    @apply block h-full bg-tv-accent;
+  }
+
+  /* Vinhetas sobre a arte do destaque e dos detalhes */
+  .tv-vignette {
+    background: linear-gradient(90deg, #07070a 0%, rgba(7, 7, 10, 0.92) 30%, rgba(7, 7, 10, 0.35) 60%, transparent 80%),
+      linear-gradient(0deg, #07070a 4%, rgba(7, 7, 10, 0.6) 32%, transparent 60%);
+  }
+
+  /* Fileira deslizante (components/ui/HorizontalRail.vue): sobra espaço para o item focado crescer sem corte. */
+  .tv-rail {
+    @apply overflow-hidden pt-4 pb-6 pl-3 -mt-4 -mb-6 -ml-3;
+  }
+  .tv-rail-track {
+    @apply flex items-start;
+    transition: transform 200ms ease-out;
+    will-change: transform;
+  }
+  .tv-rail-item {
+    @apply relative flex-none overflow-hidden rounded-xl text-left;
+  }
+  .tv-rail-item.tv-focusable:focus {
+    --tw-scale-x: 1.08;
+    --tw-scale-y: 1.08;
   }
 }

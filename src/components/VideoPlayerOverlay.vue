@@ -3,8 +3,11 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useAuthStore } from '@/stores/authStore'
 import { buildStreamUrl } from '@/services/streamUrl'
+import { formatTime } from '@/utils/formatTime'
 import { useVideoEngine, PLAYBACK_ERROR } from '@/composables/useVideoEngine'
 import { registerBackHandler, registerKeyHandler, focusFirstIn, pushFocusScope } from '@/utils/spatialNavigation'
+import { onAppBackground, onPictureInPictureChange, setPictureInPictureEnabled } from '@/services/platform'
+import { parseSeriesTitle } from '@/utils/seriesTitle'
 import GridView from '@/components/GridView.vue'
 
 const player = usePlayerStore()
@@ -26,6 +29,7 @@ const isOsdVisible = ref(true)
 const isQueueDrawerOpen = ref(false)
 const isPaused = ref(false)
 const isBuffering = ref(false)
+const isInPip = ref(false) // app no pop-up (Picture-in-Picture) do Android: só o vídeo aparece
 const lastFocusedControlId = ref('osd-play-pause')
 
 function onControlsFocusIn(e) {
@@ -34,10 +38,15 @@ function onControlsFocusIn(e) {
   }
 }
 
+/** Foco no último controle usado (ou Play/Pausa): nunca no "Fechar", onde um OK acidental encerraria o vídeo. */
+function focusOsdControl() {
+  const target = document.getElementById(lastFocusedControlId.value) || document.getElementById('osd-play-pause')
+  if (target) target.focus()
+}
+
 // Tempo e progresso (VOD / Filas)
 const currentTime = ref(0)
 const duration = ref(0)
-const progressEl = ref(null)
 
 // Auto-advance (VOD / Filas)
 const autoAdvance = ref(null) // { nextItem: object, secondsLeft: number, timer: any }
@@ -50,28 +59,28 @@ let popPlayerScope = null
 let popDrawerScope = null
 let popAutoAdvanceScope = null
 let popErrorScope = null
+let cleanupBackground = null
+let cleanupPip = null
 
 const isLive = computed(() => player.mode === 'live' || player.currentSection === 'live')
+/** Pop-up só com vídeo de fato tocando: pausado, carregando, com erro ou em menu, sair do app não abre janela. */
+const canPictureInPicture = computed(
+  () => player.isOpen && hasRenderedFrame.value && !isPaused.value && !engineError.value,
+)
 const isBookmarked = computed(() =>
   player.currentItem ? player.isInCustomQueue(player.currentItem, player.currentSection) : false,
 )
+
+const parsedSeriesInfo = computed(() => {
+  const name = player.currentItem?.name || ''
+  return parseSeriesTitle(name)
+})
 
 const nextItemInQueue = computed(() => {
   if (!player.hasNext) return null
   const idx = player.currentIndex + 1
   return idx < player.queue.length ? player.queue[idx] : null
 })
-
-// Formatação hh:mm:ss
-function formatTime(sec) {
-  if (!sec || isNaN(sec) || sec < 0) return '00:00'
-  const s = Math.floor(sec)
-  const h = Math.floor(s / 3600)
-  const m = Math.floor((s % 3600) / 60)
-  const remS = s % 60
-  const pad = (n) => String(n).padStart(2, '0')
-  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(remS)}` : `${pad(m)}:${pad(remS)}`
-}
 
 const progressPercent = computed(() => {
   if (!duration.value || duration.value <= 0) return 0
@@ -122,11 +131,15 @@ async function startPlayback() {
   const item = player.currentItem
   if (!item) return
 
+  // Marca o pedido já aqui: os watchers de isOpen e playToken disparam juntos e não podem iniciar duas vezes.
+  lastPlayedToken = player.playToken
   resetOsdTimer()
 
   await nextTick()
-  if (!videoRef.value) return
-  lastPlayedToken = player.playToken
+  if (!videoRef.value) {
+    lastPlayedToken = -1
+    return
+  }
 
   const stream = buildStreamUrl({
     apiBase: auth.apiBase,
@@ -144,14 +157,24 @@ watch(
   () => {
     if (player.isOpen) {
       startPlayback()
+      // Zapping com o menu oculto: o botão focado sumiu; o foco volta para os controles.
+      nextTick(() => {
+        const rootEl = document.getElementById('video-player-root')
+        if (rootEl && !rootEl.contains(document.activeElement)) focusOsdControl()
+      })
     }
   },
 )
+
+watch(canPictureInPicture, (enabled) => {
+  setPictureInPictureEnabled(enabled)
+})
 
 watch(
   () => player.isOpen,
   (open) => {
     if (open) {
+      lastFocusedControlId.value = 'osd-play-pause'
       startPlayback()
       nextTick(() => {
         const rootEl = document.getElementById('video-player-root')
@@ -159,7 +182,7 @@ watch(
           if (popPlayerScope) popPlayerScope()
           popPlayerScope = pushFocusScope(rootEl)
         }
-        focusFirstIn('#player-osd') || focusFirstIn('#osd-play-pause')
+        focusOsdControl()
       })
     } else {
       lastPlayedToken = -1
@@ -315,6 +338,7 @@ function onWaiting() {
 
 function onPlaying() {
   isBuffering.value = false
+  isPaused.value = false
   hasRenderedFrame.value = true
 }
 
@@ -374,14 +398,53 @@ function playNextNow() {
 }
 
 // Controles de Mídia
+function playVideo() {
+  if (videoRef.value && videoRef.value.paused) {
+    const p = videoRef.value.play()
+    if (p && typeof p.catch === 'function') p.catch(() => {})
+  }
+  resetOsdTimer()
+}
+
+function pauseVideo() {
+  if (videoRef.value && !videoRef.value.paused) videoRef.value.pause()
+}
+
 function togglePlayPause() {
   if (!videoRef.value) return
   if (videoRef.value.paused) {
-    videoRef.value.play().catch(() => {})
+    playVideo()
   } else {
-    videoRef.value.pause()
+    pauseVideo()
+    resetOsdTimer()
   }
-  resetOsdTimer()
+}
+
+/** Troca de canal com o menu oculto; se não houver para onde ir, mostra o menu em vez de não reagir. */
+function zap(stepFn) {
+  stepFn().then((moved) => {
+    if (moved) return
+    resetOsdTimer()
+    nextTick(focusOsdControl)
+  })
+}
+
+/**
+ * Teclas de mídia do controle (Samsung, LG e Android TV): funcionam com o menu visível ou não.
+ * @returns {boolean} true se a tecla era de mídia
+ */
+function handleMediaKey(action) {
+  const handlers = {
+    play: playVideo,
+    pause: pauseVideo,
+    playPause: togglePlayPause,
+    stop: closePlayer,
+    rewind: () => seek(-10),
+    fastForward: () => seek(10),
+  }
+  if (!handlers[action]) return false
+  handlers[action]()
+  return true
 }
 
 function seek(deltaSec) {
@@ -466,8 +529,9 @@ onMounted(() => {
   })
 
   // Interceptador Global de Teclas durante reprodução
-  cleanupKey = registerKeyHandler((action, event) => {
+  cleanupKey = registerKeyHandler((action) => {
     if (!player.isOpen) return false
+    if (handleMediaKey(action)) return true
 
     // Intercepta seek na barra de progresso quando o foco estiver nela
     if (isOsdVisible.value && document.activeElement && document.activeElement.id === 'osd-progress') {
@@ -499,29 +563,23 @@ onMounted(() => {
 
     // Qualquer tecla acorda o OSD (se não estiver em modo zapping puro)
     if (!isQueueDrawerOpen.value && !autoAdvance.value) {
-      // Zapping Rápido em Live TV quando OSD estiver OCULTO:
+      // Zapping Rápido em Live TV quando OSD estiver OCULTO (sem outro canal, o menu aparece):
       if (isLive.value && !isOsdVisible.value) {
         if (action === 'up' || action === 'channelUp') {
-          player.next()
+          zap(player.next)
           return true
         }
         if (action === 'down' || action === 'channelDown') {
-          player.prev()
+          zap(player.prev)
           return true
         }
       }
 
-      // Se o OSD estiver oculto e o usuário apertar setas/Enter/playPause
+      // Se o OSD estiver oculto e o usuário apertar setas/Enter, o menu volta no último controle usado
       if (!isOsdVisible.value) {
-        if (action === 'playPause') {
-          togglePlayPause()
-          return true
-        }
         if (action === 'select' || action === 'left' || action === 'right' || action === 'up' || action === 'down') {
           resetOsdTimer()
-          nextTick(() => {
-            focusFirstIn('#player-osd') || focusFirstIn('#osd-play-pause')
-          })
+          nextTick(focusOsdControl)
           return true
         }
       } else {
@@ -539,12 +597,22 @@ onMounted(() => {
       player.prev()
       return true
     }
-    if (action === 'playPause') {
-      togglePlayPause()
-      return true
-    }
 
     return false
+  })
+
+  // Samsung/LG exigem parar a reprodução quando o app sai da tela; no pop-up do Android ela continua.
+  cleanupBackground = onAppBackground(() => {
+    if (player.isOpen) pauseVideo()
+  })
+  cleanupPip = onPictureInPictureChange((active) => {
+    isInPip.value = active
+    if (active) {
+      isQueueDrawerOpen.value = false
+      isOsdVisible.value = false
+    } else {
+      resetOsdTimer()
+    }
   })
 })
 
@@ -554,6 +622,9 @@ onBeforeUnmount(() => {
   }
   if (cleanupBack) cleanupBack()
   if (cleanupKey) cleanupKey()
+  if (cleanupBackground) cleanupBackground()
+  if (cleanupPip) cleanupPip()
+  setPictureInPictureEnabled(false)
   if (osdTimer) clearTimeout(osdTimer)
   if (popPlayerScope) popPlayerScope()
   if (popDrawerScope) popDrawerScope()
@@ -675,65 +746,85 @@ onBeforeUnmount(() => {
       leave-to-class="opacity-0"
     >
       <div
-        v-if="isOsdVisible && !engineError"
+        v-if="isOsdVisible && !engineError && !isInPip"
         id="player-osd"
-        class="absolute inset-0 flex flex-col justify-between pointer-events-auto bg-gradient-to-t from-black/90 via-transparent to-black/80 p-12 z-10"
+        class="absolute inset-0 flex flex-col justify-between pointer-events-auto bg-gradient-to-t from-black/90 via-transparent to-black/80 px-24 py-14 z-10"
       >
         <!-- Topo do OSD -->
-        <header data-focus-row="osd-header" class="flex items-center justify-between">
-          <div class="flex items-center gap-6">
-            <button
-              id="osd-top-close"
-              type="button"
-              class="tv-btn !px-5 !py-2.5 flex items-center gap-2"
-              @click="closePlayer()"
-            >
-              <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-              <span>Fechar</span>
-            </button>
-            <div>
-              <div class="flex items-center gap-4">
+        <header data-focus-row="osd-header" class="flex items-start justify-between">
+          <div class="pr-8">
+            <template v-if="parsedSeriesInfo.header">
+              <p class="text-tv-sm text-tv-meta font-medium mb-1">
+                {{ parsedSeriesInfo.header }}
+              </p>
+              <h1 class="text-tv-2xl font-black text-white max-w-[65rem] truncate leading-tight">
+                {{ parsedSeriesInfo.title }}
+              </h1>
+            </template>
+            <template v-else-if="isLive">
+              <div class="flex items-center gap-3 mb-1">
                 <span
-                  v-if="isLive"
-                  class="px-3 py-1 rounded bg-red-600 text-white font-bold text-tv-sm uppercase tracking-wider"
+                  class="px-2.5 py-0.5 rounded bg-[#e50914] text-white font-bold text-tv-xs uppercase tracking-wider"
                 >
                   AO VIVO
                 </span>
-                <span v-else class="text-tv-sm text-tv-accent-soft font-semibold">
-                  {{ player.mode === 'queue' ? 'Favoritos' : (player.currentSection === 'series' ? 'Série / Episódio' : 'Filme / Vídeo') }}
+                <span v-if="player.currentItem?.category_name" class="text-tv-sm text-tv-meta font-medium">
+                  {{ player.currentItem.category_name }}
                 </span>
               </div>
-              <h1 class="text-tv-xl font-bold text-white mt-1 max-w-[65rem] truncate">
+              <h1 class="text-tv-2xl font-black text-white max-w-[65rem] truncate leading-tight">
                 {{ player.currentItem?.name }}
               </h1>
-            </div>
+            </template>
+            <template v-else>
+              <p v-if="player.currentItem?.category_name" class="text-tv-sm text-tv-meta font-medium mb-1">
+                {{ player.currentItem.category_name }}
+              </p>
+              <h1 class="text-tv-2xl font-black text-white max-w-[65rem] truncate leading-tight">
+                {{ player.currentItem?.name }}
+              </h1>
+            </template>
           </div>
+
+          <button
+            id="osd-top-close"
+            type="button"
+            class="tv-btn tv-glass !w-12 !h-12 !p-0 rounded-full flex items-center justify-center text-tv-meta hover:text-white"
+            title="Fechar reprodutor"
+            @click="closePlayer()"
+          >
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
         </header>
 
         <!-- Base do OSD -->
         <footer class="flex flex-col gap-6">
           <!-- Barra de Progresso (VOD / Filas) -->
           <div v-if="!isLive && duration > 0" data-focus-row="osd-progress-row" class="w-full">
+            <div class="flex justify-between items-center text-tv-xs text-tv-meta mb-2 font-mono">
+              <span>{{ formatTime(currentTime) }}</span>
+              <span>-{{ formatTime(Math.max(0, duration - currentTime)) }}</span>
+            </div>
             <div
               id="osd-progress"
               role="slider"
               tabindex="0"
-              class="tv-focusable relative w-full h-4 rounded-full bg-tv-border cursor-pointer overflow-hidden"
+              class="tv-focusable relative w-full h-1.5 rounded-full bg-white/20 cursor-pointer"
               :aria-valuenow="Math.round(currentTime)"
               :aria-valuemin="0"
               :aria-valuemax="Math.round(duration)"
             >
               <div
-                class="absolute left-0 top-0 bottom-0 bg-tv-accent transition-all duration-150"
+                class="absolute left-0 top-0 bottom-0 bg-[#e50914] rounded-full"
                 :style="{ width: progressPercent + '%' }"
               />
-            </div>
-            <div class="flex justify-between items-center text-tv-sm text-tv-muted mt-2 font-mono">
-              <span>{{ formatTime(currentTime) }}</span>
-              <span>-{{ formatTime(duration - currentTime) }}</span>
+              <div
+                class="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white shadow pointer-events-none"
+                :style="{ left: progressPercent + '%' }"
+              />
             </div>
           </div>
 
@@ -743,20 +834,21 @@ onBeforeUnmount(() => {
             class="flex items-center justify-between"
             @focusin="onControlsFocusIn"
           >
+            <!-- Controles redondos de reprodução -->
             <div class="flex items-center gap-4">
               <!-- Anterior -->
               <button
                 id="osd-prev"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-2"
+                class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
                 :disabled="!player.hasPrev"
+                title="Anterior"
                 @click="player.prev()"
               >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                   <polygon points="19 20 9 12 19 4 19 20" />
                   <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5" />
                 </svg>
-                <span>Anterior</span>
               </button>
 
               <!-- Seek -10s (VOD) -->
@@ -764,31 +856,31 @@ onBeforeUnmount(() => {
                 v-if="!isLive"
                 id="osd-seek-back"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-1.5"
+                class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
+                title="-10 segundos"
                 @click="seek(-10)"
               >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M1 4v6h6" />
                   <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
                 </svg>
-                <span>-10s</span>
               </button>
 
-              <!-- Play / Pause -->
+              <!-- Play / Pause grande -->
               <button
                 id="osd-play-pause"
                 type="button"
-                class="tv-btn tv-btn-primary !px-7 !py-3 flex items-center gap-2.5 font-bold"
+                class="tv-btn !w-[4.75rem] !h-[4.75rem] !p-0 rounded-full bg-white text-black hover:bg-neutral-200 flex items-center justify-center font-bold shadow-xl"
+                :title="isPaused ? 'Reproduzir' : 'Pausar'"
                 @click="togglePlayPause"
               >
-                <svg v-if="isPaused" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <svg v-if="isPaused" class="w-7 h-7 fill-current translate-x-0.5" viewBox="0 0 24 24">
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
-                <svg v-else class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                <svg v-else class="w-7 h-7 fill-current" viewBox="0 0 24 24">
                   <rect x="6" y="4" width="4" height="16" />
                   <rect x="14" y="4" width="4" height="16" />
                 </svg>
-                <span>{{ isPaused ? 'Reproduzir' : 'Pausar' }}</span>
               </button>
 
               <!-- Seek +10s (VOD) -->
@@ -796,38 +888,38 @@ onBeforeUnmount(() => {
                 v-if="!isLive"
                 id="osd-seek-fwd"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-1.5"
+                class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
+                title="+10 segundos"
                 @click="seek(10)"
               >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M23 4v6h-6" />
                   <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
                 </svg>
-                <span>+10s</span>
               </button>
 
               <!-- Próximo -->
               <button
                 id="osd-next"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-2"
+                class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
                 :disabled="!player.hasNext"
+                title="Próximo"
                 @click="player.next()"
               >
-                <span>Próximo</span>
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
                   <polygon points="5 4 15 12 5 20 5 4" />
                   <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5" />
                 </svg>
               </button>
             </div>
 
-            <!-- Fila e Favoritos -->
+            <!-- Fila e Minha Lista -->
             <div class="flex items-center gap-4">
               <button
                 id="osd-queue"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-2"
+                class="tv-btn tv-glass !px-6 !py-3 rounded-xl flex items-center gap-2 font-bold text-tv-xs text-white"
                 :class="isQueueDrawerOpen ? 'bg-[#e50914] border-[#e50914] text-white' : ''"
                 @click="toggleQueueDrawer"
               >
@@ -839,37 +931,24 @@ onBeforeUnmount(() => {
                   <line x1="3" y1="12" x2="3.01" y2="12" />
                   <line x1="3" y1="18" x2="3.01" y2="18" />
                 </svg>
-                <span>Fila</span>
+                <span>{{ player.currentSection === 'series' ? 'Episódios' : 'Fila' }}</span>
               </button>
 
               <button
                 id="osd-bookmark"
                 type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-2"
-                :class="isBookmarked ? 'text-amber-400 border-amber-400/40' : ''"
+                class="tv-btn tv-glass !px-6 !py-3 rounded-xl flex items-center gap-2 font-bold text-tv-xs text-white"
+                :class="isBookmarked ? 'border-white/40' : ''"
                 @click="toggleBookmark"
               >
-                <svg v-if="isBookmarked" class="w-4 h-4 fill-current" viewBox="0 0 24 24">
-                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                <svg v-if="isBookmarked" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="20 6 9 17 4 12" />
                 </svg>
                 <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                <span>{{ isBookmarked ? 'Nos Favoritos' : 'Favoritos' }}</span>
-              </button>
-
-              <button
-                id="osd-close"
-                type="button"
-                class="tv-btn !px-5 !py-3 flex items-center gap-1.5"
-                @click="closePlayer()"
-              >
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                </svg>
-                <span>Sair</span>
+                <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
               </button>
             </div>
           </div>
@@ -889,7 +968,7 @@ onBeforeUnmount(() => {
       <aside
         v-if="isQueueDrawerOpen"
         id="queue-drawer"
-        class="fixed right-0 top-0 bottom-0 w-[34rem] bg-tv-surface/95 border-l-2 border-tv-border z-40 p-8 flex flex-col shadow-2xl"
+        class="fixed right-0 top-0 bottom-0 w-[40rem] bg-tv-surface/95 border-l-2 border-tv-border z-40 pl-8 pr-24 py-14 flex flex-col shadow-2xl"
         data-focus-group="player-drawer"
       >
         <header class="flex items-center justify-between mb-6 pb-4 border-b border-tv-border">
@@ -959,9 +1038,9 @@ onBeforeUnmount(() => {
       leave-to-class="translate-y-8 opacity-0"
     >
       <div
-        v-if="autoAdvance"
+        v-if="autoAdvance && !isInPip"
         id="autoadvance-card"
-        class="absolute bottom-12 right-12 z-30 w-[32rem] rounded-3xl border-2 border-tv-accent bg-tv-surface/95 p-8 shadow-2xl"
+        class="absolute bottom-14 right-24 z-30 w-[32rem] rounded-3xl border-2 border-tv-accent bg-tv-surface/95 p-8 shadow-2xl"
       >
         <p class="text-tv-sm uppercase tracking-wider text-tv-accent-soft font-semibold mb-1">
           Próximo na fila

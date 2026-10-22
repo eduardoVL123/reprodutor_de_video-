@@ -24,18 +24,6 @@ const routes = [
     component: () => import('@/views/Dashboard.vue'),
     meta: { requiresAuth: true },
   },
-  {
-    path: '/live',
-    name: 'live',
-    component: () => import('@/views/LiveTV.vue'),
-    meta: { requiresAuth: true },
-  },
-  {
-    path: '/vod',
-    name: 'vod',
-    component: () => import('@/views/VOD.vue'),
-    meta: { requiresAuth: true },
-  },
   { path: '/:pathMatch(.*)*', redirect: '/login' },
 ]
 

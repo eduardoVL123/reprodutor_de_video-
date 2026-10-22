@@ -8,7 +8,7 @@ const ACTIVE_PROFILE_KEY = 'app:activeProfileId'
 const MAX_PROFILES = 5
 
 export const PROFILE_COLORS = [
-  '#e50914', // Vermelho Netflix
+  '#e50914', // Vermelho
   '#2563eb', // Azul
   '#10b981', // Verde esmeralda
   '#f59e0b', // Âmbar
@@ -19,7 +19,7 @@ export const PROFILE_COLORS = [
 const DEFAULT_PROFILES = [
   { id: 'p1', name: 'Principal', color: '#e50914' },
   { id: 'p2', name: 'Família', color: '#2563eb' },
-  { id: 'p3', name: 'Kids', color: '#10b981' },
+  { id: 'p3', name: 'Convidado', color: '#10b981' },
 ]
 
 export const useProfileStore = defineStore('profile', () => {
@@ -51,6 +51,12 @@ export const useProfileStore = defineStore('profile', () => {
       } else if (profiles.value.length > 0) {
         activeProfileId.value = profiles.value[0].id
         await storage.set(ACTIVE_PROFILE_KEY, activeProfileId.value)
+      }
+
+      // Só faz sentido perguntar "quem está assistindo" quando há escolha.
+      if (profiles.value.length === 1) {
+        activeProfileId.value = profiles.value[0].id
+        isProfileGateOpen.value = false
       }
     } catch (err) {
       console.warn('[profile] Falha ao hidratar perfis:', err)

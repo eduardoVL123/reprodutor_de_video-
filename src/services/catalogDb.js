@@ -24,6 +24,8 @@ const db = localforage.createInstance({
 
 export const CHUNK_SIZE = 500
 export const ALL_CATEGORIES = 'all'
+/** Sobe quando o formato dos itens salvos muda (ex.: capas de terceiros): catálogos antigos são baixados de novo. */
+const CATALOG_VERSION = 2
 const LRU_MAX_CHUNKS = 6
 
 const metaKey = (s) => `meta:${s}`
@@ -59,8 +61,9 @@ export async function getMeta(section) {
   if (metaCache.has(section)) return metaCache.get(section)
   try {
     const meta = await db.getItem(metaKey(section))
-    if (meta) metaCache.set(section, meta)
-    return meta || null
+    if (!meta || meta.version !== CATALOG_VERSION) return null
+    metaCache.set(section, meta)
+    return meta
   } catch (_) {
     return null
   }
@@ -114,10 +117,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
       if (!it) return it
       const streamId =
         it.stream_id !== undefined && it.stream_id !== null ? it.stream_id : it.series_id
-      const icon =
-        it.stream_icon ||
-        it.cover ||
-        (streamId !== undefined && streamId !== null ? `https://picsum.photos/seed/tv-${streamId}/400/600` : '')
+      const icon = it.stream_icon || it.cover || ''
       return {
         ...it,
         stream_id: streamId,
@@ -150,6 +150,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   })
 
   const metaObj = {
+    version: CATALOG_VERSION,
     count: total,
     chunkSize: CHUNK_SIZE,
     chunkCount,
@@ -263,12 +264,7 @@ async function readPositions(section, meta, positions) {
   const items = []
   positions.forEach((p) => {
     const item = chunks[Math.floor(p / meta.chunkSize)][p % meta.chunkSize]
-    if (item) {
-      if (!item.stream_icon && item.stream_id !== undefined && item.stream_id !== null) {
-        item.stream_icon = `https://picsum.photos/seed/tv-${item.stream_id}/400/600`
-      }
-      items.push(item)
-    }
+    if (item) items.push(item)
   })
   return items
 }

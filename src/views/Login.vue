@@ -48,7 +48,7 @@ onBeforeUnmount(() => auth.clearError())
 
 <template>
   <section
-    class="relative w-full h-full flex justify-center overflow-y-auto bg-[#0a0a0a] p-8"
+    class="relative w-full h-full flex justify-center overflow-y-auto bg-[#07070a] p-8"
   >
     <div class="absolute -top-40 -right-40 w-[35rem] h-[35rem] rounded-full bg-[#e50914]/10 pointer-events-none"></div>
 
@@ -65,7 +65,7 @@ onBeforeUnmount(() => auth.clearError())
         </div>
         <h1 class="text-tv-xl font-black text-white tracking-tight">Conectar ao servidor</h1>
         <p class="mt-2 text-tv-sm text-neutral-400">
-          Informe seu link encurtado, URL Xtream Codes ou playlist M3U.
+          Informe o endereço do seu servidor ou a URL de uma playlist M3U.
         </p>
         <p class="mt-2 text-tv-xs text-neutral-500 flex items-center gap-2">
           <svg class="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -89,10 +89,11 @@ onBeforeUnmount(() => auth.clearError())
             type="text"
             autocomplete="off"
             autocapitalize="off"
+            autocorrect="off"
             spellcheck="false"
             readonly="readonly"
             data-tv-editing="false"
-            placeholder="Ex: n.tv/vip ou servidor.com:8080"
+            placeholder="Ex: servidor.com:8080"
             class="tv-input"
           />
         </label>
@@ -106,6 +107,7 @@ onBeforeUnmount(() => auth.clearError())
             type="text"
             autocomplete="off"
             autocapitalize="off"
+            autocorrect="off"
             spellcheck="false"
             readonly="readonly"
             data-tv-editing="false"
@@ -120,8 +122,11 @@ onBeforeUnmount(() => auth.clearError())
             id="login-password"
             ref="passEl"
             v-model="password"
-            type="password"
+            type="text"
             autocomplete="off"
+            autocapitalize="off"
+            autocorrect="off"
+            spellcheck="false"
             readonly="readonly"
             data-tv-editing="false"
             placeholder="Sua senha"

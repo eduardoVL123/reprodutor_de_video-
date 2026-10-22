@@ -304,10 +304,10 @@ export function useVideoEngine() {
   function fail(my, reason, detail, triedUrl, ext) {
     if (my !== token) return
     console.warn('[player] Reprodução falhou:', reason, detail)
+    const eng = engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native') // antes do teardown, que zera engineType
     token++
     teardownMedia()
     error.value = PLAYBACK_ERROR
-    const eng = engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native')
     const format = ext || 'mídia'
     const masked = triedUrl ? maskSecrets(triedUrl) : '-'
     errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}`
@@ -315,7 +315,7 @@ export function useVideoEngine() {
 
   function switchToFallback(desc, my, reason) {
     if (my !== token) return
-    console.warn('[player] Tentando formato alternativo após:', reason, desc.fallbackUrl)
+    console.warn('[player] Tentando formato alternativo após:', reason, maskSecrets(desc.fallbackUrl))
     teardownMedia()
     startNative(desc.fallbackUrl, desc, my, true)
   }

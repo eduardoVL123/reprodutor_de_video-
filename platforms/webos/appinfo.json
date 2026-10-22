@@ -1,0 +1,13 @@
+{
+  "id": "com.neutrotv.player",
+  "version": "__VERSION__",
+  "vendor": "Neutro TV",
+  "type": "web",
+  "main": "index.html",
+  "title": "Neutro TV",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#0a0a0a",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true
+}

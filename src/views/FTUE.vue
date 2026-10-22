@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { acceptFtue } from '@/services/storage'
+import { exitApp } from '@/services/platform'
 import { markFtueAccepted } from '@/router'
 
 // Texto jurídico OBRIGATÓRIO (literal exigido pelas lojas Samsung/LG).
@@ -20,6 +21,10 @@ const terms = [
   {
     title: 'Sem vínculo com provedores',
     text: 'Não temos relação com provedores de conteúdo de terceiros e não oferecemos suporte a nenhum serviço de transmissão.',
+  },
+  {
+    title: 'Privacidade',
+    text: 'Não coletamos nem enviamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista.',
   },
 ]
 
@@ -47,20 +52,8 @@ async function accept() {
 
 function decline() {
   declined.value = true
-  // Sem aceite o app não pode ser usado: tenta encerrar usando a API da plataforma.
-  try {
-    if (window.tizen?.application) {
-      window.tizen.application.getCurrentApplication().exit()
-      return
-    }
-    if (window.webOS?.platformBack) {
-      window.webOS.platformBack()
-      return
-    }
-    window.close()
-  } catch (_) {
-    /* Em navegadores comuns, apenas mantém o bloqueio exibido. */
-  }
+  // Sem aceite o app não pode ser usado: encerra pela API da plataforma (em navegador comum só mantém o bloqueio).
+  exitApp()
 }
 
 // Bloqueia voltar no FTUE (obrigatório)
@@ -85,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 <template>
   <section
     class="relative w-full h-full flex items-center justify-center overflow-hidden
-           bg-[#0a0a0a]"
+           bg-[#07070a]"
   >
     <div
       role="dialog"
@@ -119,7 +112,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
         {{ LEGAL_NOTICE }}
       </p>
 
-      <ul class="mt-8 grid grid-cols-3 gap-6">
+      <ul class="mt-8 grid grid-cols-2 gap-6">
         <li
           v-for="item in terms"
           :key="item.title"

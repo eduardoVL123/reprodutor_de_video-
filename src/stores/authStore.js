@@ -24,6 +24,18 @@ async function toStoredSession(session) {
   return { ...session, password: passwordEnc ? null : session.password, passwordEnc }
 }
 
+/**
+ * Versão persistida de uma lista salva: a senha vai só cifrada (texto puro apenas
+ * como fallback quando o WebView não tem WebCrypto). Também limpa dados legados
+ * que guardavam as duas formas ao mesmo tempo.
+ */
+async function protectListItem(item) {
+  if (!item || item.type === 'm3u' || !item.password) return item
+  const passwordEnc = await encryptSecret(item.password)
+  if (!passwordEnc) return item
+  return { ...item, password: null, passwordEnc }
+}
+
 /** Reconstrói a sessão em memória; `null` se a senha não puder ser recuperada. */
 async function restoreSession(saved) {
   if (!saved || !saved.baseUrl || !saved.username) return null
@@ -68,20 +80,24 @@ export const useAuthStore = defineStore('auth', () => {
 
       const lists = await storage.get(SAVED_LISTS_KEY)
       if (Array.isArray(lists) && lists.length > 0) {
-        savedLists.value = lists
+        const protectedLists = await Promise.all(lists.map(protectListItem))
+        savedLists.value = protectedLists
+        if (protectedLists.some((item, i) => item !== lists[i])) {
+          await storage.set(SAVED_LISTS_KEY, protectedLists)
+        }
       } else if (session.value) {
         // Migração da sessão existente para savedLists
-        const initial = {
+        const initial = await protectListItem({
           id: session.value.id || `list_${session.value.username}`,
           label: session.value.label || session.value.username,
           baseUrl: session.value.baseUrl,
           resolvedUrl: session.value.resolvedUrl,
           username: session.value.username,
-          passwordEnc: saved?.passwordEnc || null,
-          password: session.value.password || saved?.password || null,
+          passwordEnc: null,
+          password: session.value.password || null,
           type: session.value.type || 'xtream',
           updatedAt: session.value.savedAt || new Date().toISOString(),
-        }
+        })
         savedLists.value = [initial]
         await storage.set(SAVED_LISTS_KEY, [initial])
       }
@@ -203,7 +219,7 @@ export const useAuthStore = defineStore('auth', () => {
         baseUrl: result.baseUrl,
         resolvedUrl: result.resolvedUrl,
         username: String(resolved.username).trim(),
-        password: String(resolved.password),
+        password: passwordEnc ? null : String(resolved.password),
         passwordEnc: passwordEnc || null,
         updatedAt: new Date().toISOString(),
       }

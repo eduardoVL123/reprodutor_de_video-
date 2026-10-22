@@ -1,6 +1,8 @@
 package com.neutrotv.player;
 
+import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
@@ -12,45 +14,52 @@ import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
 import com.getcapacitor.BridgeWebViewClient;
+import com.getcapacitor.PluginHandle;
 import java.io.ByteArrayInputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.security.SecureRandom;
-import java.security.cert.X509Certificate;
 import java.util.HashMap;
 import java.util.Map;
-import javax.net.ssl.HttpsURLConnection;
-import javax.net.ssl.SSLContext;
-import javax.net.ssl.TrustManager;
-import javax.net.ssl.X509TrustManager;
 
 public class MainActivity extends BridgeActivity {
 
-    private static javax.net.ssl.SSLSocketFactory trustAllSslSocketFactory;
+    private static final String USER_AGENT = "NeutroTV/1.1";
 
-    static {
-        try {
-            TrustManager[] trustAllCerts = new TrustManager[] {
-                new X509TrustManager() {
-                    public X509Certificate[] getAcceptedIssuers() { return new X509Certificate[0]; }
-                    public void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                    public void checkServerTrusted(X509Certificate[] certs, String authType) {}
-                }
-            };
-            SSLContext sc = SSLContext.getInstance("TLS");
-            sc.init(null, trustAllCerts, new SecureRandom());
-            trustAllSslSocketFactory = sc.getSocketFactory();
-        } catch (Exception e) {
-            trustAllSslSocketFactory = null;
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        // Plugins do próprio app precisam ser registrados antes do Capacitor iniciar.
+        registerPlugin(PictureInPicturePlugin.class);
+        super.onCreate(savedInstanceState);
+        hideSystemUI();
+        setupWebView();
+    }
+
+    /** Android 8 a 11: entra no pop-up ao sair do app com vídeo tocando (12+ entra sozinho). */
+    @Override
+    public void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        PictureInPicturePlugin pip = pictureInPicture();
+        if (pip != null && Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pip.shouldEnterOnLeave()) {
+            pip.enterNow();
         }
     }
 
     @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-        hideSystemUI();
-        setupWebView();
+    public void onPictureInPictureModeChanged(boolean isInPictureInPictureMode, Configuration newConfig) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig);
+        PictureInPicturePlugin pip = pictureInPicture();
+        if (pip != null) {
+            pip.notifyModeChanged(isInPictureInPictureMode);
+        }
+    }
+
+    private PictureInPicturePlugin pictureInPicture() {
+        if (getBridge() == null) {
+            return null;
+        }
+        PluginHandle handle = getBridge().getPlugin("PictureInPicture");
+        return handle != null ? (PictureInPicturePlugin) handle.getInstance() : null;
     }
 
     @Override
@@ -75,12 +84,10 @@ public class MainActivity extends BridgeActivity {
             WebSettings settings = webView.getSettings();
             settings.setJavaScriptEnabled(true);
             settings.setDomStorageEnabled(true);
-            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
             settings.setMediaPlaybackRequiresUserGesture(false);
-            settings.setAllowFileAccess(true);
-            settings.setAllowContentAccess(true);
-            settings.setAllowFileAccessFromFileURLs(true);
-            settings.setAllowUniversalAccessFromFileURLs(true);
+            // O app é servido por http://localhost (Capacitor): não precisa ler arquivos locais.
+            settings.setAllowFileAccess(false);
+            settings.setAllowContentAccess(false);
 
             if (!webViewConfigured) {
                 webView.setWebViewClient(new CustomBridgeWebViewClient(getBridge()));
@@ -126,6 +133,11 @@ public class MainActivity extends BridgeActivity {
         }
     }
 
+    /**
+     * Faz a requisição de API/playlist pelo motor HTTP nativo (sem CORS). A validação de
+     * certificado TLS é a padrão do Android: um painel com https inválido responde 502 e o
+     * JavaScript repete a chamada em http:// (ver xtreamApi.js).
+     */
     private WebResourceResponse interceptWithNativeHttp(WebResourceRequest request, String initialUrl, boolean isPlaylist) {
         String method = request.getMethod() != null ? request.getMethod() : "GET";
         Map<String, String> corsHeaders = new HashMap<>();
@@ -145,13 +157,9 @@ public class MainActivity extends BridgeActivity {
             while (redirects < 8) {
                 URL target = new URL(currentUrl);
                 conn = (HttpURLConnection) target.openConnection();
-                if (conn instanceof HttpsURLConnection && trustAllSslSocketFactory != null) {
-                    ((HttpsURLConnection) conn).setSSLSocketFactory(trustAllSslSocketFactory);
-                    ((HttpsURLConnection) conn).setHostnameVerifier((h, s) -> true);
-                }
                 conn.setInstanceFollowRedirects(false);
                 conn.setRequestMethod(method);
-                conn.setRequestProperty("User-Agent", "IPTVSmarterPlayer/1.0");
+                conn.setRequestProperty("User-Agent", USER_AGENT);
                 conn.setRequestProperty("Accept", "*/*");
                 conn.setConnectTimeout(20000);
                 conn.setReadTimeout(120000);
@@ -188,13 +196,18 @@ public class MainActivity extends BridgeActivity {
             }
         } catch (Exception e) {
             try {
-                byte[] errBytes = ("{\"error\":\"NativeHttp: " + e.getMessage() + "\"}").getBytes("utf-8");
+                String reason = String.valueOf(e.getMessage()).replace("\\", "\\\\").replace("\"", "\\\"");
+                byte[] errBytes = ("{\"error\":\"NativeHttp: " + reason + "\"}").getBytes("utf-8");
                 return new WebResourceResponse("application/json", "utf-8", 502, "Bad Gateway", corsHeaders, new ByteArrayInputStream(errBytes));
             } catch (Exception ignored) {}
         }
         return null;
     }
 
+    /**
+     * O botão Voltar do controle vira uma tecla Escape no JavaScript, que decide o que fechar
+     * (ou encerrar o app na tela inicial, via plugin App do Capacitor).
+     */
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
         if (event.getKeyCode() == KeyEvent.KEYCODE_BACK) {

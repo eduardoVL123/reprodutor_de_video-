@@ -4,7 +4,7 @@
  *
  * Camadas (em ordem de prioridade a cada tecla):
  *  1. Handlers de tecla registrados (`registerKeyHandler`) — ex.: player em tela cheia.
- *  2. Tecla Voltar → pilha de `registerBackHandler`; fallback: /live e /vod → /dashboard.
+ *  2. Tecla Voltar → pilha de `registerBackHandler`; fallback: nas telas raiz (login e dashboard) sai do app.
  *  3. Setas dentro de uma grade virtualizada (`registerGrid`) → navegação por índice lógico.
  *  4. Setas fora da grade (ou na borda dela) → cálculo geométrico + memória de foco por
  *     painel (`data-focus-group`).
@@ -12,8 +12,11 @@
  * Compatível com ES2017 / Chromium 53+ (sem Array.prototype.at, Object.hasOwn etc.).
  */
 
+import { exitApp } from '@/services/platform'
+
 let isEnabled = false
 let routerRef = null
+const ROOT_ROUTES = ['login', 'dashboard']
 
 const backHandlers = []
 const keyHandlers = []
@@ -44,8 +47,11 @@ const ACTION_BY_KEY = {
   XF86Back: 'back',
   GoBack: 'back',
   MediaPlayPause: 'playPause',
-  MediaPlay: 'playPause',
-  MediaPause: 'playPause',
+  MediaPlay: 'play',
+  MediaPause: 'pause',
+  MediaStop: 'stop',
+  MediaRewind: 'rewind',
+  MediaFastForward: 'fastForward',
   ChannelUp: 'channelUp',
   ChannelDown: 'channelDown',
   PageUp: 'channelUp',
@@ -63,8 +69,11 @@ const ACTION_BY_CODE = {
   10009: 'back', // Samsung Tizen "Return"
   461: 'back', // LG webOS "Back"
   179: 'playPause',
-  415: 'playPause', // Play
-  19: 'playPause', // Pause
+  415: 'play', // Samsung/LG Play
+  19: 'pause', // Samsung/LG Pause
+  413: 'stop', // Samsung/LG Stop
+  412: 'rewind', // Samsung/LG Rewind
+  417: 'fastForward', // Samsung/LG Fast Forward
   427: 'channelUp',
   33: 'channelUp',
   428: 'channelDown',
@@ -146,6 +155,23 @@ function onMouseDown(e) {
   }
 }
 
+/**
+ * Ponteiro (Magic Remote da LG, mouse no PC/Tizen): o item sob o ponteiro recebe o foco,
+ * para existir um único destaque na tela. Não interrompe a digitação num campo de texto.
+ */
+function onPointerOver(e) {
+  const target = e.target && e.target.closest ? e.target.closest(FOCUSABLE_SELECTOR) : null
+  if (!target || target === document.activeElement) return
+  if (isEditingTextField(document.activeElement) || !isNavigable(target)) return
+  const scope = currentScope()
+  if (scope !== document && !scope.contains(target)) return
+  try {
+    target.focus({ preventScroll: true })
+  } catch (_) {
+    target.focus()
+  }
+}
+
 function onFocusOut(e) {
   const el = e.target
   if (isTextField(el) && el.getAttribute('data-tv-editing') === 'true') {
@@ -159,7 +185,7 @@ function onFocusOut(e) {
 
 /**
  * Traduz `event.key` / `event.keyCode` para uma ação semântica.
- * @returns {'up'|'down'|'left'|'right'|'select'|'back'|'playPause'|'channelUp'|'channelDown'|null}
+ * @returns {'up'|'down'|'left'|'right'|'select'|'back'|'play'|'pause'|'playPause'|'stop'|'rewind'|'fastForward'|'channelUp'|'channelDown'|null}
  */
 export function getTvAction(event) {
   if (!event) return null
@@ -178,7 +204,16 @@ function registerTizenKeys() {
   try {
     const input = window.tizen && window.tizen.tvinputdevice
     if (!input) return
-    ;['MediaPlayPause', 'MediaPlay', 'MediaPause', 'ChannelUp', 'ChannelDown'].forEach((k) => {
+    ;[
+      'MediaPlayPause',
+      'MediaPlay',
+      'MediaPause',
+      'MediaStop',
+      'MediaRewind',
+      'MediaFastForward',
+      'ChannelUp',
+      'ChannelDown',
+    ].forEach((k) => {
       try {
         input.registerKey(k)
       } catch (_) {
@@ -503,7 +538,27 @@ export function areInSameHorizontalRow(elA, elB, rectA, rectB) {
   return minHeight > 0 && overlapY > minHeight * 0.35
 }
 
+const overlapsVertically = (a, b) => a.top < b.bottom && a.bottom > b.top
+
+/** Grupos irmãos (nenhum contém o outro): ex. painel de categorias ao lado da grade. */
+function isSidePanelTransition(current, currentGroup, cand, candGroup) {
+  if (!candGroup || !currentGroup || candGroup === currentGroup) return false
+  return !candGroup.contains(current) && !currentGroup.contains(cand)
+}
+
+/** Melhor candidato vertical: dentro do mesmo grupo primeiro (ex.: cabeçalho da seção → cards dela). */
+function findBestVertical(fromRect, candidates, direction, current) {
+  const currentGroup = groupElOf(current)
+  if (currentGroup) {
+    const sameGroup = candidates.filter((cand) => groupElOf(cand) === currentGroup)
+    const inGroup = scoreVertical(fromRect, sameGroup, direction, current)
+    if (inGroup) return inGroup
+  }
+  return scoreVertical(fromRect, candidates, direction, current)
+}
+
 function findBest(fromRect, candidates, direction, current) {
+  if (direction === 'up' || direction === 'down') return findBestVertical(fromRect, candidates, direction, current)
   const currentCenter = centerOf(fromRect)
 
   // =========================================================================
@@ -560,16 +615,21 @@ function findBest(fromRect, candidates, direction, current) {
 
       if (!isDirectionOk) continue
 
+      // Painel lateral = outro grupo, sem um conter o outro (categorias ↔ grade, teclado ↔ resultados).
       const candGroup = groupElOf(cand)
-      const isDiffGroup = candGroup && currentGroup && candGroup !== currentGroup
+      const isDiffGroup = isSidePanelTransition(current, currentGroup, cand, candGroup)
 
       // BLOQUEIO DE FUGA VERTICAL:
       // Em movimentos 'left' ou 'right', NUNCA permita focar um elemento que esteja
-      // inteiramente acima ou inteiramente abaixo do atual se estiver dentro do mesmo grupo/painel.
+      // inteiramente acima ou inteiramente abaixo do atual dentro do mesmo grupo/painel.
+      // Para outro painel, ele precisa estar ao lado (faixa vertical em comum), não em outra seção.
       const isEntirelyAbove = candRect.bottom <= fromRect.top + 4
       const isEntirelyBelow = candRect.top >= fromRect.bottom - 4
 
       if (!isDiffGroup && (isEntirelyAbove || isEntirelyBelow)) {
+        continue
+      }
+      if (isDiffGroup && !overlapsVertically(candGroup.getBoundingClientRect(), fromRect)) {
         continue
       }
 
@@ -586,10 +646,14 @@ function findBest(fromRect, candidates, direction, current) {
 
     return bestCandidate
   }
+  return null
+}
 
-  // =========================================================================
-  // NAVEGAÇÃO VERTICAL (UP / DOWN)
-  // =========================================================================
+// =========================================================================
+// NAVEGAÇÃO VERTICAL (UP / DOWN)
+// =========================================================================
+function scoreVertical(fromRect, candidates, direction, current) {
+  const currentCenter = centerOf(fromRect)
   const currentRow = current.closest ? current.closest('[data-focus-row]') : null
   let best = null
   let bestDistance = Infinity
@@ -730,8 +794,8 @@ function handleBack() {
     }
   }
   if (!routerRef) return
-  const name = routerRef.currentRoute.value.name
-  if (name === 'live' || name === 'vod') routerRef.replace({ name: 'dashboard' })
+  // Telas raiz: Voltar sem nada para fechar encerra o app (exigência das lojas Samsung/LG).
+  if (ROOT_ROUTES.indexOf(routerRef.currentRoute.value.name) !== -1) exitApp()
 }
 
 function onKeyDown(e) {
@@ -845,6 +909,7 @@ export function initSpatialNavigation(options) {
   document.addEventListener('focusin', onFocusIn)
   document.addEventListener('focusout', onFocusOut)
   document.addEventListener('mousedown', onMouseDown, true)
+  document.addEventListener('mouseover', onPointerOver)
 
   if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
     domObserver = new MutationObserver((mutations) => {
@@ -871,6 +936,7 @@ export function stopSpatialNavigation() {
   document.removeEventListener('focusin', onFocusIn)
   document.removeEventListener('focusout', onFocusOut)
   document.removeEventListener('mousedown', onMouseDown, true)
+  document.removeEventListener('mouseover', onPointerOver)
   if (domObserver) {
     domObserver.disconnect()
     domObserver = null
