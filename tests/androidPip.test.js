@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { existsSync, readFileSync } from 'node:fs'
 
 // Verificação estática do código nativo (o APK é compilado no CI; não há JDK nesta máquina).
-const JAVA_DIR = 'android/app/src/main/java/com/neutrotv/player'
+const JAVA_DIR = 'android/app/src/main/java/com/pulseplayer/app'
 const read = (path) => (existsSync(path) ? readFileSync(path, 'utf8') : '')
 const manifest = read('android/app/src/main/AndroidManifest.xml')
 const activity = read(`${JAVA_DIR}/MainActivity.java`)

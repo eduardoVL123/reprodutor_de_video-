@@ -40,16 +40,17 @@ export default {
       },
       colors: {
         tv: {
-          bg: '#0a0a0a',
-          deep: '#07070a', // 2.0: fundo mais profundo atrás da arte
+          bg: '#0B0F0C', // grafite Pulse
+          deep: '#0B0F0C', // grafite Pulse: fundo atrás da arte
           meta: '#d4d4d8', // 2.0: metadados (ano, duração)
           surface: '#111114',
           card: '#141418',
           border: 'rgba(255, 255, 255, 0.10)',
           text: '#f1f5f9',
           muted: '#8e8e93',
-          accent: '#e50914',
-          'accent-soft': '#ff1f2d',
+          accent: '#B8F000', // verde-limão Pulse
+          'on-accent': '#0B0F0C', // texto e ícones sobre o limão (nunca branco: contraste 1,3:1)
+          'accent-soft': '#CCFF33',
         },
       },
       boxShadow: {

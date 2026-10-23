@@ -41,6 +41,14 @@ export async function exitApp() {
 }
 
 /**
+ * O app consegue se fechar sozinho? Tizen, webOS e APK sim; no navegador do PC não (lá Voltar não pode
+ * fechar a janela do usuário). Usado para só oferecer "Sair" onde ele funciona.
+ */
+export function canExitApp() {
+  return !!(window.tizen && window.tizen.application) || isWebOS() || isNativeApp()
+}
+
+/**
  * Pop-up (Picture-in-Picture) no APK de celular/tablet: com `true`, sair do app (Home ou troca
  * de app) leva o vídeo para uma janela flutuante. O Android ignora em TVs. Fora do APK, não faz nada.
  */

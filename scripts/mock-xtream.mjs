@@ -34,34 +34,16 @@ const HLS_LIVE_STREAMS = [
   'https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8',
 ]
 
-// Filmes MP4 públicos reais estáveis para VOD e Séries
+// Filmes MP4 de uso livre (Blender Foundation, CC BY) para VOD e Séries. Os do Google passaram a responder 403.
 const MP4_MOVIES = [
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-  'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+  'https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4',
+  'https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4',
 ]
 
-// Capas reais de demonstração
-const SAMPLE_COVERS = [
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/BigBuckBunny.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/Sintel.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/TearsOfSteel.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ElephantsDream.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerBlazes.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerEscapes.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerFun.jpg',
-  'https://storage.googleapis.com/gtv-videos-bucket/sample/images/ForBiggerJoyBlazes.jpg',
-]
-
-const getCoverUrl = (id, type) => {
-  if (id <= 8) {
-    return SAMPLE_COVERS[(id - 1) % SAMPLE_COVERS.length]
-  }
-  if (id % 3 === 0) {
-    return SAMPLE_COVERS[id % SAMPLE_COVERS.length]
-  }
-  return `https://picsum.photos/seed/${type}-${id}/600/400`
-}
+// Capas de demonstração: fotos livres do picsum.photos (as do Google passaram a responder 403).
+// Pôster em retrato para filmes e séries; paisagem para episódios.
+const getCoverUrl = (id, type) =>
+  type === 'series-ep' ? `https://picsum.photos/seed/${type}-${id}/600/340` : `https://picsum.photos/seed/${type}-${id}/400/600`
 
 const range = (n) => Array.from({ length: n }, (_, i) => i + 1)
 

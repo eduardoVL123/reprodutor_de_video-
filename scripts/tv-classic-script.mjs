@@ -7,7 +7,7 @@
  */
 export function tvClassicScript() {
   return {
-    name: 'neutro-tv-classic-script',
+    name: 'pulse-tv-classic-script',
     apply: 'build',
     transformIndexHtml: {
       order: 'post',

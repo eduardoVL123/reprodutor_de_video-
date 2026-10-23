@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import { railOffset } from '@/utils/railOffset'
+import { isPointerFocus } from '@/utils/spatialNavigation'
 
 /**
  * Fileira deslizante (2.0): cada item é um botão focável com id `${idPrefix}-${índice}`; ao receber o
@@ -23,7 +24,7 @@ const rootFontPx = () => parseFloat(getComputedStyle(document.documentElement).f
 
 function onFocusIn(event) {
   const itemEl = event.target && event.target.closest ? event.target.closest('[data-rail-index]') : null
-  if (!itemEl || !viewportEl.value) return
+  if (!itemEl || !viewportEl.value || isPointerFocus()) return
   offset.value = railOffset({
     index: Number(itemEl.getAttribute('data-rail-index')),
     itemSize: itemEl.getBoundingClientRect().width,

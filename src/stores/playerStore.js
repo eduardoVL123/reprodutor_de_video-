@@ -6,7 +6,8 @@ import { useProfileStore } from '@/stores/profileStore'
 import { focusFirstIn } from '@/utils/spatialNavigation'
 
 const CUSTOM_QUEUE_MAX = 100
-const WATCH_HISTORY_MAX = 16
+const WATCH_HISTORY_MAX = 16 // filmes e episódios no "Continuar assistindo"
+const LIVE_HISTORY_MAX = 4 // canais recentes: limite próprio, para zapping não expulsar filmes/séries
 const WINDOW_SIZE = 100 // itens da categoria mantidos em RAM para zapping
 const QUEUE_MAX = 200
 
@@ -51,6 +52,8 @@ export function toPlainItem(item, section) {
     category_id: item.category_id !== undefined && item.category_id !== null ? String(item.category_id) : '',
     section: String(section || item.section || ''),
     directUrl: item.directUrl ? String(item.directUrl) : '',
+    // Episódio: id da série a que pertence (um card por série no "Continuar assistindo").
+    seriesId: item.seriesId !== undefined && item.seriesId !== null ? String(item.seriesId) : '',
   }
 }
 
@@ -66,6 +69,15 @@ function toHistoryEntry(item) {
     updatedAt: Number(item.updatedAt || Date.now()),
   }
 }
+
+/** Mantém no máximo LIVE_HISTORY_MAX canais e WATCH_HISTORY_MAX filmes/episódios, na ordem recebida. */
+function capHistory(list) {
+  let live = 0
+  let other = 0
+  return list.filter((it) => (it.section === 'live' ? ++live <= LIVE_HISTORY_MAX : ++other <= WATCH_HISTORY_MAX))
+}
+
+const sameSeries = (a, b) => !!a.seriesId && a.seriesId === b.seriesId && a.section === b.section
 
 const sameItem = (a, b) => !!a && !!b && String(a.stream_id) === String(b.stream_id) && a.section === b.section
 
@@ -151,10 +163,7 @@ export const usePlayerStore = defineStore('player', () => {
           customQueue.value = []
         }
         if (Array.isArray(finalHistory)) {
-          watchHistory.value = finalHistory
-            .map((it) => toHistoryEntry(it))
-            .filter(Boolean)
-            .slice(0, WATCH_HISTORY_MAX)
+          watchHistory.value = capHistory(finalHistory.map((it) => toHistoryEntry(it)).filter(Boolean))
         } else {
           watchHistory.value = []
         }
@@ -228,26 +237,26 @@ export const usePlayerStore = defineStore('player', () => {
   }
 
   // ---------- Histórico de Progresso (Continuar Assistindo) ----------
-  function saveProgress(curTime, durTime) {
-    if (!currentItem.value) return
+  /** Coloca a entrada no topo, sem duplicar o item nem a série (o episódio mais recente substitui o anterior). */
+  function addToHistory(entry) {
+    const others = watchHistory.value.filter((it) => !sameItem(it, entry) && !sameSeries(it, entry))
+    watchHistory.value = capHistory([entry, ...others])
+    persistWatchHistory()
+  }
+
+  /**
+   * Registra o progresso de `item` (padrão: o item em reprodução). O player passa o item explicitamente
+   * ao trocar de vídeo, porque nesse momento `currentItem` já é o próximo.
+   */
+  function saveProgress(curTime, durTime, item = currentItem.value) {
+    if (!item) return
     const cur = Math.max(0, Number(curTime || 0))
     const dur = Math.max(0, Number(durTime || 0))
-    const plain = toPlainItem(currentItem.value, currentSection.value)
+    const plain = toPlainItem(item, item === currentItem.value ? currentSection.value : item.section)
     if (!plain) return
 
-    if (plain.section === 'live' || mode.value === 'live') {
-      const item = {
-        ...plain,
-        currentTime: 0,
-        duration: 0,
-        progressPct: 0,
-        updatedAt: Date.now(),
-      }
-      watchHistory.value = [item, ...watchHistory.value.filter((it) => !sameItem(it, plain))].slice(
-        0,
-        WATCH_HISTORY_MAX,
-      )
-      persistWatchHistory()
+    if (plain.section === 'live') {
+      addToHistory({ ...plain, currentTime: 0, duration: 0, progressPct: 0, updatedAt: Date.now() })
       return
     }
 
@@ -264,19 +273,13 @@ export const usePlayerStore = defineStore('player', () => {
       return
     }
 
-    const progressPct = Math.min(100, Math.max(0, Math.round((cur / dur) * 100)))
-    const historyItem = {
+    addToHistory({
       ...plain,
       currentTime: Math.floor(cur),
       duration: Math.floor(dur),
-      progressPct,
+      progressPct: Math.min(100, Math.max(0, Math.round((cur / dur) * 100))),
       updatedAt: Date.now(),
-    }
-    watchHistory.value = [historyItem, ...watchHistory.value.filter((it) => !sameItem(it, plain))].slice(
-      0,
-      WATCH_HISTORY_MAX,
-    )
-    persistWatchHistory()
+    })
   }
 
   function removeFromHistory(streamId, section) {

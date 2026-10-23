@@ -2,15 +2,15 @@
 <!--
   Manifesto Samsung Tizen (TV). Versão e id do pacote são preenchidos por scripts/package-tv.mjs.
   O id do pacote (10 caracteres) deve ser o do seu certificado de distribuição Samsung
-  (variável NEUTRO_TIZEN_PACKAGE_ID).
+  (variável PULSE_TIZEN_PACKAGE_ID).
 -->
 <widget xmlns="http://www.w3.org/ns/widgets" xmlns:tizen="http://tizen.org/ns/widgets"
-        id="http://neutrotv.player/__TIZEN_PACKAGE_ID__" version="__VERSION__" viewmodes="maximized">
-  <tizen:application id="__TIZEN_PACKAGE_ID__.NeutroTV" package="__TIZEN_PACKAGE_ID__" required_version="5.0"/>
+        id="http://pulseplayer.app/__TIZEN_PACKAGE_ID__" version="__VERSION__" viewmodes="maximized">
+  <tizen:application id="__TIZEN_PACKAGE_ID__.PulsePlayer" package="__TIZEN_PACKAGE_ID__" required_version="5.0"/>
   <content src="index.html"/>
   <feature name="http://tizen.org/feature/screen.size.all"/>
   <icon src="icon.png"/>
-  <name>Neutro TV</name>
+  <name>Pulse Player</name>
   <!-- internet: falar com os servidores do usuário. tv.inputdevice: teclas de mídia e canal do controle. -->
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>

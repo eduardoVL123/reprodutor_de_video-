@@ -59,7 +59,7 @@ describe('classes de compatibilidade', () => {
 
 describe('build para Smart TVs (arquivos file://)', () => {
   it('gera um script clássico único, sem módulos ES nem crossorigin', () => {
-    const outDir = mkdtempSync(join(tmpdir(), 'neutro-build-'))
+    const outDir = mkdtempSync(join(tmpdir(), 'pulse-build-'))
     execFileSync(process.execPath, ['node_modules/vite/bin/vite.js', 'build', '--outDir', outDir, '--emptyOutDir'], {
       stdio: 'pipe',
       env: { ...process.env, NODE_ENV: 'production' }, // o vitest define "test"; o build precisa do Vue de produção

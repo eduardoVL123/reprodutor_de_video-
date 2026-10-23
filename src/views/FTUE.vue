@@ -78,7 +78,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 <template>
   <section
     class="relative w-full h-full flex items-center justify-center overflow-hidden
-           bg-[#07070a]"
+           bg-tv-deep"
   >
     <div
       role="dialog"
@@ -91,7 +91,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
       <header class="flex items-center gap-8 mb-8">
         <div
           class="flex items-center justify-center w-20 h-20 rounded-2xl
-                 bg-white/[0.08] border border-white/10 text-[#e50914]"
+                 bg-white/[0.08] border border-white/10 text-tv-accent"
         >
           <svg viewBox="0 0 24 24" class="w-14 h-14 text-white" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
             <path d="M12 3l8 3v6c0 4.5-3.2 8.2-8 9-4.8-.8-8-4.5-8-9V6l8-3z" />

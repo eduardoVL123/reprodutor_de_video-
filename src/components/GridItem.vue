@@ -36,14 +36,6 @@ const label = computed(() => {
   return props.variant === 'category' ? it.category_name : it.name
 })
 
-const channelFirstName = computed(() => {
-  const parts = (label.value || '').trim().split(/\s+/)
-  return parts[0] || 'CANAL'
-})
-const channelSecondName = computed(() => {
-  const parts = (label.value || '').trim().split(/\s+/)
-  return parts.slice(1).join(' ') || 'AO VIVO'
-})
 
 const initial = computed(() => (label.value || '?').trim().charAt(0).toUpperCase())
 const showImage = computed(() => !!image.value && !imgFailed.value)
@@ -55,8 +47,8 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
     class="tv-focusable block w-full h-full text-left rounded-xl border overflow-hidden transition-colors"
     :class="[
       variant === 'category'
-        ? (active ? 'border-[#e50914] bg-[#e50914]/15 text-white font-bold' : 'border-white/[0.06] bg-[#121215]/80 text-neutral-300')
-        : (active ? 'border-[#e50914] bg-[#e50914]/15 bg-[#121215]' : 'border-white/[0.08] bg-[#121215]')
+        ? (active ? 'border-tv-accent bg-tv-accent/15 text-white font-bold' : 'border-white/[0.06] bg-[#121215]/80 text-neutral-300')
+        : (active ? 'border-tv-accent bg-tv-accent/15 bg-[#121215]' : 'border-white/[0.08] bg-[#121215]')
     ]"
     :id="idPrefix ? `${idPrefix}-${index}` : undefined"
     :data-item-index="index"
@@ -86,10 +78,7 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
             class="w-8 h-8 rounded bg-black/40 object-contain p-0.5 shrink-0 border border-white/5"
             @error="onImgError"
           />
-          <span class="text-tv-base font-black tracking-tight uppercase truncate">
-            <span class="text-white">{{ channelFirstName }} </span>
-            <span class="text-[#e50914]">{{ channelSecondName }}</span>
-          </span>
+          <span class="text-tv-base font-black tracking-tight uppercase truncate text-white">{{ label || 'Canal' }}</span>
         </div>
         <span class="flex items-center gap-1.5 text-tv-xs font-bold uppercase tracking-wider text-[#10b981] shrink-0">
           <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
@@ -105,7 +94,7 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
 
       <!-- Base do Card: Barra fina de 2px -->
       <div class="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
-        <div class="h-full w-2/5 bg-[#e50914]" />
+        <div class="h-full w-2/5 bg-tv-accent" />
       </div>
     </div>
 

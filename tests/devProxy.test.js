@@ -18,11 +18,11 @@ describe('proxy anti-CORS de desenvolvimento', () => {
 
   it('identifica-se com um User-Agent próprio, sem imitar outro aplicativo', async () => {
     const { UPSTREAM_UA } = await import('../scripts/dev-cors-proxy.mjs')
-    const native = readFileSync('android/app/src/main/java/com/neutrotv/player/MainActivity.java', 'utf8')
+    const native = readFileSync('android/app/src/main/java/com/pulseplayer/app/MainActivity.java', 'utf8')
 
-    expect(UPSTREAM_UA).toMatch(/^NeutroTV\//)
+    expect(UPSTREAM_UA).toMatch(/^PulsePlayer\//)
     expect(native).not.toContain('IPTVSmarter')
-    expect(native).toMatch(/USER_AGENT = "NeutroTV\//)
+    expect(native).toMatch(/USER_AGENT = "PulsePlayer\//)
   })
 
   it('recusa clientes que não estão na própria máquina', async () => {

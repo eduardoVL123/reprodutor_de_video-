@@ -1,6 +1,6 @@
 {
-  "appId": "com.neutrotv.player",
-  "appName": "Neutro TV",
+  "appId": "com.pulseplayer.app",
+  "appName": "Pulse Player",
   "webDir": "dist",
   "server": {
     "androidScheme": "http",

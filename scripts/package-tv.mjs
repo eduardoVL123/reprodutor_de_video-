@@ -8,10 +8,10 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
  *   node scripts/package-tv.mjs tizen   ->  build/tizen  (depois: `tizen package -t wgt -- build/tizen`)
  *   node scripts/package-tv.mjs webos   ->  build/webos   (depois: `ares-package build/webos`)
  *
- * Variáveis de ambiente: NEUTRO_TIZEN_PACKAGE_ID (10 caracteres alfanuméricos, id do certificado Samsung).
+ * Variáveis de ambiente: PULSE_TIZEN_PACKAGE_ID (10 caracteres alfanuméricos, id do certificado Samsung).
  */
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
-const DEV_TIZEN_PACKAGE_ID = 'NeutroTV01' // só para testes locais; publique com o id do seu certificado
+const DEV_TIZEN_PACKAGE_ID = 'PulsePlay1' // só para testes locais; publique com o id do seu certificado
 
 const PLATFORMS = {
   tizen: { manifest: 'config.xml', files: ['icon.png'] },
@@ -21,9 +21,9 @@ const PLATFORMS = {
 function resolveValues(platform, version, env) {
   const values = { __VERSION__: version }
   if (platform === 'tizen') {
-    const packageId = env.NEUTRO_TIZEN_PACKAGE_ID || DEV_TIZEN_PACKAGE_ID
+    const packageId = env.PULSE_TIZEN_PACKAGE_ID || DEV_TIZEN_PACKAGE_ID
     if (!/^[A-Za-z0-9]{10}$/.test(packageId)) {
-      throw new Error('NEUTRO_TIZEN_PACKAGE_ID deve ter exatamente 10 caracteres alfanuméricos.')
+      throw new Error('PULSE_TIZEN_PACKAGE_ID deve ter exatamente 10 caracteres alfanuméricos.')
     }
     values.__TIZEN_PACKAGE_ID__ = packageId
   }

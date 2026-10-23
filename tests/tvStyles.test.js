@@ -32,7 +32,20 @@ describe('estilos de TV', () => {
 
     const focus = ruleBody(css, '.tv-focusable:focus')
     expect(focus).toContain('--tw-ring-offset-width:3px')
-    expect(focus).toContain('--tw-ring-offset-color:#0a0a0a')
+    expect(focus).toContain('--tw-ring-offset-color:#0b0f0c') // mesma cor do fundo (grafite Pulse)
+  })
+
+  it('a fonte maior do celular só vale em tela de toque (TVs antigas informam ~960px de largura)', () => {
+    const rules = STYLE.match(/@media[^{]*\{\s*html\s*\{[^}]*font-size/g) || []
+
+    expect(rules.length).toBeGreaterThan(0)
+    rules.forEach((rule) => expect(rule).toMatch(/pointer:\s*coarse/))
+  })
+
+  it('o destaque do foco não é animado (anel e escala animados repintam a cada quadro na TV)', async () => {
+    const css = await compile('<button class="tv-focusable"></button>')
+
+    expect(ruleBody(css, '.tv-focusable{')).not.toMatch(/transition/)
   })
 
   it('nenhum texto abaixo do mínimo de TV (classes text-[0.xrem] fixas)', () => {
@@ -47,6 +60,20 @@ describe('estilos de TV', () => {
 
     expect(ruleBody(css, '.tv-rail-item.tv-focusable:focus{')).toContain('--tw-scale-x:1.08')
     expect(css).not.toMatch(/[;{](-webkit-)?backdrop-filter:/)
+  })
+
+  it('telas das abas respeitam a margem segura de 5% (pr-24 à direita, py-14 em cima e embaixo)', () => {
+    // A esquerda já fica longe da borda pelo menu lateral (pl-[7rem] do <main>) + pl-16.
+    const roots = {
+      'src/components/CatalogBrowser.vue': /<section class="[^"]*\bpr-24\b[^"]*\bpy-14\b/,
+      'src/components/SearchScreen.vue': /<section ref="rootEl" class="[^"]*\bpr-24\b[^"]*\bpy-14\b/,
+      'src/views/Dashboard.vue': /class="[^"]*\bpr-24\b[^"]*\bpy-14\b[^"]*"\s+data-focus-group="favorites-view"/,
+      'src/components/SideMenu.vue': /data-focus-group="side-menu"[\s\S]*?class="[^"]*\bpy-14\b/,
+    }
+    const outside = Object.keys(roots).filter((f) => !roots[f].test(readFileSync(f, 'utf8')))
+
+    expect(outside).toEqual([])
+    expect(readFileSync('src/views/Dashboard.vue', 'utf8')).toMatch(/class="pl-16 pr-24 space-y-7/)
   })
 
   it('não esconde o ponteiro (Magic Remote da LG, mouse no PC e na Samsung)', () => {

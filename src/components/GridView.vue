@@ -59,6 +59,8 @@ let pendingFocus = -1
 let unregisterGrid = null
 
 const clamp = (v, min, max) => Math.min(Math.max(v, min), max)
+// Uma função só para todos os slots: uma nova a cada janela faria todos os cards re-renderizarem ao rolar.
+const selectItem = (item, index) => emit('select', item, index)
 
 /** @returns {Promise<void>} resolve quando a janela visível estiver carregada. */
 function refresh(force = false) {
@@ -227,7 +229,7 @@ defineExpose({ scrollToIndex, refresh, measure, focusIndex })
           name="item"
           :item="s.item"
           :index="s.index"
-          :select="(it, i) => emit('select', it !== undefined ? it : s.item, i !== undefined ? i : s.index)"
+          :select="selectItem"
         />
       </div>
     </div>

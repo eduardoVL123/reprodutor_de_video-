@@ -7,6 +7,13 @@
 html {
   font-size: calc(100vw / 120);
 }
+/* Celular deitado (tela de toque estreita): a tela de TV inteira em ~850px deixava o texto com ~9px.
+   `pointer: coarse` deixa de fora as TVs antigas que informam só 960px de largura. */
+@media (pointer: coarse) and (max-width: 1000px) {
+  html {
+    font-size: calc(100vw / 96);
+  }
+}
 
 html,
 body,
@@ -15,7 +22,7 @@ body,
   height: 100%;
   margin: 0;
   overflow: hidden; /* sem scrollbars nativas */
-  background-color: #0a0a0a;
+  background-color: #0b0f0c;
   color: #f1f5f9;
   font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -47,13 +54,14 @@ video::-webkit-media-controls-start-playback-button {
 
 @layer components {
   /* Foco de controle remoto: anel branco separado do elemento por uma faixa escura, para
-     aparecer também em botões brancos (Entrar, Assistir agora, Aceitar). */
+     aparecer também em botões brancos (Entrar, Assistir agora, Aceitar). O destaque é instantâneo:
+     animar anel e escala repinta o item a cada quadro e engasga nas TVs (medido com CPU 6x mais lenta). */
   .tv-focusable {
-    @apply outline-none transition-all duration-150 ease-out;
+    @apply outline-none;
   }
   .tv-focusable:focus,
   .tv-focusable.is-focused {
-    @apply outline-none ring-2 ring-white ring-offset-[3px] ring-offset-[#0a0a0a] scale-[1.02] z-10;
+    @apply outline-none ring-2 ring-white ring-offset-[3px] ring-offset-[#0b0f0c] scale-[1.02] z-10;
   }
 
   /* Botões Clean Cinema */
@@ -67,7 +75,7 @@ video::-webkit-media-controls-start-playback-button {
 
   /* Inputs de TV Clean Cinema */
   .tv-input {
-    @apply tv-focusable w-full rounded-lg border border-white/15 bg-[#0a0a0a] px-5 py-3
+    @apply tv-focusable w-full rounded-lg border border-white/15 bg-tv-bg px-5 py-3
       text-tv-sm text-white placeholder:text-neutral-500;
     cursor: text;
   }
@@ -75,9 +83,9 @@ video::-webkit-media-controls-start-playback-button {
     @apply scale-[1.01] border-white ring-1 ring-white;
   }
   .tv-input[data-tv-editing="true"] {
-    border-color: #e50914 !important;
+    border-color: #b8f000 !important;
     background-color: #18181c !important;
-    box-shadow: 0 0 0 2px rgba(229, 9, 20, 0.35);
+    box-shadow: 0 0 0 2px rgba(184, 240, 0, 0.35);
   }
 
   /* ---------- Base do 2.0 (RFC-014) ---------- */
@@ -100,7 +108,7 @@ video::-webkit-media-controls-start-playback-button {
     @apply absolute top-3 left-3 z-10 rounded bg-black/60 border border-white/25 px-2 text-tv-xs font-extrabold uppercase tracking-wider text-white;
   }
   .tv-badge-live {
-    @apply bg-tv-accent border-transparent;
+    @apply bg-tv-accent border-transparent text-tv-on-accent;
   }
 
   /* Barra de progresso ("continuar assistindo", episódios) */
@@ -113,8 +121,8 @@ video::-webkit-media-controls-start-playback-button {
 
   /* Vinhetas sobre a arte do destaque e dos detalhes */
   .tv-vignette {
-    background: linear-gradient(90deg, #07070a 0%, rgba(7, 7, 10, 0.92) 30%, rgba(7, 7, 10, 0.35) 60%, transparent 80%),
-      linear-gradient(0deg, #07070a 4%, rgba(7, 7, 10, 0.6) 32%, transparent 60%);
+    background: linear-gradient(90deg, #0b0f0c 0%, rgba(11, 15, 12, 0.92) 30%, rgba(11, 15, 12, 0.35) 60%, transparent 80%),
+      linear-gradient(0deg, #0b0f0c 4%, rgba(11, 15, 12, 0.6) 32%, transparent 60%);
   }
 
   /* Fileira deslizante (components/ui/HorizontalRail.vue): sobra espaço para o item focado crescer sem corte. */

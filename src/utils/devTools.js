@@ -2,9 +2,9 @@
  * Ferramentas de conferência para o console do navegador, instaladas só em `npm run dev`
  * (ver main.js). Ajudam a validar telas novas como uma TV faria:
  *
- *   await __neutro.walk(['Down', 'Right', 'Right', 'Enter', 'Back'])  // controle remoto
- *   __neutro.audit()          // layout idêntico no fallback de TVs antigas? (differ deve ser 0)
- *   __neutro.duplicateIds()   // ids repetidos quebram a memória de foco (deve ser [])
+ *   await __pulse.walk(['Down', 'Right', 'Right', 'Enter', 'Back'])  // controle remoto
+ *   __pulse.audit()          // layout idêntico no fallback de TVs antigas? (differ deve ser 0)
+ *   __pulse.duplicateIds()   // ids repetidos quebram a memória de foco (deve ser [])
  */
 
 const KEYS = {
@@ -74,5 +74,5 @@ export function audit() {
 }
 
 export function installDevTools() {
-  window.__neutro = { audit, walk, duplicateIds }
+  window.__pulse = { audit, walk, duplicateIds }
 }

@@ -2,6 +2,8 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
+import BrandMark from '@/components/BrandMark.vue'
+import { URL_SNIPPETS, applySnippet } from '@/utils/urlSnippets'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -14,6 +16,20 @@ const dnsEl = ref(null)
 const userEl = ref(null)
 const passEl = ref(null)
 const submitEl = ref(null)
+
+/** Lista de demonstração para os revisores das lojas (docs/demo); sem a variável, o botão não aparece. */
+const demoPlaylistUrl = import.meta.env.VITE_DEMO_PLAYLIST_URL || ''
+
+function addSnippet(snippet) {
+  dns.value = applySnippet(dns.value, snippet)
+}
+
+function tryDemo() {
+  dns.value = demoPlaylistUrl
+  username.value = ''
+  password.value = ''
+  return submit()
+}
 
 async function submit() {
   if (auth.loading) return
@@ -48,9 +64,9 @@ onBeforeUnmount(() => auth.clearError())
 
 <template>
   <section
-    class="relative w-full h-full flex justify-center overflow-y-auto bg-[#07070a] p-8"
+    class="relative w-full h-full flex justify-center overflow-y-auto bg-tv-deep p-8"
   >
-    <div class="absolute -top-40 -right-40 w-[35rem] h-[35rem] rounded-full bg-[#e50914]/10 pointer-events-none"></div>
+    <div class="absolute -top-40 -right-40 w-[35rem] h-[35rem] rounded-full bg-tv-accent/10 pointer-events-none"></div>
 
     <form
       class="relative w-[50rem] rounded-2xl border border-white/10 bg-[#121215]
@@ -60,8 +76,8 @@ onBeforeUnmount(() => auth.clearError())
     >
       <header class="mb-8">
         <div class="flex items-center gap-2 mb-3">
-          <span class="w-2 h-2 rounded-full bg-[#e50914]"></span>
-          <p class="text-tv-xs uppercase tracking-[0.25em] text-[#e50914] font-bold">NEUTRO TV · CONEXÃO</p>
+          <BrandMark :size="1.5" class="text-tv-accent" />
+          <p class="text-tv-xs uppercase tracking-[0.25em] text-tv-accent font-bold">PULSE PLAYER · CONEXÃO</p>
         </div>
         <h1 class="text-tv-xl font-black text-white tracking-tight">Conectar ao servidor</h1>
         <p class="mt-2 text-tv-sm text-neutral-400">
@@ -97,6 +113,22 @@ onBeforeUnmount(() => auth.clearError())
             class="tv-input"
           />
         </label>
+        <!-- Atalhos: os pedaços mais comuns de um link com um OK, em vez de letra por letra no controle -->
+        <div data-focus-row="login-snippets" class="flex flex-wrap gap-2 -mt-3">
+          <button
+            v-for="(snippet, index) in URL_SNIPPETS"
+            :id="`login-snippet-${index}`"
+            :key="snippet"
+            type="button"
+            class="tv-btn !px-4 !py-1.5 font-mono text-tv-xs"
+            @click="addSnippet(snippet)"
+          >
+            {{ snippet }}
+          </button>
+        </div>
+        <p class="text-tv-xs text-neutral-500">
+          Dica: no app de controle remoto da sua TV no celular, dá para digitar com o teclado do celular.
+        </p>
 
         <label class="block">
           <span class="block mb-2 text-tv-sm text-tv-muted">Usuário (opcional para link curto)</span>
@@ -168,6 +200,16 @@ onBeforeUnmount(() => auth.clearError())
           <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="3" stroke-linecap="round" />
         </svg>
         {{ auth.loading ? 'Conectando...' : 'Entrar' }}
+      </button>
+
+      <button
+        v-if="demoPlaylistUrl"
+        id="login-demo"
+        type="button"
+        class="tv-btn w-full mt-4"
+        @click="tryDemo"
+      >
+        Experimentar com vídeos de demonstração
       </button>
     </form>
   </section>

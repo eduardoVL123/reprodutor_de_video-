@@ -1,4 +1,4 @@
-package com.neutrotv.player;
+package com.pulseplayer.app;
 
 import android.app.Activity;
 import android.app.PictureInPictureParams;

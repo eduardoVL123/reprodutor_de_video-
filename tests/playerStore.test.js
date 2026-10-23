@@ -34,3 +34,53 @@ describe('playerStore — histórico persistido', () => {
     expect(player.customQueue.map((q) => q.stream_id)).toEqual([1])
   })
 })
+
+describe('playerStore — "Continuar assistindo"', () => {
+  const MOVIE = { stream_id: 50, name: 'Filme', section: 'vod', container_extension: 'mp4' }
+  const channel = (n) => ({ stream_id: 1000 + n, name: `Canal ${n}`, section: 'live' })
+
+  it('trocar de canal várias vezes não expulsa filmes e episódios do histórico', async () => {
+    const { usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    player.playItem(MOVIE)
+    player.saveProgress(900, 5400)
+
+    for (let n = 0; n < 20; n++) {
+      player.playItem(channel(n))
+      player.saveProgress(0, 0)
+    }
+
+    expect(player.watchHistory.some((h) => h.section === 'vod' && h.stream_id === 50)).toBe(true)
+    expect(player.watchHistory.filter((h) => h.section === 'live').length).toBeLessThanOrEqual(4)
+  })
+
+  it('salva o progresso no item indicado, mesmo que o player já esteja em outro', async () => {
+    const { usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    player.playItem(MOVIE)
+
+    player.playItem({ stream_id: 60, name: 'Outro', section: 'vod' })
+    player.saveProgress(900, 5400, MOVIE)
+
+    expect(player.getSavedTime(50, 'vod')).toBe(900)
+    expect(player.getSavedTime(60, 'vod')).toBe(0)
+  })
+
+  it('guarda um único card por série: o episódio mais recente substitui o anterior', async () => {
+    const { usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    const ep = (id, n) => ({ stream_id: id, name: `Série - T1:E${n} - Ep`, section: 'series', seriesId: 'S9' })
+
+    player.playItem(ep(901, 1))
+    player.saveProgress(1200, 2700)
+    player.playItem(ep(902, 2))
+    player.saveProgress(300, 2700)
+
+    const series = player.watchHistory.filter((h) => h.section === 'series')
+    expect(series.map((h) => h.stream_id)).toEqual([902])
+    expect(series[0].seriesId).toBe('S9')
+  })
+})

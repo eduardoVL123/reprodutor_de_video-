@@ -6,6 +6,7 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
 import SideMenu from '@/components/SideMenu.vue'
+import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
 import ListManagerModal from '@/components/ListManagerModal.vue'
@@ -18,6 +19,7 @@ import { formatTime } from '@/utils/formatTime'
 import { pickArtwork } from '@/utils/artwork'
 import { normalizeVodInfo, fetchVodInfo, fetchSeriesInfo } from '@/services/xtreamApi'
 import { tabBackAction } from '@/utils/tabBack'
+import { playHistoryItem } from '@/utils/seriesPlaylist'
 
 const router = useRouter()
 const auth = useAuthStore()
@@ -43,10 +45,18 @@ const liveShowcase = ref([])
 const heroInfo = ref(normalizeVodInfo(null, null))
 const heroArtworkFailed = ref(false)
 
-// Item mais recente para Hero Banner (Continuar Assistindo)
-const recentHistoryItem = computed(() => {
-  return player.watchHistory.length > 0 ? player.watchHistory[0] : null
-})
+// Destaque "Continuar assistindo": o filme ou episódio mais recente; canal só se não houver outro.
+const recentHistoryItem = computed(
+  () => player.watchHistory.find((it) => it.section !== 'live') || player.watchHistory[0] || null,
+)
+
+/** "Continuar assistindo": episódio toca a série inteira a partir dele (o próximo segue sozinho). */
+function playFromHistory(item) {
+  return playHistoryItem(item, {
+    player,
+    loadSeries: (seriesId) => fetchSeriesInfo({ apiBase: auth.apiBase, credentials: auth.credentials, seriesId }),
+  })
+}
 
 // Item prioritário em exibição no destaque
 const heroItem = computed(() => {
@@ -60,9 +70,17 @@ const heroArtwork = computed(() => {
   return pickArtwork(it, heroInfo.value)
 })
 
+// Filme 1 e série 1 podem ter o mesmo número: a chave inclui a seção.
+const heroKey = computed(() => {
+  const it = heroItem.value?.rawItem || heroItem.value
+  return it ? `${it.section || heroItem.value.section}:${it.seriesId || it.stream_id}` : ''
+})
+let heroRequest = 0
+
 watch(
-  () => heroItem.value?.stream_id,
+  heroKey,
   async () => {
+    const my = ++heroRequest
     heroArtworkFailed.value = false
     const it = heroItem.value?.rawItem || heroItem.value
     if (!it) {
@@ -70,32 +88,24 @@ watch(
       return
     }
     heroInfo.value = normalizeVodInfo(null, it)
+    if (it.directUrl || !auth.isAuthenticated) return
 
-    if (!it.directUrl && auth.isAuthenticated) {
-      try {
-        if (it.section === 'series') {
-          const sId = it.series_id || it.stream_id
-          const data = await fetchSeriesInfo({
-            apiBase: auth.apiBase,
-            credentials: auth.credentials,
-            seriesId: sId,
-          })
-          if (data && data.info) {
-            heroInfo.value = normalizeVodInfo({ info: data.info }, it)
-          }
-        } else if (it.section === 'vod') {
-          const data = await fetchVodInfo({
-            apiBase: auth.apiBase,
-            credentials: auth.credentials,
-            vodId: it.stream_id,
-            item: it,
-          })
-          if (data) {
-            heroInfo.value = data
-          }
-        }
-      } catch (_) {}
-    }
+    try {
+      let info = null
+      if (it.section === 'series') {
+        // Episódio do "Continuar assistindo": os detalhes são da série (seriesId), não do episódio.
+        const data = await fetchSeriesInfo({
+          apiBase: auth.apiBase,
+          credentials: auth.credentials,
+          seriesId: it.seriesId || it.series_id || it.stream_id,
+        })
+        if (data && data.info) info = normalizeVodInfo({ info: data.info }, it)
+      } else if (it.section === 'vod') {
+        info = await fetchVodInfo({ apiBase: auth.apiBase, credentials: auth.credentials, vodId: it.stream_id, item: it })
+      }
+      // Só aplica se o destaque ainda for este item (resposta antiga não sobrescreve a nova).
+      if (info && my === heroRequest) heroInfo.value = info
+    } catch (_) {}
   },
   { immediate: true },
 )
@@ -110,7 +120,7 @@ const heroBadgeLabel = computed(() => {
 })
 
 const heroTitle = computed(() => {
-  return heroInfo.value?.name || heroItem.value?.name || 'NEUTRO TV'
+  return heroInfo.value?.name || heroItem.value?.name || 'PULSE PLAYER'
 })
 
 const heroRating = computed(() => {
@@ -131,10 +141,6 @@ const heroDuration = computed(() => {
     return formatTime(recentHistoryItem.value.currentTime)
   }
   return heroInfo.value?.duration || 'Filme'
-})
-
-const heroChip = computed(() => {
-  return heroInfo.value?.rating && Number(heroInfo.value.rating) >= 16 ? '16' : ''
 })
 
 const heroGenre = computed(() => {
@@ -183,7 +189,7 @@ function handleHeroBookmark() {
 
 function handleHeroPlay() {
   if (recentHistoryItem.value) {
-    player.playItem(recentHistoryItem.value)
+    playFromHistory(recentHistoryItem.value)
     return
   }
   const item = heroItem.value
@@ -266,15 +272,10 @@ async function loadCatalogShowcase({ reset = false } = {}) {
     const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 20)
     if (liveItems && liveItems.length > 0) {
       liveShowcase.value = liveItems.map((item) => {
-        const parts = (item.name || '').trim().split(' ')
-        const firstName = parts[0] || 'CANAL'
-        const secondName = parts.slice(1).join(' ') || 'AO VIVO'
         return {
           stream_id: item.stream_id,
           name: item.name,
           section: 'live',
-          firstName,
-          secondName,
           program: 'Transmissão contínua',
           schedule: `Canal ${item.num || ''} · Ao vivo`,
           image: item.stream_icon,
@@ -350,7 +351,7 @@ function openSeriesDetails(card, index) {
 }
 
 function onHistoryRailSelect(item) {
-  player.playItem(item)
+  playFromHistory(item)
 }
 
 function onVodRailSelect(item, index) {
@@ -441,6 +442,10 @@ watch(activeTab, (tab) => {
     } else if (tab === 'search') {
       focusFirstIn('[data-focus-group="search-keyboard"]')
     }
+    // Aba sem nada focável (ex.: Minha lista vazia) e o foco caiu com a tela antiga: volta ao item ativo do menu.
+    if (!document.activeElement || document.activeElement === document.body) {
+      focusFirstIn('[data-focus-group="side-menu"]')
+    }
   })
 })
 
@@ -484,7 +489,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="w-full h-full flex bg-[#07070a] text-white overflow-hidden select-none relative">
+  <div class="w-full h-full flex bg-tv-deep text-white overflow-hidden select-none relative">
     <!-- Menu Lateral Recolhido (Layout B aprovado) -->
     <SideMenu
       :active-tab="activeTab"
@@ -520,7 +525,7 @@ onBeforeUnmount(() => {
       <!-- Aba Minha lista (Favoritos) -->
       <div
         v-else-if="activeTab === 'favorites'"
-        class="flex flex-col h-full px-16 py-10 overflow-y-auto"
+        class="flex flex-col h-full pl-16 pr-24 py-14 overflow-y-auto"
         data-focus-group="favorites-view"
       >
         <div class="flex items-center justify-between mb-8">
@@ -577,13 +582,15 @@ onBeforeUnmount(() => {
                 v-if="item.stream_icon"
                 :src="item.stream_icon"
                 alt=""
+                loading="lazy"
+                decoding="async"
                 class="w-full h-full object-cover"
                 @error="$event.target.style.display = 'none'"
               />
               <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
               <span
                 class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded text-tv-xs font-bold uppercase tracking-wider"
-                :class="item.section === 'live' ? 'bg-[#10b981] text-white' : 'bg-[#e50914] text-white'"
+                :class="item.section === 'live' ? 'bg-tv-accent text-tv-on-accent' : 'bg-black/60 border border-white/25 text-white'"
               >
                 {{ item.section === 'live' ? 'AO VIVO' : item.section === 'series' ? 'SÉRIE' : 'FILME' }}
               </span>
@@ -623,7 +630,7 @@ onBeforeUnmount(() => {
             />
             <div
               v-else
-              class="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,#0e7490_0%,#164e63_25%,#0b1220_52%,#07070a_78%)] opacity-80"
+              class="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,#0e7490_0%,#164e63_25%,#0b1220_52%,#0b0f0c_78%)] opacity-80"
             />
             <!-- Vinheta 2.0 (fusão à esquerda e na base) -->
             <div class="absolute inset-0 tv-vignette pointer-events-none" />
@@ -631,11 +638,9 @@ onBeforeUnmount(() => {
 
           <!-- Conteúdo do Hero -->
           <div class="relative z-10 max-w-[44rem] space-y-3.5">
-            <!-- Selo superior com raio -->
+            <!-- Selo superior com o símbolo da marca -->
             <div class="flex items-center gap-2.5">
-              <svg class="w-4 h-4 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-              </svg>
+              <BrandMark :size="1.25" class="text-tv-accent" />
               <span class="text-tv-xs font-bold tracking-[0.22em] text-neutral-300 uppercase">
                 {{ heroBadgeLabel }}
               </span>
@@ -653,7 +658,6 @@ onBeforeUnmount(() => {
               <span v-if="heroYear">{{ heroYear }}</span>
               <span v-if="heroYear && heroDuration" class="w-1 h-1 rounded-full bg-neutral-500" />
               <span>{{ heroDuration }}</span>
-              <span v-if="heroChip" class="tv-chip">{{ heroChip }}</span>
               <span v-if="heroGenre" class="truncate">{{ heroGenre }}</span>
             </div>
 
@@ -710,7 +714,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Fileiras Deslizantes (Horizontais) -->
-        <div class="px-16 space-y-7 -mt-4 pb-20 relative z-20">
+        <div class="pl-16 pr-24 space-y-7 -mt-4 pb-20 relative z-20">
           <!-- 1. Continuar assistindo -->
           <section
             v-if="player.watchHistory.length > 0"
@@ -742,6 +746,8 @@ onBeforeUnmount(() => {
                     v-if="item.stream_icon"
                     :src="item.stream_icon"
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     class="w-full h-full object-cover"
                     @error="$event.target.style.display = 'none'"
                   />
@@ -786,7 +792,8 @@ onBeforeUnmount(() => {
               <button
                 id="home-see-all-vod"
                 type="button"
-                class="tv-focusable text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                tabindex="-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
                 @click="activeTab = 'vod'"
               >
                 <span>Ver todos</span>
@@ -824,11 +831,12 @@ onBeforeUnmount(() => {
                     v-if="item.image"
                     :src="item.image"
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     class="w-full h-full object-cover"
                     @error="$event.target.style.display = 'none'"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
-                  <span class="tv-badge">FILME</span>
                   <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow">
                     {{ item.name }}
                   </span>
@@ -848,7 +856,8 @@ onBeforeUnmount(() => {
               <button
                 id="home-see-all-series"
                 type="button"
-                class="tv-focusable text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                tabindex="-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
                 @click="activeTab = 'series'"
               >
                 <span>Ver todos</span>
@@ -886,11 +895,12 @@ onBeforeUnmount(() => {
                     v-if="item.image"
                     :src="item.image"
                     alt=""
+                    loading="lazy"
+                    decoding="async"
                     class="w-full h-full object-cover"
                     @error="$event.target.style.display = 'none'"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
-                  <span class="tv-badge">SÉRIE</span>
                   <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow">
                     {{ item.name }}
                   </span>
@@ -907,7 +917,7 @@ onBeforeUnmount(() => {
           >
             <div data-focus-row="header-live" class="flex items-center justify-between">
               <div class="flex items-center gap-2.5">
-                <svg class="w-5 h-5 text-[#e50914] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <svg class="w-5 h-5 text-tv-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M4.93 19.07A10 10 0 0 1 19.07 4.93" />
                   <path d="M7.76 16.24a6 6 0 0 1 8.48-8.48" />
                   <circle cx="12" cy="12" r="2" />
@@ -917,7 +927,8 @@ onBeforeUnmount(() => {
               <button
                 id="home-see-all-live"
                 type="button"
-                class="tv-focusable text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                tabindex="-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
                 @click="activeTab = 'live'"
               >
                 <span>Explorar canais</span>
@@ -952,11 +963,8 @@ onBeforeUnmount(() => {
                   class="w-[16rem] h-[9rem] rounded-xl bg-[#141418] border border-white/10 p-4 flex flex-col justify-between text-left overflow-hidden relative group"
                 >
                   <div class="flex items-center justify-between">
-                    <span class="text-tv-sm font-black tracking-tight uppercase truncate mr-2">
-                      <span class="text-white">{{ item.firstName }} </span>
-                      <span class="text-[#e50914]">{{ item.secondName }}</span>
-                    </span>
-                    <span class="tv-badge-live px-2 py-0.5 rounded text-tv-xs font-bold uppercase tracking-wider text-white shrink-0">
+                    <span class="text-tv-sm font-black tracking-tight uppercase truncate mr-2 text-white">{{ item.name || 'Canal' }}</span>
+                    <span class="tv-badge-live px-2 py-0.5 rounded text-tv-xs font-bold uppercase tracking-wider shrink-0">
                       AO VIVO
                     </span>
                   </div>
@@ -967,7 +975,7 @@ onBeforeUnmount(() => {
                   </div>
 
                   <div class="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
-                    <div class="h-full w-2/5 bg-[#e50914]" />
+                    <div class="h-full w-2/5 bg-tv-accent" />
                   </div>
                 </div>
               </template>

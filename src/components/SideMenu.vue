@@ -1,9 +1,11 @@
 <script setup>
 import { ref } from 'vue'
+import BrandMark from '@/components/BrandMark.vue'
+import { PROFILE_COLORS, avatarTextColor } from '@/stores/profileStore'
 
 defineProps({
   activeTab: { type: String, required: true },
-  profile: { type: Object, default: () => ({ name: 'Perfil', color: '#e50914' }) },
+  profile: { type: Object, default: () => ({ name: 'Perfil', color: PROFILE_COLORS[0] }) },
   listLabel: { type: String, default: '' },
 })
 
@@ -29,31 +31,30 @@ function onSelectTab(tab) {
 </script>
 
 <template>
-  <!-- Coluna fixa à esquerda que expande no foco sobrepondo o conteúdo -->
+  <!-- Coluna fixa à esquerda que expande no foco sobrepondo o conteúdo. A largura muda sem animação:
+       animar width refaz o layout a cada quadro e engasga nas TVs; só os rótulos fazem fade. -->
   <nav
     data-focus-group="side-menu"
     :data-open="isOpen ? 'true' : 'false'"
-    class="fixed top-0 bottom-0 left-0 z-30 flex flex-col justify-between py-8 transition-[width,background-color] duration-200 select-none"
+    class="fixed top-0 bottom-0 left-0 z-30 flex flex-col justify-between py-14 select-none"
     :class="[
       isOpen
-        ? 'w-[18rem] px-6 bg-[#07070a]/95 shadow-[12px_0_40px_rgba(0,0,0,0.85)] border-r border-white/10'
+        ? 'w-[19rem] px-6 bg-tv-deep/95 shadow-[12px_0_40px_rgba(0,0,0,0.85)] border-r border-white/10'
         : 'w-[7rem] px-3 bg-gradient-to-r from-black/85 via-black/40 to-transparent'
     ]"
     @focusin="onFocusIn"
     @focusout="onFocusOut"
   >
-    <!-- Topo: Logo com Raio -->
+    <!-- Topo: símbolo do Pulse Player -->
     <div class="flex flex-col gap-6">
       <div class="flex items-center gap-3 h-[3.5rem] px-3 overflow-hidden">
-        <svg class="w-7 h-7 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-        </svg>
+        <BrandMark :size="2" class="text-tv-accent" />
         <span
-          class="text-tv-lg font-black tracking-wider whitespace-nowrap transition-opacity duration-150 leading-none"
+          class="text-tv-base font-black whitespace-nowrap transition-opacity duration-150 leading-none"
           :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
         >
-          <span class="text-white">NEUTRO</span>
-          <span class="text-[#e50914] ml-1">TV</span>
+          <span class="text-[#F4F7EE]">PULSE</span>
+          <span class="text-tv-accent ml-1">PLAYER</span>
         </span>
       </div>
 
@@ -265,8 +266,8 @@ function onSelectTab(tab) {
         @click="emit('switch-profile')"
       >
         <div
-          class="w-8 h-8 rounded-lg flex items-center justify-center text-white text-tv-xs font-black shrink-0 shadow-md border border-white/20"
-          :style="{ backgroundColor: profile.color || '#e50914' }"
+          class="w-8 h-8 rounded-lg flex items-center justify-center text-tv-xs font-black shrink-0 shadow-md border border-white/20"
+          :style="{ backgroundColor: profile.color || PROFILE_COLORS[0], color: avatarTextColor(profile.color || PROFILE_COLORS[0]) }"
         >
           {{ (profile.name || 'P').charAt(0).toUpperCase() }}
         </div>

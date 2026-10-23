@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 
 const read = (path) => readFileSync(path, 'utf8')
-const activity = read('android/app/src/main/java/com/neutrotv/player/MainActivity.java')
+const activity = read('android/app/src/main/java/com/pulseplayer/app/MainActivity.java')
 const manifest = read('android/app/src/main/AndroidManifest.xml')
 const capacitorConfig = JSON.parse(read('capacitor.config.json'))
 

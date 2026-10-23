@@ -1,6 +1,6 @@
 <script setup>
 import { ref, watch, nextTick, onBeforeUnmount } from 'vue'
-import { useProfileStore, PROFILE_COLORS } from '@/stores/profileStore'
+import { useProfileStore, PROFILE_COLORS, avatarTextColor } from '@/stores/profileStore'
 import { registerBackHandler, pushFocusScope, focusFirstIn } from '@/utils/spatialNavigation'
 
 /**
@@ -98,7 +98,7 @@ onBeforeUnmount(release)
   <div
     v-if="profileStore.isProfileGateOpen"
     id="profile-gate-overlay"
-    class="fixed inset-0 z-40 bg-[#07070a] flex flex-col items-center justify-center select-none"
+    class="fixed inset-0 z-40 bg-tv-deep flex flex-col items-center justify-center select-none"
     role="dialog"
     aria-modal="true"
     data-focus-group="profile-gate"
@@ -117,9 +117,9 @@ onBeforeUnmount(release)
       >
         <div
           class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-transparent group-focus:border-white transition-all shadow-2xl relative overflow-hidden"
-          :style="{ backgroundColor: p.color }"
+          :style="{ backgroundColor: p.color, color: avatarTextColor(p.color) }"
         >
-          <span class="text-white text-5xl font-black drop-shadow-md select-none">
+          <span class="text-5xl font-black select-none">
             {{ p.name.charAt(0).toUpperCase() }}
           </span>
         </div>

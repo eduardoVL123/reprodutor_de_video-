@@ -22,8 +22,12 @@ const backHandlers = []
 const keyHandlers = []
 const focusScopes = []
 const gridApis = new Map() // elemento raiz da grade => api
-const lastFocusedByGroup = new Map() // nome do grupo => { id }
+const lastFocusedByGroup = new Map() // nome do grupo => { id, el }
 let pendingGridRoot = null // grade com foco assíncrono em andamento
+let exitHandler = null // confirmação de saída (Samsung/LG); sem ela, Voltar na tela raiz sai direto
+let focusingFromPointer = false // foco dado pelo mouse/Magic Remote (ver isPointerFocus)
+let lastPointer = null // última posição real do ponteiro { x, y }
+let pointerAtKeyNav = null // posição do ponteiro na última seta: parado ali, ele não rouba o foco
 
 const FOCUSABLE_SELECTOR = '.tv-focusable, button, a[href], input, select, textarea, [tabindex]'
 
@@ -163,13 +167,40 @@ function onPointerOver(e) {
   const target = e.target && e.target.closest ? e.target.closest(FOCUSABLE_SELECTOR) : null
   if (!target || target === document.activeElement) return
   if (isEditingTextField(document.activeElement) || !isNavigable(target)) return
+  if (isPointerParkedSinceKeyNav(e)) return
   const scope = currentScope()
   if (scope !== document && !scope.contains(target)) return
+  focusingFromPointer = true
   try {
     target.focus({ preventScroll: true })
   } catch (_) {
     target.focus()
+  } finally {
+    focusingFromPointer = false
   }
+}
+
+function onPointerMove(e) {
+  lastPointer = { x: e.clientX, y: e.clientY }
+}
+
+/**
+ * Depois de uma seta, o conteúdo desliza sob o ponteiro parado e o navegador dispara `mouseover` sozinho
+ * no item que caiu embaixo dele. Só volta a valer o ponteiro quando ele se mexer de verdade.
+ */
+function isPointerParkedSinceKeyNav(e) {
+  if (!pointerAtKeyNav) return false
+  if (e.clientX === pointerAtKeyNav.x && e.clientY === pointerAtKeyNav.y) return true
+  pointerAtKeyNav = null
+  return false
+}
+
+/**
+ * Verdadeiro durante o foco dado pelo ponteiro (o `focusin` é síncrono). Quem rola ou desliza conteúdo no foco
+ * deve ignorá-lo: o item já está sob o ponteiro, e mexer nele faz outro item cair embaixo do ponteiro.
+ */
+export function isPointerFocus() {
+  return focusingFromPointer
 }
 
 function onFocusOut(e) {
@@ -252,6 +283,14 @@ export function registerBackHandler(fn) {
  */
 export function registerKeyHandler(fn) {
   return pushTo(keyHandlers, fn)
+}
+
+/** Troca a saída direta da tela raiz por uma confirmação (ex.: diálogo "Sair?"). @returns {Function} cleanup */
+export function setExitHandler(fn) {
+  exitHandler = fn
+  return () => {
+    if (exitHandler === fn) exitHandler = null
+  }
 }
 
 /** Restringe a navegação a um contêiner (ex.: overlay modal). @returns {Function} cleanup */
@@ -423,39 +462,41 @@ function isInDirection(fromRect, el, direction) {
   return dy > 0.1
 }
 
-const lastFocusedByRow = new Map() // nome da row => { id }
+const lastFocusedByRow = new Map() // nome da row => { id, el }
 
 function onFocusIn(e) {
   const el = e.target
   if (isTextField(el)) initTextField(el)
   if (!el || !el.id) return
   const group = groupElOf(el)
-  if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id })
+  if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id, el })
   const row = el.closest ? el.closest('[data-focus-row]') : null
   if (row) {
     const rowName = row.getAttribute('data-focus-row')
-    if (rowName) lastFocusedByRow.set(rowName, { id: el.id })
+    if (rowName) lastFocusedByRow.set(rowName, { id: el.id, el })
   }
+}
+
+/**
+ * Elemento de uma lembrança, só se for o mesmo nó ainda com aquele id: ids se repetem entre telas
+ * (episode-card-4 existe em toda série) e a grade virtualizada recicla nós trocando o id.
+ */
+function rememberedElement(record) {
+  if (!record || !record.id) return null
+  const el = document.getElementById(record.id)
+  return el && el === record.el ? el : null
 }
 
 /** Elemento lembrado da linha de destino, se estiver visível e navegável. */
 function rememberedInRow(rowEl) {
-  const rowName = rowEl.getAttribute('data-focus-row')
-  const record = lastFocusedByRow.get(rowName)
-  if (record && record.id) {
-    const el = document.getElementById(record.id)
-    if (el && rowEl.contains(el) && isNavigable(el)) return el
-  }
-  return null
+  const el = rememberedElement(lastFocusedByRow.get(rowEl.getAttribute('data-focus-row')))
+  return el && rowEl.contains(el) && isNavigable(el) ? el : null
 }
 
 /** Elemento lembrado (ou ativo) do painel de destino, se estiver visível e na direção. */
 function rememberedIn(groupEl, fromRect, direction) {
-  const record = lastFocusedByGroup.get(groupEl.getAttribute('data-focus-group'))
-  if (record && record.id) {
-    const el = document.getElementById(record.id)
-    if (el && groupEl.contains(el) && isNavigable(el) && isInDirection(fromRect, el, direction)) return el
-  }
+  const el = rememberedElement(lastFocusedByGroup.get(groupEl.getAttribute('data-focus-group')))
+  if (el && groupEl.contains(el) && isNavigable(el) && isInDirection(fromRect, el, direction)) return el
   const active = groupEl.querySelector('[data-focus-active="true"]')
   if (active && isNavigable(active) && isInDirection(fromRect, active, direction)) return active
   return null
@@ -546,10 +587,24 @@ function isSidePanelTransition(current, currentGroup, cand, candGroup) {
   return !candGroup.contains(current) && !currentGroup.contains(cand)
 }
 
-/** Melhor candidato vertical: dentro do mesmo grupo primeiro (ex.: cabeçalho da seção → cards dela). */
-function findBestVertical(fromRect, candidates, direction, current) {
+const overlapsHorizontally = (a, b) => a.left < b.right && a.right > b.left
+
+/** Painel ao lado do atual (menu lateral, categorias): só se entra nele com Esquerda/Direita. */
+function isBesidePanel(current, currentGroup, cand) {
+  const candGroup = groupElOf(cand)
+  if (!isSidePanelTransition(current, currentGroup, cand, candGroup)) return false
+  return !overlapsHorizontally(candGroup.getBoundingClientRect(), currentGroup.getBoundingClientRect())
+}
+
+/**
+ * Melhor candidato vertical: dentro do mesmo grupo primeiro (ex.: cabeçalho da seção → cards dela).
+ * Cima/Baixo nunca atravessam para um painel ao lado (ex.: da última fileira para o avatar do menu).
+ */
+function findBestVertical(fromRect, allCandidates, direction, current) {
   const currentGroup = groupElOf(current)
+  let candidates = allCandidates
   if (currentGroup) {
+    candidates = allCandidates.filter((cand) => !isBesidePanel(current, currentGroup, cand))
     const sameGroup = candidates.filter((cand) => groupElOf(cand) === currentGroup)
     const inGroup = scoreVertical(fromRect, sameGroup, direction, current)
     if (inGroup) return inGroup
@@ -694,6 +749,7 @@ function scoreVertical(fromRect, candidates, direction, current) {
 }
 
 function navigate(direction) {
+  pointerAtKeyNav = lastPointer
   const scope = currentScope()
   const current = document.activeElement
 
@@ -794,8 +850,10 @@ function handleBack() {
     }
   }
   if (!routerRef) return
-  // Telas raiz: Voltar sem nada para fechar encerra o app (exigência das lojas Samsung/LG).
-  if (ROOT_ROUTES.indexOf(routerRef.currentRoute.value.name) !== -1) exitApp()
+  // Telas raiz: Voltar sem nada para fechar pergunta se quer sair (exigência das lojas Samsung/LG).
+  if (ROOT_ROUTES.indexOf(routerRef.currentRoute.value.name) === -1) return
+  if (exitHandler) exitHandler()
+  else exitApp()
 }
 
 function onKeyDown(e) {
@@ -910,6 +968,7 @@ export function initSpatialNavigation(options) {
   document.addEventListener('focusout', onFocusOut)
   document.addEventListener('mousedown', onMouseDown, true)
   document.addEventListener('mouseover', onPointerOver)
+  document.addEventListener('mousemove', onPointerMove, true)
 
   if (typeof MutationObserver !== 'undefined' && typeof document !== 'undefined' && document.body) {
     domObserver = new MutationObserver((mutations) => {
@@ -937,6 +996,7 @@ export function stopSpatialNavigation() {
   document.removeEventListener('focusout', onFocusOut)
   document.removeEventListener('mousedown', onMouseDown, true)
   document.removeEventListener('mouseover', onPointerOver)
+  document.removeEventListener('mousemove', onPointerMove, true)
   if (domObserver) {
     domObserver.disconnect()
     domObserver = null

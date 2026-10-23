@@ -215,7 +215,7 @@ defineExpose({ open, close })
               class="rounded-xl border p-4 flex items-center justify-between transition-colors"
               :class="
                 list.id === auth.currentListId
-                  ? 'border-[#e50914] bg-white/[0.04]'
+                  ? 'border-tv-accent bg-white/[0.04]'
                   : 'border-white/10 bg-white/[0.02]'
               "
             >

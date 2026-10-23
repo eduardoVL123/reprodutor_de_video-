@@ -1,13 +1,13 @@
 import { describe, it, expect } from 'vitest'
 
 describe('devTools — ferramentas de conferência (só em desenvolvimento)', () => {
-  it('instala window.__neutro com auditoria, caminhada por setas e ids duplicados', async () => {
+  it('instala window.__pulse com auditoria, caminhada por setas e ids duplicados', async () => {
     const { installDevTools } = await import('@/utils/devTools')
 
     installDevTools()
 
-    expect(Object.keys(window.__neutro).sort()).toEqual(['audit', 'duplicateIds', 'walk'])
-    delete window.__neutro
+    expect(Object.keys(window.__pulse).sort()).toEqual(['audit', 'duplicateIds', 'walk'])
+    delete window.__pulse
   })
 
   it('duplicateIds acha ids repetidos na tela', async () => {

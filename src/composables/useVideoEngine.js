@@ -38,6 +38,13 @@ const HLS_CONFIG = {
   fragLoadingRetryDelay: 800,
 }
 
+/** Segundos sem o tempo avançar (com o vídeo tocando) até tentar reconectar. */
+const STALL_RECOVERY_AFTER_S = 10
+/** Reconexões seguidas antes de desistir e mostrar o erro. */
+const MAX_STALL_RECOVERIES = 3
+/** Antes do primeiro quadro só vale uma tentativa: o erro aparece em ~25 s (Samsung: resposta em até 30 s). */
+const MAX_STARTUP_RECOVERIES = 1
+
 let hlsModulePromise = null
 
 function loadHls() {
@@ -59,6 +66,7 @@ export function useVideoEngine() {
   const engineType = ref('') // 'hls' | 'native' | ''
   const loadingProgress = ref(0)
   const loadingStage = ref('Conectando à transmissão...')
+  const recovering = ref(false) // reconectando no meio do vídeo (a tela mostra "Reconectando")
 
   let hls = null
   let video = null
@@ -80,6 +88,14 @@ export function useVideoEngine() {
   let lastCurTime = -1
   let stalledSeconds = 0
 
+  // Recuperação de travamento no meio da reprodução (rede caiu, servidor parou de enviar)
+  let activeUrl = '' // fonte atual do <video> nativo: a reconexão usa o MESMO arquivo
+  let usingFallback = false
+  let hasProgressed = false // o tempo já avançou nesta mídia (passou do início)
+  let resumePoint = 0 // último instante tocado de verdade: a reconexão volta para cá
+  let stallRecoveries = 0
+  let lastRecoveryAt = -1
+
   function startProgressTimer() {
     if (progressTimer) return
     progressTimer = setInterval(() => {
@@ -94,7 +110,8 @@ export function useVideoEngine() {
   }
 
   function setProgressTarget(val, stage) {
-    if (stage) loadingStage.value = stage
+    // Depois que o vídeo já tocou, as etapas de carregamento inicial não se aplicam (reconexão tem a própria).
+    if (stage && !hasProgressed) loadingStage.value = stage
     if (val > targetProgress) {
       targetProgress = Math.min(100, val)
     }
@@ -160,6 +177,7 @@ export function useVideoEngine() {
       if (lastCurTime >= 0 && Math.abs(cur - lastCurTime) >= 0.25) {
         stalledSeconds = 0
         lastCurTime = cur
+        markProgress(cur)
         return
       }
 
@@ -177,18 +195,87 @@ export function useVideoEngine() {
         }
       }
 
-      if (stalledSeconds >= 12) {
-        console.warn(`[player] Watchdog: Stream congelado há 12s. Acionando recuperação automática.`)
+      if (stalledSeconds >= STALL_RECOVERY_AFTER_S) {
         stalledSeconds = 0
-        if (desc.fallbackUrl) {
-          switchToFallback(desc, my, 'watchdog stall 12s')
-        } else if (hls) {
-          const sourceUrl = canUseDevProxy() ? devProxyUrl(desc.primaryUrl, { hls: true }) : desc.primaryUrl
-          hls.loadSource(sourceUrl)
-          safePlay(my)
-        }
+        recoverFromStall(desc, my)
       }
     }, 1000)
+  }
+
+  function markProgress(cur) {
+    if (cur <= 0.5) return
+    hasProgressed = true
+    recovering.value = false
+    resumePoint = cur
+    // Voltou a tocar bem depois da última reconexão: zera o limite de tentativas.
+    if (lastRecoveryAt >= 0 && cur - lastRecoveryAt > 30) {
+      stallRecoveries = 0
+      lastRecoveryAt = -1
+    }
+  }
+
+  /**
+   * Travou (sem avanço por STALL_RECOVERY_AFTER_S s) ou deu erro de rede no meio da reprodução.
+   * Antes de começar a tocar, tenta o formato alternativo uma vez. Depois que já tocou, reconecta
+   * no MESMO arquivo e volta ao ponto onde parou (trocar de formato recomeçaria do zero).
+   * Após MAX_STALL_RECOVERIES tentativas, mostra o erro em vez de ficar preso carregando.
+   */
+  function recoverFromStall(desc, my) {
+    if (my !== token) return
+    stallRecoveries++
+    const limit = hasProgressed ? MAX_STALL_RECOVERIES : MAX_STARTUP_RECOVERIES
+    if (stallRecoveries > limit) {
+      fail(
+        my,
+        'stall',
+        hasProgressed
+          ? `A transmissão parou e não voltou após ${limit} tentativas de reconexão`
+          : 'A transmissão não começou: o servidor não enviou imagem',
+        activeUrl || desc.primaryUrl,
+        desc.containerExtension,
+      )
+      return
+    }
+    if (!hasProgressed && desc.fallbackUrl && !usingFallback) {
+      switchToFallback(desc, my, 'travou antes de começar')
+      return
+    }
+    console.warn(
+      `[player] Reconectando (${stallRecoveries}/${MAX_STALL_RECOVERIES}) em ${Math.round(resumePoint)}s`,
+    )
+    loadingStage.value = 'Reconectando ao servidor...'
+    recovering.value = true
+    lastRecoveryAt = resumePoint
+    if (hls) reloadHls(desc, my)
+    else reloadNative(my)
+  }
+
+  function reloadNative(my) {
+    const at = resumePoint
+    const seekBack = () => {
+      video.removeEventListener('loadedmetadata', seekBack)
+      if (my !== token || at <= 0) return
+      try {
+        video.currentTime = at
+      } catch (_) {}
+    }
+    addVideoListener(video, 'loadedmetadata', seekBack)
+    video.src = activeUrl
+    try {
+      video.load()
+    } catch (_) {}
+    safePlay(my)
+  }
+
+  function reloadHls(desc, my) {
+    if (desc.section === 'live' || !hasProgressed) {
+      // Ao vivo: volta para a ponta da transmissão.
+      hls.loadSource(canUseDevProxy() ? devProxyUrl(desc.primaryUrl, { hls: true }) : desc.primaryUrl)
+    } else {
+      hls.stopLoad()
+      hls.startLoad(resumePoint)
+    }
+    safePlay(my)
   }
 
   function stopWatchdog() {
@@ -276,6 +363,13 @@ export function useVideoEngine() {
   function destroyEngine() {
     token++
     teardownMedia()
+    activeUrl = ''
+    usingFallback = false
+    hasProgressed = false
+    resumePoint = 0
+    stallRecoveries = 0
+    lastRecoveryAt = -1
+    recovering.value = false
     loadingProgress.value = 0
     targetProgress = 0
     loadingStage.value = 'Conectando à transmissão...'
@@ -317,6 +411,11 @@ export function useVideoEngine() {
     if (my !== token) return
     console.warn('[player] Tentando formato alternativo após:', reason, maskSecrets(desc.fallbackUrl))
     teardownMedia()
+    usingFallback = true
+    // Recomeça a barra de carregamento (senão ela ficaria parada em 100%).
+    targetProgress = 15
+    loadingProgress.value = 0
+    loadingStage.value = 'Tentando formato alternativo...'
     startNative(desc.fallbackUrl, desc, my, true)
   }
 
@@ -336,7 +435,10 @@ export function useVideoEngine() {
       const codeName = errMsgs[errCode] || 'MEDIA_ERR_UNKNOWN'
       const detail = `HTML5 Video Error Code ${errCode}: ${codeName}`
       const reason = `native code=${errCode}`
-      if (!isFallback && desc.fallbackUrl) {
+      if (hasProgressed) {
+        // Erro no meio do vídeo (ex.: conexão caiu): reconecta no mesmo arquivo, no mesmo ponto.
+        recoverFromStall(desc, my)
+      } else if (!isFallback && desc.fallbackUrl) {
         switchToFallback(desc, my, reason)
       } else {
         fail(my, reason, detail, url, desc.containerExtension)
@@ -372,6 +474,7 @@ export function useVideoEngine() {
       }
     }, 3500)
 
+    activeUrl = url
     video.src = url
     try {
       video.load()
@@ -540,6 +643,7 @@ export function useVideoEngine() {
     engineType,
     loadingProgress,
     loadingStage,
+    recovering,
     attachAndPlay,
     destroyEngine,
     clearError,

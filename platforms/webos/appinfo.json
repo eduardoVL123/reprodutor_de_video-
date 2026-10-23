@@ -1,13 +1,13 @@
 {
-  "id": "com.neutrotv.player",
+  "id": "com.pulseplayer.app",
   "version": "__VERSION__",
-  "vendor": "Neutro TV",
+  "vendor": "Pulse Player",
   "type": "web",
   "main": "index.html",
-  "title": "Neutro TV",
+  "title": "Pulse Player",
   "icon": "icon.png",
   "largeIcon": "largeIcon.png",
-  "bgColor": "#0a0a0a",
+  "bgColor": "#0B0F0C",
   "resolution": "1920x1080",
   "disableBackHistoryAPI": true
 }

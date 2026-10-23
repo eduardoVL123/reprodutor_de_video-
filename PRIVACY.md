@@ -1,4 +1,4 @@
-# Política de Privacidade — Neutro TV
+# Política de Privacidade — Pulse Player
 
 > **Rascunho técnico.** Preencha os campos entre `[colchetes]`, revise com seu jurídico e publique o texto
 > em uma URL pública: Samsung Seller Office, LG Seller Lounge e Google Play exigem o link no cadastro.
@@ -7,7 +7,7 @@
 
 ## O que o aplicativo é
 
-Neutro TV é um reprodutor de mídia genérico. Ele não fornece, hospeda, endossa ou vende conteúdo.
+Pulse Player é um reprodutor de mídia genérico. Ele não fornece, hospeda, endossa ou vende conteúdo.
 O usuário informa os endereços (servidor ou playlist) dos quais deseja reproduzir mídia e é o único
 responsável por eles.
 
@@ -31,6 +31,10 @@ responsável por eles.
 O aplicativo só se conecta aos endereços que o usuário cadastrou (API, playlists, fluxos de vídeo e as imagens
 de capa/logotipo que esses servidores indicam). Esses servidores são de terceiros e têm suas próprias
 políticas; o aplicativo não controla o que eles registram.
+
+Se o usuário escolher "Experimentar com vídeos de demonstração" no login, o aplicativo baixa a lista de
+demonstração do endereço publicado pelo desenvolvedor e reproduz vídeos de uso livre e sinais públicos de teste
+(Blender Foundation via archive.org, Mux e Apple). Nenhum dado do usuário é enviado nessa escolha.
 
 ## Controle e exclusão
 

@@ -16,7 +16,7 @@ import https from 'node:https'
  * não existe no build de produção.
  */
 export const PROXY_PATH = '/__proxy__'
-export const UPSTREAM_UA = 'NeutroTV/1.0'
+export const UPSTREAM_UA = 'PulsePlayer/1.0'
 const MAX_REDIRECTS = 8
 const UPSTREAM_TIMEOUT_MS = 60000
 const REDIRECT_CODES = [301, 302, 303, 307, 308]
@@ -169,7 +169,7 @@ export function proxyHandler(req, res) {
 /** Plugin do Vite: monta o proxy no servidor de desenvolvimento e no `vite preview`. */
 export function devCorsProxy() {
   return {
-    name: 'neutro-dev-cors-proxy',
+    name: 'pulse-dev-cors-proxy',
     configureServer(server) {
       server.middlewares.use(PROXY_PATH, proxyHandler)
     },

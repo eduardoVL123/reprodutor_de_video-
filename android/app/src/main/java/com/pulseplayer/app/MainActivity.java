@@ -1,4 +1,4 @@
-package com.neutrotv.player;
+package com.pulseplayer.app;
 
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
@@ -24,7 +24,7 @@ import java.util.Map;
 
 public class MainActivity extends BridgeActivity {
 
-    private static final String USER_AGENT = "NeutroTV/1.1";
+    private static final String USER_AGENT = "PulsePlayer/1.1";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

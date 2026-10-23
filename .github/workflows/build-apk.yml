@@ -69,6 +69,9 @@ jobs:
 
       - name: Build web
         run: npm run build
+        env:
+          # Lista de demonstração para os revisores (docs/demo). Variável do repositório; vazia = sem o botão.
+          VITE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
 
       - name: Sincronizar Capacitor Android
         run: npx cap sync android
@@ -88,37 +91,37 @@ jobs:
           retention-days: 30
 
       - name: Preparar APK para download direto
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk neutro-tv.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk pulse-player.apk
 
       - name: Publicar Release com APK para Smart TV (Downloader)
         if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0
-          name: Neutro TV 2.0 (APK de Teste)
+          name: Pulse Player 2.0 (APK de Teste)
           body: |
-            ### Neutro TV 2.0 — Redesign com Menu Lateral e Player OSD
+            ### Pulse Player 2.0 — Redesign com Menu Lateral e Player OSD
             
             **Como instalar na Smart TV com o app Downloader:**
             1. Abra o app **Downloader** na sua Android TV ou Fire TV.
             2. Digite a URL direta do APK:
-               `https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/neutro-tv.apk`
+               `https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk`
             3. Baixe, instale e abra o aplicativo!
-          files: neutro-tv.apk
+          files: pulse-player.apk
           prerelease: false
           draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # Release: só roda se o repositório tiver a chave de publicação nos Secrets
-      # (NEUTRO_KEYSTORE_BASE64, NEUTRO_KEYSTORE_PASSWORD, NEUTRO_KEY_ALIAS, NEUTRO_KEY_PASSWORD).
+      # (PULSE_KEYSTORE_BASE64, PULSE_KEYSTORE_PASSWORD, PULSE_KEY_ALIAS, PULSE_KEY_PASSWORD).
       - name: Preparar chave de publicação
         id: release_key
         env:
-          KEYSTORE_B64: ${{ secrets.NEUTRO_KEYSTORE_BASE64 }}
+          KEYSTORE_B64: ${{ secrets.PULSE_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/neutro-release.jks"
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/pulse-release.jks"
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -126,10 +129,10 @@ jobs:
         if: steps.release_key.outputs.available == 'true'
         working-directory: android
         env:
-          NEUTRO_KEYSTORE_FILE: ${{ runner.temp }}/neutro-release.jks
-          NEUTRO_KEYSTORE_PASSWORD: ${{ secrets.NEUTRO_KEYSTORE_PASSWORD }}
-          NEUTRO_KEY_ALIAS: ${{ secrets.NEUTRO_KEY_ALIAS }}
-          NEUTRO_KEY_PASSWORD: ${{ secrets.NEUTRO_KEY_PASSWORD }}
+          PULSE_KEYSTORE_FILE: ${{ runner.temp }}/pulse-release.jks
+          PULSE_KEYSTORE_PASSWORD: ${{ secrets.PULSE_KEYSTORE_PASSWORD }}
+          PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
+          PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease bundleRelease
 
       - name: Enviar release

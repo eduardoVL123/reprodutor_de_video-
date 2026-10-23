@@ -1,10 +1,13 @@
 import { describe, it, expect, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
+let recovering = null
+
 async function setup({ withNavigation = false } = {}) {
   const attachAndPlay = vi.fn(async () => {})
   vi.doMock('@/composables/useVideoEngine', async () => {
     const { ref } = await import('vue')
+    recovering = ref(false)
     return {
       PLAYBACK_ERROR: 'erro',
       useVideoEngine: () => ({
@@ -12,6 +15,7 @@ async function setup({ withNavigation = false } = {}) {
         errorDetail: ref(''),
         loadingProgress: ref(0),
         loadingStage: ref(''),
+        recovering,
         attachAndPlay,
         destroyEngine: vi.fn(),
       }),
@@ -225,3 +229,127 @@ describe('VideoPlayerOverlay — layout 2.0', () => {
   })
 })
 
+
+describe('VideoPlayerOverlay — progresso ao trocar de item', () => {
+  it('o tempo assistido fica no item anterior, não no próximo', async () => {
+    const { wrapper, player } = await setup()
+    await player.hydrate(true)
+    player.playItem({ ...MOVIE, stream_id: 1 })
+    await flushPromises()
+    const el = video()
+    const playback = fakePlayback(el)
+    Object.defineProperty(el, 'duration', { configurable: true, get: () => 3000 })
+    el.currentTime = 600
+    el.dispatchEvent(new Event('durationchange'))
+    el.dispatchEvent(new Event('timeupdate'))
+
+    player.playItem({ ...MOVIE, stream_id: 2, directUrl: 'http://srv.test/b.mp4' })
+    await flushPromises()
+
+    expect(playback.time()).toBe(600)
+    expect(player.getSavedTime(1, 'vod')).toBe(600)
+    expect(player.getSavedTime(2, 'vod')).toBe(0)
+    wrapper.unmount()
+  })
+})
+
+describe('VideoPlayerOverlay — carregamento no meio do vídeo', () => {
+  it('mostra "Carregando" sem a barra de porcentagem da abertura', async () => {
+    const { wrapper, player } = await setup()
+    player.playItem(MOVIE)
+    await flushPromises()
+    const el = video()
+    fakePlayback(el)
+    el.dispatchEvent(new Event('playing'))
+    el.dispatchEvent(new Event('timeupdate'))
+    await flushPromises()
+
+    el.dispatchEvent(new Event('waiting'))
+    await flushPromises()
+
+    const status = document.querySelector('#video-player-root [role="status"]')
+    expect(status.textContent).toContain('Carregando')
+    expect(status.textContent).not.toContain('%')
+    wrapper.unmount()
+  })
+
+  it('durante a reconexão avisa que está reconectando', async () => {
+    const { wrapper, player } = await setup()
+    player.playItem(MOVIE)
+    await flushPromises()
+    const el = video()
+    fakePlayback(el)
+    el.dispatchEvent(new Event('playing'))
+    el.dispatchEvent(new Event('timeupdate'))
+    el.dispatchEvent(new Event('waiting'))
+    recovering.value = true
+    await flushPromises()
+
+    expect(document.querySelector('#video-player-root [role="status"]').textContent).toContain('Reconectando')
+    wrapper.unmount()
+  })
+})
+
+describe('VideoPlayerOverlay — próximo episódio antes do fim', () => {
+  const EPISODES = [1, 2].map((n) => ({
+    stream_id: n,
+    name: `Série - T1:E${n} - Ep ${n}`,
+    section: 'series',
+    seriesId: 9,
+    directUrl: `http://srv.test/e${n}.mp4`,
+  }))
+
+  async function playFirstEpisodeAt(seconds) {
+    const ctx = await setup()
+    ctx.player.playPlaylist({ items: EPISODES, startIndex: 0, section: 'series' })
+    await flushPromises()
+    const el = video()
+    fakePlayback(el)
+    Object.defineProperty(el, 'duration', { configurable: true, get: () => 1500 })
+    el.currentTime = seconds
+    el.dispatchEvent(new Event('durationchange'))
+    el.dispatchEvent(new Event('timeupdate'))
+    await flushPromises()
+    return { ...ctx, el }
+  }
+
+  it('faltando 20 segundos mostra o próximo episódio, com a contagem até o fim', async () => {
+    const { wrapper } = await playFirstEpisodeAt(1481)
+
+    expect(document.getElementById('autoadvance-card')).not.toBeNull()
+    expect(document.getElementById('autoadvance-card').textContent).toContain('19s')
+    wrapper.unmount()
+  })
+
+  it('antes dos 20 segundos finais não mostra nada', async () => {
+    const { wrapper } = await playFirstEpisodeAt(1400)
+
+    expect(document.getElementById('autoadvance-card')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('"Reproduzir agora" pula para o próximo episódio sem esperar o fim', async () => {
+    const { wrapper, player } = await playFirstEpisodeAt(1485)
+
+    document.getElementById('autoadvance-play').click()
+    await flushPromises()
+
+    expect(player.currentItem.stream_id).toBe(2)
+    wrapper.unmount()
+  })
+
+  it('cancelado, não volta a aparecer no mesmo episódio nem troca sozinho no fim', async () => {
+    const { wrapper, player, el } = await playFirstEpisodeAt(1485)
+
+    document.getElementById('autoadvance-cancel').click()
+    await flushPromises()
+    el.currentTime = 1495
+    el.dispatchEvent(new Event('timeupdate'))
+    el.dispatchEvent(new Event('ended'))
+    await flushPromises()
+
+    expect(document.getElementById('autoadvance-card')).toBeNull()
+    expect(player.currentItem.stream_id).toBe(1)
+    wrapper.unmount()
+  })
+})

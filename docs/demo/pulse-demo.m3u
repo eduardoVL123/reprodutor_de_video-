@@ -1,0 +1,11 @@
+#EXTM3U
+#EXTINF:-1 group-title="Canais de demonstração",Sinal de teste Bipbop (Apple)
+https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8
+#EXTINF:-1 group-title="Canais de demonstração",Big Buck Bunny em HLS (Blender Foundation, CC BY 3.0)
+https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
+#EXTINF:-1 group-title="Filmes de demonstração",Big Buck Bunny (Blender Foundation, CC BY 3.0)
+https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4
+#EXTINF:-1 group-title="Filmes de demonstração",Elephants Dream (Blender Foundation, CC BY 2.5)
+https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4
+#EXTINF:-1 group-title="Filmes de demonstração",Tears of Steel (Blender Foundation, CC BY 3.0)
+https://test-streams.mux.dev/tos_ismc/main.m3u8

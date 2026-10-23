@@ -307,7 +307,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="rootEl" class="flex w-full h-full gap-10 px-16 pt-6 pb-4 bg-[#07070a] text-white" aria-label="Buscar">
+  <section ref="rootEl" class="flex w-full h-full gap-10 pl-16 pr-24 py-14 bg-tv-deep text-white" aria-label="Buscar">
     <!-- Consulta + teclado na tela -->
     <div class="w-[34rem] shrink-0 flex flex-col" data-focus-group="search-keyboard">
       <div data-focus-row="search-input-row">
@@ -448,7 +448,7 @@ onBeforeUnmount(() => {
               class="tv-focusable h-[3.25rem] px-5 rounded-lg border text-tv-sm font-semibold"
               :class="
                 effectiveFilter === f.id
-                  ? 'bg-[#e50914] border-[#e50914] text-white'
+                  ? 'bg-tv-accent border-tv-accent text-tv-on-accent'
                   : 'bg-white/[0.04] border-white/10 text-neutral-300'
               "
               @click="activeFilter = f.id"

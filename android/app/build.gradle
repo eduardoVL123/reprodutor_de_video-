@@ -1,10 +1,10 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace = "com.neutrotv.player"
+    namespace = "com.pulseplayer.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.neutrotv.player"
+        applicationId "com.pulseplayer.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 3
@@ -21,20 +21,20 @@ android {
     // Android, públicas por definição; não serve para publicação na Play Store.
     signingConfigs {
         debug {
-            storeFile file('neutro-debug.p12')
+            storeFile file('pulse-debug.p12')
             storeType 'pkcs12'
             storePassword 'android'
-            keyAlias 'neutrodebug'
+            keyAlias 'neutrodebug' // alias gravado dentro da chave de debug existente (só muda gerando outra chave)
             keyPassword 'android'
         }
         // Release: a chave de publicação nunca é versionada; vem de variáveis de ambiente
-        // (NEUTRO_KEYSTORE_FILE, NEUTRO_KEYSTORE_PASSWORD, NEUTRO_KEY_ALIAS, NEUTRO_KEY_PASSWORD).
-        if (System.getenv('NEUTRO_KEYSTORE_FILE')) {
+        // (PULSE_KEYSTORE_FILE, PULSE_KEYSTORE_PASSWORD, PULSE_KEY_ALIAS, PULSE_KEY_PASSWORD).
+        if (System.getenv('PULSE_KEYSTORE_FILE')) {
             release {
-                storeFile file(System.getenv('NEUTRO_KEYSTORE_FILE'))
-                storePassword System.getenv('NEUTRO_KEYSTORE_PASSWORD')
-                keyAlias System.getenv('NEUTRO_KEY_ALIAS')
-                keyPassword System.getenv('NEUTRO_KEY_PASSWORD')
+                storeFile file(System.getenv('PULSE_KEYSTORE_FILE'))
+                storePassword System.getenv('PULSE_KEYSTORE_PASSWORD')
+                keyAlias System.getenv('PULSE_KEY_ALIAS')
+                keyPassword System.getenv('PULSE_KEY_PASSWORD')
             }
         }
     }
@@ -45,7 +45,7 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
-            if (System.getenv('NEUTRO_KEYSTORE_FILE')) {
+            if (System.getenv('PULSE_KEYSTORE_FILE')) {
                 signingConfig signingConfigs.release
             }
         }

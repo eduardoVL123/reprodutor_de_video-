@@ -7,8 +7,11 @@ const PROFILES_KEY = 'app:profiles'
 const ACTIVE_PROFILE_KEY = 'app:activeProfileId'
 const MAX_PROFILES = 5
 
+const BRAND_LIME = '#B8F000'
+const BRAND_GRAPHITE = '#0B0F0C'
+
 export const PROFILE_COLORS = [
-  '#e50914', // Vermelho
+  BRAND_LIME, // Verde-limão (cor da marca)
   '#2563eb', // Azul
   '#10b981', // Verde esmeralda
   '#f59e0b', // Âmbar
@@ -16,8 +19,13 @@ export const PROFILE_COLORS = [
   '#ec4899', // Rosa
 ]
 
+/** Cor da inicial no avatar: grafite sobre o limão (branco nele teria contraste 1,3:1), branco nas demais. */
+export function avatarTextColor(color) {
+  return String(color || '').toUpperCase() === BRAND_LIME ? BRAND_GRAPHITE : '#ffffff'
+}
+
 const DEFAULT_PROFILES = [
-  { id: 'p1', name: 'Principal', color: '#e50914' },
+  { id: 'p1', name: 'Principal', color: BRAND_LIME },
   { id: 'p2', name: 'Família', color: '#2563eb' },
   { id: 'p3', name: 'Convidado', color: '#10b981' },
 ]

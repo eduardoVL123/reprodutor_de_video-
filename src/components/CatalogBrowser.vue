@@ -22,6 +22,7 @@ const catalog = useCatalogStore()
 const player = usePlayerStore()
 
 const activeCategory = ref(ALL_CATEGORIES)
+const categoriesGridRef = ref(null)
 const contentGridRef = ref(null)
 /** Filme/série aberto na tela de detalhes: { item, index, categoryId } | null. */
 const detailsTarget = ref(null)
@@ -71,14 +72,20 @@ function handleSelectItem(item, index) {
 const load = (force = false) => catalog.loadSection(props.section, { force })
 const progressPct = computed(() => Math.round((state.value.progress || 0) * 100))
 
+/** A grade de categorias lê os itens de forma assíncrona: focusIndex espera os botões existirem. */
+async function focusActiveCategory() {
+  await nextTick()
+  if (!categoriesGridRef.value) return
+  const index = categoryList.value.findIndex((c) => c.category_id === activeCategory.value)
+  categoriesGridRef.value.focusIndex(Math.max(0, index))
+}
+
 // Foco Inicial Automático por Tela (CT 4.3 e Seção 2.2 D)
 watch(
   () => state.value.state,
   (st) => {
     if (st === 'ready') {
-      nextTick(() => {
-        focusFirstIn('[data-focus-group="categories"]')
-      })
+      focusActiveCategory()
     } else if (st === 'error') {
       nextTick(() => focusFirstIn('#catalog-retry'))
     }
@@ -176,7 +183,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="flex flex-col w-full h-full bg-[#07070a] px-16 py-3">
+  <section class="flex flex-col w-full h-full bg-tv-deep pl-16 pr-24 py-14">
     <header data-focus-group="header" data-focus-row="catalog-header" class="flex items-center gap-6 shrink-0 h-[4.5rem] mb-2">
       <div class="ml-auto flex items-center gap-4">
         <button
@@ -201,13 +208,13 @@ onBeforeUnmount(() => {
       class="flex flex-col items-center justify-center flex-1 gap-6"
       role="status"
     >
-      <svg class="w-16 h-16 animate-spin text-[#e50914]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <svg class="w-16 h-16 animate-spin text-tv-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.2" />
         <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
       </svg>
       <p class="text-tv-base text-neutral-300 font-medium">{{ state.step || 'Carregando...' }}</p>
       <div v-if="progressPct > 0" class="w-[36rem] h-2 rounded-full bg-white/10 overflow-hidden">
-        <div class="h-full bg-[#e50914] transition-all" :style="{ width: progressPct + '%' }"></div>
+        <div class="h-full bg-tv-accent transition-all" :style="{ width: progressPct + '%' }"></div>
       </div>
     </div>
 
@@ -237,6 +244,7 @@ onBeforeUnmount(() => {
     <div v-else class="flex flex-1 min-h-0 gap-8 mt-4">
       <aside data-focus-group="categories" class="w-[20rem] shrink-0" aria-label="Categorias">
         <GridView
+          ref="categoriesGridRef"
           :count="categoryList.length"
           :load-items="loadCategories"
           :columns="1"

@@ -19,6 +19,7 @@ const {
   errorDetail: engineErrorDetail,
   loadingProgress,
   loadingStage,
+  recovering,
   attachAndPlay,
   destroyEngine,
 } = useVideoEngine()
@@ -50,6 +51,8 @@ const duration = ref(0)
 
 // Auto-advance (VOD / Filas)
 const autoAdvance = ref(null) // { nextItem: object, secondsLeft: number, timer: any }
+const NEXT_OFFER_BEFORE_END_S = 20 // o próximo episódio aparece nos créditos, como nos streamings
+let nextOfferDismissed = false // o usuário cancelou o próximo neste item
 
 // Timers e Escopos de Foco
 let osdTimer = null
@@ -103,6 +106,13 @@ function resetOsdTimer() {
 let lastSaveTime = 0
 let hasResumed = false
 let lastPlayedToken = -1
+/** Item a que `currentTime`/`duration` pertencem. Ao trocar de vídeo, `player.currentItem` já é o próximo. */
+let playingItem = null
+
+/** Salva o progresso do item que está (ou estava) na tela, nunca no próximo da fila. */
+function saveCurrentProgress(cur = currentTime.value, dur = duration.value) {
+  if (playingItem) player.saveProgress(cur, dur, playingItem)
+}
 
 function retryPlayback() {
   lastPlayedToken = -1
@@ -116,10 +126,11 @@ async function startPlayback() {
   }
 
   if (videoRef.value && currentTime.value > 15 && duration.value > 0) {
-    player.saveProgress(currentTime.value, duration.value)
+    saveCurrentProgress()
   }
 
   cancelAutoAdvance()
+  nextOfferDismissed = false
   hasRenderedFrame.value = false
   currentTime.value = 0
   duration.value = 0
@@ -129,6 +140,7 @@ async function startPlayback() {
   lastSaveTime = 0
 
   const item = player.currentItem
+  playingItem = item
   if (!item) return
 
   // Marca o pedido já aqui: os watchers de isOpen e playToken disparam juntos e não podem iniciar duas vezes.
@@ -304,10 +316,11 @@ function onTimeUpdate() {
       hasRenderedFrame.value = true
     }
     currentTime.value = videoRef.value.currentTime
+    offerNextNearEnd()
     const now = Date.now()
     if (now - lastSaveTime >= 10000) {
       lastSaveTime = now
-      player.saveProgress(currentTime.value, duration.value)
+      saveCurrentProgress()
     }
   }
 }
@@ -322,12 +335,12 @@ function onPause() {
   isPaused.value = true
   isOsdVisible.value = true
   if (osdTimer) clearTimeout(osdTimer)
-  player.saveProgress(currentTime.value, duration.value)
+  saveCurrentProgress()
 }
 
 function closePlayer() {
   if (videoRef.value) {
-    player.saveProgress(currentTime.value, duration.value)
+    saveCurrentProgress()
   }
   player.close()
 }
@@ -346,14 +359,25 @@ function onPlaying() {
 function onEnded() {
   if (isLive.value) return
   if (duration.value > 0) {
-    player.saveProgress(duration.value, duration.value)
+    saveCurrentProgress(duration.value, duration.value)
   }
-  if (player.hasNext && player.autoPlayNext) {
+  if (autoAdvance.value) {
+    playNextNow()
+  } else if (player.hasNext && player.autoPlayNext && !nextOfferDismissed) {
     startAutoAdvanceCountdown()
   }
 }
 
-function startAutoAdvanceCountdown() {
+/** Nos últimos segundos abre o card do próximo item, com a contagem terminando junto com o vídeo. */
+function offerNextNearEnd() {
+  if (autoAdvance.value || nextOfferDismissed || isLive.value || !player.hasNext || !player.autoPlayNext) return
+  const left = duration.value - currentTime.value
+  if (duration.value > NEXT_OFFER_BEFORE_END_S * 2 && left > 0 && left <= NEXT_OFFER_BEFORE_END_S) {
+    startAutoAdvanceCountdown(Math.ceil(left))
+  }
+}
+
+function startAutoAdvanceCountdown(seconds = 5) {
   cancelAutoAdvance()
   const nextItem = nextItemInQueue.value
   if (!nextItem) return
@@ -361,12 +385,16 @@ function startAutoAdvanceCountdown() {
   isOsdVisible.value = true
   autoAdvance.value = {
     nextItem,
-    secondsLeft: 5,
+    secondsLeft: seconds,
     timer: null,
   }
 
   const tick = () => {
     if (!autoAdvance.value) return
+    if (isPaused.value) {
+      autoAdvance.value.timer = setTimeout(tick, 1000) // pausado: a contagem espera junto
+      return
+    }
     if (autoAdvance.value.secondsLeft <= 1) {
       const run = () => {
         cancelAutoAdvance()
@@ -390,6 +418,12 @@ function cancelAutoAdvance() {
     clearTimeout(autoAdvance.value.timer)
   }
   autoAdvance.value = null
+}
+
+/** Cancelar pelo usuário: o próximo não volta a aparecer nem entra sozinho neste item. */
+function dismissNextOffer() {
+  nextOfferDismissed = true
+  cancelAutoAdvance()
 }
 
 function playNextNow() {
@@ -512,7 +546,7 @@ onMounted(() => {
 
     // 2. Card de Auto-Advance aberto -> cancela auto-advance
     if (autoAdvance.value) {
-      cancelAutoAdvance()
+      dismissNextOffer()
       resetOsdTimer()
       return true
     }
@@ -618,7 +652,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (videoRef.value) {
-    player.saveProgress(currentTime.value, duration.value)
+    saveCurrentProgress()
   }
   if (cleanupBack) cleanupBack()
   if (cleanupKey) cleanupKey()
@@ -675,28 +709,37 @@ onBeforeUnmount(() => {
       <div
         v-if="(isBuffering || !hasRenderedFrame) && !engineError"
         class="absolute inset-0 z-20 flex flex-col items-center justify-center select-none pointer-events-none"
-        :class="!hasRenderedFrame ? 'bg-black' : 'bg-black/90'"
+        :class="!hasRenderedFrame ? 'bg-black' : 'bg-black/40'"
         role="status"
         aria-live="polite"
       >
-        <!-- Nome do Item Atual -->
-        <h2 class="text-tv-lg font-bold text-white tracking-tight mb-3 text-center max-w-[42rem] truncate px-4">
-          {{ player.currentItem?.name || 'Carregando transmissão...' }}
-        </h2>
+        <!-- Abertura do vídeo: nome + etapa + barra de progresso real -->
+        <template v-if="!hasRenderedFrame">
+          <h2 class="text-tv-lg font-bold text-white tracking-tight mb-3 text-center max-w-[42rem] truncate px-4">
+            {{ player.currentItem?.name || 'Carregando transmissão...' }}
+          </h2>
+          <div class="flex items-center justify-between w-[28rem] mb-2 px-1 text-tv-xs text-neutral-400">
+            <span class="truncate pr-2 font-medium">{{ loadingStage }}</span>
+            <span class="font-mono font-semibold text-white shrink-0">{{ Math.round(loadingProgress) }}%</span>
+          </div>
+          <div class="w-[28rem] h-1.5 rounded-full bg-white/10 overflow-hidden shadow-inner">
+            <div
+              class="h-full bg-tv-accent transition-all duration-200 ease-out rounded-full"
+              :style="{ width: loadingProgress + '%' }"
+            />
+          </div>
+        </template>
 
-        <!-- Subtítulo da Etapa e Percentual -->
-        <div class="flex items-center justify-between w-[28rem] mb-2 px-1 text-tv-xs text-neutral-400">
-          <span class="truncate pr-2 font-medium">{{ loadingStage }}</span>
-          <span class="font-mono font-semibold text-white shrink-0">{{ Math.round(loadingProgress) }}%</span>
-        </div>
-
-        <!-- Trilho da Barra de Progresso Real (Clean Cinema) -->
-        <div class="w-[28rem] h-1.5 rounded-full bg-white/10 overflow-hidden shadow-inner">
-          <div
-            class="h-full bg-[#e50914] transition-all duration-200 ease-out rounded-full"
-            :style="{ width: loadingProgress + '%' }"
-          />
-        </div>
+        <!-- No meio do vídeo: só um indicador (a porcentagem da abertura não se aplica) -->
+        <template v-else>
+          <svg class="w-16 h-16 animate-spin text-white" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
+            <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+          </svg>
+          <p class="mt-4 text-tv-sm font-medium text-white drop-shadow">
+            {{ recovering ? 'Reconectando ao servidor…' : 'Carregando…' }}
+          </p>
+        </template>
       </div>
     </transition>
 
@@ -764,7 +807,7 @@ onBeforeUnmount(() => {
             <template v-else-if="isLive">
               <div class="flex items-center gap-3 mb-1">
                 <span
-                  class="px-2.5 py-0.5 rounded bg-[#e50914] text-white font-bold text-tv-xs uppercase tracking-wider"
+                  class="px-2.5 py-0.5 rounded bg-tv-accent text-tv-on-accent font-bold text-tv-xs uppercase tracking-wider"
                 >
                   AO VIVO
                 </span>
@@ -818,7 +861,7 @@ onBeforeUnmount(() => {
               :aria-valuemax="Math.round(duration)"
             >
               <div
-                class="absolute left-0 top-0 bottom-0 bg-[#e50914] rounded-full"
+                class="absolute left-0 top-0 bottom-0 bg-tv-accent rounded-full"
                 :style="{ width: progressPercent + '%' }"
               />
               <div
@@ -919,8 +962,8 @@ onBeforeUnmount(() => {
               <button
                 id="osd-queue"
                 type="button"
-                class="tv-btn tv-glass !px-6 !py-3 rounded-xl flex items-center gap-2 font-bold text-tv-xs text-white"
-                :class="isQueueDrawerOpen ? 'bg-[#e50914] border-[#e50914] text-white' : ''"
+                class="tv-btn tv-glass !px-6 !py-3 rounded-xl flex items-center gap-2 font-bold text-tv-xs"
+                :class="isQueueDrawerOpen ? 'bg-tv-accent border-tv-accent text-tv-on-accent' : 'text-white'"
                 @click="toggleQueueDrawer"
               >
                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -1064,7 +1107,7 @@ onBeforeUnmount(() => {
             id="autoadvance-cancel"
             type="button"
             class="tv-btn flex-1"
-            @click="cancelAutoAdvance"
+            @click="dismissNextOffer"
           >
             Cancelar
           </button>

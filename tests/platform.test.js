@@ -177,3 +177,16 @@ describe('platform — Picture-in-Picture (pop-up no Android)', () => {
     expect(() => stop()).not.toThrow()
   })
 })
+
+describe('platform.canExitApp', () => {
+  it('só onde o app consegue se fechar: Tizen, webOS e APK; no navegador do PC não', async () => {
+    const { canExitApp } = await import('@/services/platform')
+
+    expect(canExitApp()).toBe(false)
+    window.tizen = { application: {} }
+    expect(canExitApp()).toBe(true)
+    delete window.tizen
+    window.PalmSystem = {}
+    expect(canExitApp()).toBe(true)
+  })
+})

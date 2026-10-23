@@ -45,4 +45,22 @@ describe('HorizontalRail — fileira deslizante para o controle remoto', () => {
     expect(wrapper.find('[data-rail-track]').attributes('style')).toContain('translateX(-648px)')
     wrapper.unmount()
   })
+
+  it('foco vindo do mouse não desliza a fileira (senão ela corre sozinha sob o ponteiro até o fim)', async () => {
+    const { vi } = await import('vitest')
+    vi.doMock('@/services/platform', () => ({ exitApp: vi.fn() }))
+    const nav = await import('@/utils/spatialNavigation')
+    nav.initSpatialNavigation({ router: { currentRoute: { value: { name: 'dashboard' } }, replace: vi.fn() } })
+    const wrapper = await setup()
+    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(500)
+    wrapper.findAll('button').forEach((b) => (b.element.getBoundingClientRect = rect(200)))
+
+    wrapper.find('#filmes-3').element.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }))
+    await wrapper.vm.$nextTick()
+
+    expect(document.activeElement.id).toBe('filmes-3')
+    expect(wrapper.find('[data-rail-track]').attributes('style')).toContain('translateX(0px)')
+    wrapper.unmount()
+    nav.stopSpatialNavigation()
+  })
 })

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-const PROPS = { activeTab: 'home', profile: { name: 'Paula', color: '#e50914' }, listLabel: 'Casa' }
+const PROPS = { activeTab: 'home', profile: { name: 'Paula', color: '#2563eb' }, listLabel: 'Casa' }
 
 async function setup(props = {}) {
   const { default: SideMenu } = await import('@/components/SideMenu.vue')

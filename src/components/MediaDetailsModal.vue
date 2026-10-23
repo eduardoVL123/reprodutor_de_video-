@@ -6,6 +6,8 @@ import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtre
 import { pushFocusScope, registerBackHandler } from '@/utils/spatialNavigation'
 import { formatTime } from '@/utils/formatTime'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
+import { episodesOf as episodesOfSeries, seasonsOf, episodeTitle, buildSeriesPlaylist } from '@/utils/seriesPlaylist'
+import BrandMark from '@/components/BrandMark.vue'
 
 /**
  * Tela de detalhes em tela cheia (RFC-014 layout 2.0) para filmes (`vod`) e séries (`series`).
@@ -71,28 +73,8 @@ function toggleBookmark() {
 const hasRating = computed(() => !!info.value.rating && Number(info.value.rating) !== 0)
 
 // ---------- Temporadas e Episódios ----------
-function episodesOf(seasonKey) {
-  const episodes = seriesData.value && seriesData.value.episodes
-  const list = episodes ? episodes[seasonKey] : null
-  if (Array.isArray(list)) return list
-  return list && typeof list === 'object' ? Object.values(list) : []
-}
-
-/** Número da temporada: campo `season` do episódio (painéis que devolvem array) ou a chave. */
-function seasonNumberOf(key) {
-  const first = episodesOf(key)[0]
-  const fromEpisode = first ? parseInt(first.season, 10) : NaN
-  return isNaN(fromEpisode) ? parseInt(key, 10) || 0 : fromEpisode
-}
-
-const seasons = computed(() => {
-  const episodes = seriesData.value && seriesData.value.episodes
-  if (!episodes || typeof episodes !== 'object') return []
-  return Object.keys(episodes)
-    .filter((key) => episodesOf(key).length > 0)
-    .map((key) => ({ key, number: seasonNumberOf(key) }))
-    .sort((a, b) => a.number - b.number)
-})
+const episodesOf = (seasonKey) => episodesOfSeries(seriesData.value, seasonKey)
+const seasons = computed(() => seasonsOf(seriesData.value))
 
 const currentEpisodes = computed(() => episodesOf(activeSeasonKey.value))
 
@@ -117,7 +99,6 @@ const seriesPlayLabel = computed(() => {
   return `Assistir T${first ? first.number : 1}:E${firstEp ? firstEp.episode_num : 1}`
 })
 
-const episodeTitle = (ep) => ep.title || ep.name || `Episódio ${ep.episode_num}`
 const episodeImage = (ep) => (ep.info && ep.info.movie_image) || info.value.poster
 
 function episodeDuration(ep) {
@@ -182,17 +163,18 @@ function playFromStart() {
   playMovie()
 }
 
-function playEpisodeList(seasonKey, startIndex) {
-  const seriesName = info.value.name || props.item.name || 'Série'
-  const seasonNumber = seasonNumberOf(seasonKey)
-  const items = episodesOf(seasonKey).map((ep) => ({
-    stream_id: ep.id,
-    name: `${seriesName} - T${seasonNumber}:E${ep.episode_num} - ${episodeTitle(ep)}`,
-    stream_icon: episodeImage(ep),
-    container_extension: ep.container_extension || 'mp4',
-    section: 'series',
-  }))
-  player.playPlaylist({ items, startIndex, section: 'series' })
+/** Toca a série inteira a partir do episódio escolhido: o próximo segue sozinho, inclusive para a outra temporada. */
+function playEpisodeList(seasonKey, indexInSeason) {
+  const episode = episodesOf(seasonKey)[indexInSeason]
+  if (!episode) return
+  const items = buildSeriesPlaylist({
+    seriesData: seriesData.value,
+    seriesName: info.value.name || props.item.name || 'Série',
+    seriesId: mediaId.value,
+    fallbackImage: info.value.poster,
+  })
+  const startIndex = items.findIndex((it) => String(it.stream_id) === String(episode.id))
+  player.playPlaylist({ items, startIndex: Math.max(0, startIndex), section: 'series' })
 }
 
 async function playSeries() {
@@ -293,7 +275,7 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="rootEl"
-    class="fixed inset-0 z-40 bg-[#07070a] text-white overflow-hidden select-none"
+    class="fixed inset-0 z-40 bg-tv-deep text-white overflow-hidden select-none"
     role="dialog"
     aria-modal="true"
     :aria-label="info.name"
@@ -312,7 +294,7 @@ onBeforeUnmount(() => {
       />
       <div
         v-else
-        class="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_30%,#1e40af_0%,#312e81_25%,#0b0b1a_55%,#07070a_80%)] opacity-80"
+        class="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_30%,#1e40af_0%,#312e81_25%,#0b0b1a_55%,#0b0f0c_80%)] opacity-80"
       />
       <div class="absolute inset-0 tv-vignette pointer-events-none" />
     </div>
@@ -321,7 +303,7 @@ onBeforeUnmount(() => {
     <div v-if="!isSeries" class="relative z-10 px-20 py-12 flex flex-col justify-between h-full max-w-[56rem]">
       <div>
         <div class="flex items-center gap-2.5">
-          <svg class="w-5 h-5 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+          <BrandMark :size="1.25" class="text-tv-accent" />
           <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">FILME</span>
         </div>
 
@@ -340,7 +322,7 @@ onBeforeUnmount(() => {
 
         <div v-if="hasMovieProgress" class="flex items-center gap-4 mt-5">
           <div class="w-80 h-1.5 bg-white/15 rounded-full overflow-hidden">
-            <div class="h-full bg-[#e50914]" :style="{ width: movieProgressPct + '%' }" />
+            <div class="h-full bg-tv-accent" :style="{ width: movieProgressPct + '%' }" />
           </div>
           <span class="text-tv-xs text-neutral-300">Em andamento · Retomar de {{ formatTime(savedTime) }}</span>
         </div>
@@ -426,7 +408,7 @@ onBeforeUnmount(() => {
       <!-- Cabeçalho e Sinopse da série -->
       <header class="px-20 pt-10 shrink-0 max-w-[62rem]">
         <div class="flex items-center gap-2.5">
-          <svg class="w-5 h-5 text-[#e50914] fill-current shrink-0" viewBox="0 0 24 24" aria-hidden="true"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" /></svg>
+          <BrandMark :size="1.25" class="text-tv-accent" />
           <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">SÉRIE</span>
         </div>
 
@@ -496,7 +478,7 @@ onBeforeUnmount(() => {
 
       <!-- Carregando temporadas -->
       <div v-if="isLoadingInfo" class="flex-1 flex items-center justify-center gap-4" role="status">
-        <svg class="w-10 h-10 animate-spin text-[#e50914]" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <svg class="w-10 h-10 animate-spin text-tv-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.2" />
           <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
         </svg>
@@ -541,6 +523,7 @@ onBeforeUnmount(() => {
         <div data-focus-group="series-episodes" class="min-h-[14rem]">
           <HorizontalRail
             v-if="currentEpisodes.length > 0"
+            :key="activeSeasonKey"
             :items="currentEpisodes"
             id-prefix="episode-card"
             :item-key="(ep) => ep.id"

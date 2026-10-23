@@ -1,4 +1,4 @@
-# Neutro TV — regras do projeto
+# Pulse Player — regras do projeto
 
 Reprodutor de mídia neutro (Vue 3 + Tailwind 3 + Vite 8 + Capacitor 8) para Samsung Tizen, LG webOS, Android TV e
 celular Android. Responda em português do Brasil. Trabalho atual: `docs/rfc/RFC-014-design-2.0.md` (visual 2.0,
@@ -17,11 +17,17 @@ Não faça commit/push sem pedido explícito.
 - Lojas: margem segura `px-24`/`py-14`; texto mínimo `text-tv-xs`; nada de selos falsos, imagens externas ou marcas de
   terceiros (há testes de guarda).
 
+## Marca (RFC-015)
+- Pulse Player, appId `com.pulseplayer.app`. Kit em `../logo/kit` (leia `GUIA-DE-USO.md`).
+- Cores: `tv-accent` verde-limão `#B8F000`, fundo grafite `#0B0F0C`. Texto sobre limão sólido é `text-tv-on-accent`
+  (grafite), nunca branco; limão nunca sobre fundo claro. Símbolo: `src/components/BrandMark.vue` (tamanho em rem).
+- Ícones e splashes nativos: `npm run icons` (`scripts/make-tv-icons.mjs`). Segredos de assinatura: `PULSE_*`.
+
 ## Base pronta para o 2.0
 - `src/components/ui/HorizontalRail.vue` — fileira deslizante focável (slot `item`, evento `select`).
 - `src/utils/railOffset.js`, `src/utils/artwork.js` (`pickArtwork`: backdrop → pôster → neutro).
 - Classes em `src/style.css`: `tv-glass`, `tv-btn-glass`, `tv-chip`, `tv-badge`, `tv-badge-live`, `tv-progress`,
   `tv-vignette`, `tv-rail*`. Tokens: `bg-tv-deep`, `text-tv-meta`, `text-tv-hero`, `text-tv-row`.
 - Testes: `tests/helpers/layout.js` (`layout()` com retângulos, `press()` de teclas).
-- No console em `npm run dev`: `await __neutro.walk(['Down','Right','Back'])`, `__neutro.audit()` (differ = 0),
-  `__neutro.duplicateIds()` (= []).
+- No console em `npm run dev`: `await __pulse.walk(['Down','Right','Back'])`, `__pulse.audit()` (differ = 0),
+  `__pulse.duplicateIds()` (= []).

@@ -88,11 +88,53 @@ describe('MediaDetailsModal — visual 2.0 e episódios em fileira', () => {
     expect(wrapper.text()).toContain('O Começo')
   })
 
+  it('ao trocar de temporada, a fileira de episódios volta para o primeiro episódio', async () => {
+    wrapper = await setup({ item: SERIES, section: 'series' })
+    await flushPromises()
+    const rect = (width) => () => ({ left: 0, top: 0, width, height: 150, right: width, bottom: 150, x: 0, y: 0 })
+    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(300)
+    wrapper.find('#episode-card-1').element.getBoundingClientRect = rect(280)
+    await wrapper.find('#episode-card-1').trigger('focusin')
+    expect(wrapper.find('[data-rail-track]').attributes('style')).not.toContain('translateX(0px)')
+
+    await wrapper.find('#season-tab-2').trigger('click')
+
+    expect(wrapper.find('[data-rail-track]').attributes('style')).toContain('translateX(0px)')
+    expect(wrapper.text()).toContain('O Farol')
+  })
+
   it('clicar em Voltar emite evento close', async () => {
     wrapper = await setup({ item: MOVIE, section: 'vod' })
     await flushPromises()
 
     await wrapper.find('#details-back-btn').trigger('click')
     expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('episódios tocados levam o id da série (um card por série no "Continuar assistindo")', async () => {
+    wrapper = await setup({ item: SERIES, section: 'series' })
+    await flushPromises()
+    const { usePlayerStore } = await import('@/stores/playerStore')
+    const player = usePlayerStore()
+
+    await wrapper.find('#episode-card-1').trigger('click')
+    await flushPromises()
+
+    expect(player.queue.map((ep) => ep.seriesId)).toEqual(['202', '202', '202'])
+    expect(player.currentItem.stream_id).toBe(1002)
+  })
+
+  it('a fila segue para a próxima temporada (o próximo episódio não para no fim da temporada)', async () => {
+    wrapper = await setup({ item: SERIES, section: 'series' })
+    await flushPromises()
+    const { usePlayerStore } = await import('@/stores/playerStore')
+    const player = usePlayerStore()
+
+    await wrapper.find('#episode-card-1').trigger('click') // T1:E2, último da temporada 1
+    await flushPromises()
+
+    expect(player.queue.map((ep) => ep.stream_id)).toEqual([1001, 1002, 2001])
+    expect(player.queue[2].name).toBe('Maré Alta - T2:E1 - O Farol')
+    expect(player.hasNext).toBe(true)
   })
 })

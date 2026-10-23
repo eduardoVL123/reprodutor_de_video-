@@ -9,7 +9,7 @@ const store = localforage.createInstance({
   name: 'neutral-media-player',
   storeName: 'app',
   driver: [localforage.INDEXEDDB, localforage.LOCALSTORAGE],
-  description: 'Preferências e credenciais do reprodutor de mídia neutro',
+  description: 'Preferências e credenciais do Pulse Player',
 })
 
 export const STORAGE_KEYS = Object.freeze({
