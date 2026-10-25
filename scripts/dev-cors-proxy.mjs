@@ -72,9 +72,17 @@ function sendProxyError(res, status, message) {
   res.end(message)
 }
 
+const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
+
 export function proxyHandler(req, res) {
   if (!isLoopbackAddress(req.socket && req.socket.remoteAddress)) {
     sendProxyError(res, 403, 'Proxy: disponível apenas para a própria máquina.')
+    return
+  }
+  // Uma página de outro site aberta neste navegador também chega por loopback: só a página de dev pode usar o proxy.
+  const origin = req.headers && req.headers.origin
+  if (origin && !LOCAL_ORIGIN.test(origin)) {
+    sendProxyError(res, 403, 'Proxy: origem não permitida.')
     return
   }
 

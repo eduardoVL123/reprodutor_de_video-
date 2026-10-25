@@ -17,9 +17,39 @@ import { useCatalogStore } from '@/stores/catalogStore'
 const SESSION_KEY = 'auth:session'
 const SAVED_LISTS_KEY = 'auth:savedLists'
 
-/** Versão persistida: a senha vai cifrada (fallback em texto só se não houver WebCrypto). */
+/** Id estável da lista M3U, sem pôr a URL (que pode carregar um token) dentro do id. */
+function m3uListId(url) {
+  let h = 5381
+  for (let i = 0; i < url.length; i++) h = ((h << 5) + h + url.charCodeAt(i)) | 0
+  return `list_m3u_${(h >>> 0).toString(36)}`
+}
+
+function originOf(url) {
+  try {
+    return new URL(url).origin
+  } catch (_) {
+    return ''
+  }
+}
+
+/** M3U: a URL pode ter token, então vai cifrada como a senha do Xtream (texto só sem WebCrypto). */
+async function protectM3u(item) {
+  if (item.urlEnc) return item
+  const urlEnc = await encryptSecret(JSON.stringify({ baseUrl: item.baseUrl, resolvedUrl: item.resolvedUrl }))
+  if (!urlEnc) return item
+  return { ...item, baseUrl: originOf(item.baseUrl), resolvedUrl: null, urlEnc }
+}
+
+/** Inverso de protectM3u; `null` se a URL não puder ser recuperada. */
+async function revealM3u(item) {
+  if (!item.urlEnc) return { ...item }
+  const json = await decryptSecret(item.urlEnc)
+  return json === null ? null : { ...item, ...JSON.parse(json), urlEnc: null }
+}
+
+/** Versão persistida: a senha (ou a URL, no M3U) vai cifrada (texto só se não houver WebCrypto). */
 async function toStoredSession(session) {
-  if (session.type === 'm3u') return session
+  if (session.type === 'm3u') return protectM3u(session)
   const passwordEnc = await encryptSecret(session.password)
   return { ...session, password: passwordEnc ? null : session.password, passwordEnc }
 }
@@ -30,7 +60,11 @@ async function toStoredSession(session) {
  * que guardavam as duas formas ao mesmo tempo.
  */
 async function protectListItem(item) {
-  if (!item || item.type === 'm3u' || !item.password) return item
+  if (item && item.type === 'm3u') {
+    if (item.urlEnc) return item
+    return protectM3u({ ...item, id: m3uListId(item.resolvedUrl || item.baseUrl) }) // id legado tinha a URL
+  }
+  if (!item || !item.password) return item
   const passwordEnc = await encryptSecret(item.password)
   if (!passwordEnc) return item
   return { ...item, password: null, passwordEnc }
@@ -39,7 +73,14 @@ async function protectListItem(item) {
 /** Reconstrói a sessão em memória; `null` se a senha não puder ser recuperada. */
 async function restoreSession(saved) {
   if (!saved || !saved.baseUrl || !saved.username) return null
-  if (saved.type === 'm3u') return { ...saved }
+  if (saved.type === 'm3u') {
+    const revealed = await revealM3u(saved)
+    if (!revealed) {
+      await storage.remove(SESSION_KEY) // chave perdida/dado adulterado: exige novo login
+      return null
+    }
+    return { ...revealed, id: m3uListId(revealed.resolvedUrl || revealed.baseUrl) }
+  }
   if (!saved.passwordEnc) return saved.password ? { ...saved } : null
 
   const password = await decryptSecret(saved.passwordEnc)
@@ -77,6 +118,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const saved = await storage.get(SESSION_KEY)
       session.value = await restoreSession(saved)
+      if (session.value?.type === 'm3u' && !saved.urlEnc) {
+        await storage.set(SESSION_KEY, await toStoredSession(session.value)) // sessão legada: passa a cifrar a URL
+      }
 
       const lists = await storage.get(SAVED_LISTS_KEY)
       if (Array.isArray(lists) && lists.length > 0) {
@@ -126,7 +170,7 @@ export const useAuthStore = defineStore('auth', () => {
           hostLabel = 'm3u'
         }
         const finalLabel = (label && String(label).trim()) || `Lista M3U @ ${hostLabel}`
-        const listId = `list_m3u_${resolved.resolvedUrl}`.replace(/[^a-z0-9_]/gi, '_')
+        const listId = m3uListId(resolved.resolvedUrl)
 
         const listItem = {
           id: listId,
@@ -137,23 +181,8 @@ export const useAuthStore = defineStore('auth', () => {
           username: resolved.username || 'M3U Playlist',
           password: null,
           passwordEnc: null,
+          insecure: /^http:\/\//i.test(resolved.resolvedUrl),
           updatedAt: new Date().toISOString(),
-        }
-
-        const existingIdx = savedLists.value.findIndex(
-          (l) => l.id === listId || l.resolvedUrl === resolved.resolvedUrl,
-        )
-        const nextSaved = [...savedLists.value]
-        if (existingIdx !== -1) {
-          nextSaved[existingIdx] = listItem
-        } else {
-          nextSaved.push(listItem)
-        }
-        savedLists.value = nextSaved
-        try {
-          await storage.set(SAVED_LISTS_KEY, nextSaved)
-        } catch (err) {
-          console.warn('[auth] Falha ao persistir savedLists:', err)
         }
 
         const next = {
@@ -165,17 +194,11 @@ export const useAuthStore = defineStore('auth', () => {
           username: resolved.username || 'M3U Playlist',
           password: '',
           userInfo: { auth: 1, status: 'Active', exp_date: null },
-          serverInfo: { url: resolved.resolvedUrl, port: '', server_protocol: 'http' },
+          serverInfo: { port: '', server_protocol: 'http' },
           savedAt: new Date().toISOString(),
         }
 
-        try {
-          await storage.set(SESSION_KEY, next)
-        } catch (err) {
-          console.warn('[auth] Não foi possível persistir a sessão:', err)
-        }
-
-        // Descarta catálogo anterior e importa a lista M3U diretamente
+        // Descarta catálogo anterior e importa a lista M3U diretamente (só salva a lista se a importação der certo)
         try {
           const catalogStore = useCatalogStore()
           await catalogStore.resetCatalogState()
@@ -188,6 +211,22 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (_) {}
 
         await importM3uCatalog(resolved.m3uText)
+
+        const storedItem = await protectListItem(listItem)
+        const nextSaved = [...savedLists.value]
+        const existingIdx = nextSaved.findIndex((l) => l.id === listId)
+        if (existingIdx !== -1) {
+          nextSaved[existingIdx] = storedItem
+        } else {
+          nextSaved.push(storedItem)
+        }
+        savedLists.value = nextSaved
+        try {
+          await storage.set(SAVED_LISTS_KEY, nextSaved)
+          await storage.set(SESSION_KEY, await toStoredSession(next))
+        } catch (err) {
+          console.warn('[auth] Falha ao persistir a lista ou a sessão:', err)
+        }
 
         session.value = next
         hydrated.value = true
@@ -221,6 +260,7 @@ export const useAuthStore = defineStore('auth', () => {
         username: String(resolved.username).trim(),
         password: passwordEnc ? null : String(resolved.password),
         passwordEnc: passwordEnc || null,
+        insecure: result.insecure,
         updatedAt: new Date().toISOString(),
       }
 
@@ -304,20 +344,22 @@ export const useAuthStore = defineStore('auth', () => {
     errorDetail.value = ''
     try {
       if (item.type === 'm3u') {
+        const urls = await revealM3u(item)
+        if (!urls) throw new Error('URL da lista não recuperável')
         const next = {
           id: item.id,
           type: 'm3u',
           label: item.label,
-          baseUrl: item.baseUrl,
-          resolvedUrl: item.resolvedUrl,
+          baseUrl: urls.baseUrl,
+          resolvedUrl: urls.resolvedUrl,
           username: item.username || 'M3U Playlist',
           password: '',
           userInfo: { auth: 1, status: 'Active', exp_date: null },
-          serverInfo: { url: item.resolvedUrl, port: '', server_protocol: 'http' },
+          serverInfo: { port: '', server_protocol: 'http' },
           savedAt: new Date().toISOString(),
         }
 
-        await storage.set(SESSION_KEY, next)
+        await storage.set(SESSION_KEY, await toStoredSession(next))
         try {
           const catalogStore = useCatalogStore()
           await catalogStore.resetCatalogState()
@@ -330,7 +372,7 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (_) {}
 
         try {
-          const { text } = await fetchM3uText(item.resolvedUrl || item.baseUrl)
+          const { text } = await fetchM3uText(next.resolvedUrl || next.baseUrl)
           await importM3uCatalog(text)
         } catch (fetchErr) {
           console.warn('[auth] Falha ao recarregar M3U:', fetchErr)
@@ -387,23 +429,24 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-  /** Remove uma lista salva. */
+  /**
+   * Remove uma lista salva. Se for a ativa, troca antes para a próxima: se a troca falhar (ex.: sem rede) a lista
+   * continua salva, em vez de deixar a sessão presa a uma lista que não existe mais.
+   * @returns {Promise<boolean>} false se não foi possível trocar de lista (nada foi removido).
+   */
   async function removeList(listId) {
     const remaining = savedLists.value.filter((l) => l.id !== listId)
+    const wasActive = Boolean(session.value && session.value.id === listId)
+    if (wasActive && remaining.length > 0 && !(await switchList(remaining[0].id))) return false
+
     savedLists.value = remaining
     try {
       await storage.set(SAVED_LISTS_KEY, remaining)
     } catch (err) {
       console.warn('[auth] Falha ao atualizar savedLists após remoção:', err)
     }
-
-    if (session.value && session.value.id === listId) {
-      if (remaining.length > 0) {
-        await switchList(remaining[0].id)
-      } else {
-        await logout()
-      }
-    }
+    if (wasActive && remaining.length === 0) await logout()
+    return true
   }
 
   async function logout() {

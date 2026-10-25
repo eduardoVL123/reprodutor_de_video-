@@ -30,13 +30,25 @@ export function isCryptoSupported() {
   )
 }
 
-async function getKey() {
+let keyPromise = null // uma só criação por vez: chamadas simultâneas não geram chaves diferentes
+
+async function loadOrCreateKey() {
   let key = await keyStore.getItem(KEY_ID)
   if (!key) {
     key = await crypto.subtle.generateKey({ name: ALGO, length: 256 }, false, ['encrypt', 'decrypt'])
     await keyStore.setItem(KEY_ID, key)
   }
   return key
+}
+
+function getKey() {
+  if (!keyPromise) {
+    keyPromise = loadOrCreateKey().catch((err) => {
+      keyPromise = null // falha (ex.: IndexedDB indisponível) não pode ficar presa para sempre
+      throw err
+    })
+  }
+  return keyPromise
 }
 
 /** @returns {Promise<{v:number, iv:Uint8Array, data:Uint8Array}|null>} */

@@ -1,8 +1,9 @@
 /**
  * Detecção do ambiente de rede (módulo puro, sem estado reativo).
  *
- *  - APK Capacitor (Android TV): o `fetch` é interceptado pelo CapacitorHttp
- *    (motor nativo, sem CORS). NÃO usar o proxy local.
+ *  - APK Capacitor (Android TV): o `MainActivity` intercepta as chamadas a player_api.php, get.php,
+ *    .m3u e .m3u8 e as refaz pelo HttpURLConnection nativo (sem CORS); o plugin CapacitorHttp fica
+ *    desligado. NÃO usar o proxy local.
  *  - Navegador no PC (vite dev/preview em localhost): usar `/__proxy__` quando o
  *    servidor IPTV não enviar cabeçalhos CORS.
  *  - Tizen/webOS empacotados (file://): o WebView já não aplica CORS do mesmo jeito.

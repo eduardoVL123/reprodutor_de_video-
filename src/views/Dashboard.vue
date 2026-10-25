@@ -296,6 +296,19 @@ watch(
   },
 )
 
+// Seção que falhou ao carregar e ficou sem fileira: o início mostra o aviso (as abas já mostravam) com "Tentar novamente".
+const showcaseBySection = { vod: vodShowcase, series: seriesShowcase, live: liveShowcase }
+const failedSections = computed(() =>
+  Object.keys(showcaseBySection).filter(
+    (s) => catalog.status[s].state === 'error' && showcaseBySection[s].value.length === 0,
+  ),
+)
+const homeError = computed(() => (failedSections.value.length ? catalog.status[failedSections.value[0]].error : ''))
+
+function retryHome() {
+  failedSections.value.forEach((s) => catalog.refreshSection(s))
+}
+
 // Itens das fileiras com card "Ver todos" no final
 const vodRailItems = computed(() => {
   if (!vodShowcase.value.length) return []
@@ -667,11 +680,11 @@ onBeforeUnmount(() => {
             </p>
 
             <!-- Linha de Ações do Hero -->
-            <div data-focus-row="hero-actions" class="flex items-center gap-3.5 pt-2">
+            <div data-focus-row="hero-actions" class="flex items-center gap-3.5 pt-2 w-max">
               <button
                 id="hero-play"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-7 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-2.5"
+                class="tv-focusable h-[3.2rem] px-7 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
                 @click="handleHeroPlay"
               >
                 <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24">
@@ -683,7 +696,7 @@ onBeforeUnmount(() => {
               <button
                 id="hero-info"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5"
+                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
                 @click="handleHeroInfo"
               >
                 <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -697,7 +710,7 @@ onBeforeUnmount(() => {
               <button
                 id="hero-mylist"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5"
+                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
                 @click="handleHeroBookmark"
               >
                 <svg v-if="isHeroBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -715,6 +728,15 @@ onBeforeUnmount(() => {
 
         <!-- Fileiras Deslizantes (Horizontais) -->
         <div class="pl-16 pr-24 space-y-7 -mt-4 pb-20 relative z-20">
+          <!-- Falha ao carregar a lista -->
+          <section v-if="homeError" data-focus-group="home-error" class="space-y-2" role="alert">
+            <h2 class="text-tv-row font-bold text-white tracking-tight">Não foi possível carregar sua lista</h2>
+            <p class="text-tv-sm text-neutral-400">{{ homeError }}</p>
+            <button id="home-retry" type="button" class="tv-btn tv-btn-primary mt-2" @click="retryHome">
+              Tentar novamente
+            </button>
+          </section>
+
           <!-- 1. Continuar assistindo -->
           <section
             v-if="player.watchHistory.length > 0"

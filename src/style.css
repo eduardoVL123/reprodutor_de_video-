@@ -7,12 +7,27 @@
 html {
   font-size: calc(100vw / 120);
 }
-/* Celular deitado (tela de toque estreita): a tela de TV inteira em ~850px deixava o texto com ~9px.
-   `pointer: coarse` deixa de fora as TVs antigas que informam só 960px de largura. */
-@media (pointer: coarse) and (max-width: 1000px) {
-  html {
-    font-size: calc(100vw / 96);
-  }
+
+/* Celular (classe `is-phone` posta por utils/compat.js pelo User-Agent, nunca por largura: TVs Android de
+   960px pegariam a regra): sem isso o texto fica com 4-9px. Botões ganham o alvo de toque mínimo de 44px. */
+html.is-phone {
+  font-size: calc(100vw / 80);
+}
+html.is-phone button {
+  min-width: 44px;
+  min-height: 44px;
+}
+/* Diálogos têm alturas em rem pensadas para 1080p (ex.: max-h-[44rem]); na tela baixa do celular deitado eles
+   precisam caber na altura e rolar por dentro, senão botões como "Adicionar lista" saem da tela. */
+html.is-phone [role='dialog'] {
+  padding: 0.5rem;
+  overflow-y: auto;
+}
+html.is-phone [role='dialog'] > div {
+  max-height: 100%;
+}
+html.is-phone [role='dialog'] .min-h-0 {
+  overflow-y: auto;
 }
 
 html,
@@ -127,7 +142,14 @@ video::-webkit-media-controls-start-playback-button {
 
   /* Fileira deslizante (components/ui/HorizontalRail.vue): sobra espaço para o item focado crescer sem corte. */
   .tv-rail {
-    @apply overflow-hidden pt-4 pb-6 pl-3 -mt-4 -mb-6 -ml-3;
+    @apply relative overflow-hidden pt-4 pb-6 pl-3 -mt-4 -mb-6 -ml-3;
+  }
+  /* Setas da fileira para o mouse (PC): escondidas até o ponteiro entrar na fileira. */
+  .tv-rail-arrow {
+    @apply absolute top-4 bottom-6 z-10 w-12 flex items-center justify-center text-white opacity-0;
+  }
+  .tv-rail:hover .tv-rail-arrow {
+    @apply opacity-100;
   }
   .tv-rail-track {
     @apply flex items-start;

@@ -79,3 +79,37 @@ describe('build para Smart TVs (arquivos file://)', () => {
     expect(js.includes('Vue warn')).toBe(false) // build de produção do Vue
   }, 180000)
 })
+
+describe('detecção de celular', () => {
+  const PIXEL = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'
+  const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'
+  const ANDROID_TV = 'Mozilla/5.0 (Linux; Android 11; BRAVIA 4K UR2) AppleWebKit/537.36 Chrome/96.0 Safari/537.36'
+  const TABLET = 'Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'
+  const TIZEN = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.0) AppleWebKit/537.36 Chrome/63.0 TV Safari/537.36'
+  const WEBOS = 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 Chrome/68.0 Safari/537.36 WebAppManager'
+
+  it.each([
+    [PIXEL, true],
+    [IPHONE, true],
+    [ANDROID_TV, false],
+    [TABLET, false],
+    [TIZEN, false],
+    [WEBOS, false],
+  ])('isPhone(%s) = %s', async (ua, expected) => {
+    const { isPhone } = await import('@/utils/compat')
+
+    expect(isPhone(ua)).toBe(expected)
+  })
+
+  it('marca o <html> com is-phone só em celular', async () => {
+    const { applyCompatClasses } = await import('@/utils/compat')
+    const phone = document.createElement('html')
+    const tv = document.createElement('html')
+
+    applyCompatClasses(phone, () => true, PIXEL)
+    applyCompatClasses(tv, () => true, ANDROID_TV)
+
+    expect(phone.classList.contains('is-phone')).toBe(true)
+    expect(tv.classList.contains('is-phone')).toBe(false)
+  })
+})

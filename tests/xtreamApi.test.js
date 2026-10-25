@@ -46,3 +46,38 @@ describe('xtreamApi — apiRequest e fallback para http', () => {
     expect(data.user_info.auth).toBe(1)
   })
 })
+
+describe('xtreamApi — aviso de conexão sem criptografia', () => {
+  const ok = () => jsonResponse({ user_info: { auth: 1, status: 'Active' }, server_info: {} })
+
+  it('apiRequest avisa que rebaixou de https para http', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).startsWith('http://srv.test')) return ok()
+      throw new TypeError('Failed to fetch')
+    }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    expect((await apiRequest('https://srv.test', { username: 'u', password: 'p' })).downgraded).toBe(true)
+  })
+
+  it('authenticate marca insecure quando caiu para http e quando o usuário digitou http', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).startsWith('http://srv.test')) return ok()
+      throw new TypeError('Failed to fetch')
+    }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { authenticate } = await import('@/services/xtreamApi')
+
+    expect((await authenticate({ dns: 'https://srv.test', username: 'u', password: 'p' })).insecure).toBe(true)
+    expect((await authenticate({ dns: 'http://srv.test', username: 'u', password: 'p' })).insecure).toBe(true)
+  })
+
+  it('authenticate não marca insecure quando o https funciona', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ok()))
+    const { authenticate } = await import('@/services/xtreamApi')
+
+    expect((await authenticate({ dns: 'https://srv.test', username: 'u', password: 'p' })).insecure).toBe(false)
+  })
+})
+

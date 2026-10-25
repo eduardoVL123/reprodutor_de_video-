@@ -31,4 +31,13 @@ describe('Android — endurecimento (verificação estática; o APK é compilado
     expect(capacitorConfig.server.allowNavigation).toBeUndefined()
     expect(capacitorConfig.android.allowMixedContent).not.toBe(true)
   })
+
+  it('só publica no Release o APK assinado com a chave privada, nunca o de debug (chave pública)', () => {
+    const workflow = read('.github/workflows/build-apk.yml')
+    const publish = workflow.slice(workflow.indexOf('Preparar APK assinado para download direto'))
+
+    expect(publish).toContain("steps.release_key.outputs.available == 'true'")
+    expect(publish).toContain('apk/release/')
+    expect(publish).not.toContain('app-debug.apk')
+  })
 })

@@ -50,6 +50,7 @@ const ACTION_BY_KEY = {
   Backspace: 'back',
   XF86Back: 'back',
   GoBack: 'back',
+  ' ': 'playPause', // teclado do PC; fora do player ninguém consome e o Espaço segue nativo (clica o botão focado)
   MediaPlayPause: 'playPause',
   MediaPlay: 'play',
   MediaPause: 'pause',

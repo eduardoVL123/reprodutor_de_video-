@@ -315,7 +315,7 @@ function onTimeUpdate() {
     if (videoRef.value.currentTime > 0) {
       hasRenderedFrame.value = true
     }
-    currentTime.value = videoRef.value.currentTime
+    if (!scrubbing) currentTime.value = videoRef.value.currentTime
     offerNextNearEnd()
     const now = Date.now()
     if (now - lastSaveTime >= 10000) {
@@ -489,6 +489,51 @@ function seek(deltaSec) {
   videoRef.value.currentTime = target
   currentTime.value = target
   resetOsdTimer()
+}
+
+/**
+ * Barra de progresso com mouse ou dedo: clicar pula; arrastar mostra a posição ao vivo e só pula ao soltar
+ * (buscar a cada pixel travaria a TV/celular).
+ */
+let scrubbing = false
+
+function timeAtPointer(event) {
+  const rect = event.currentTarget.getBoundingClientRect()
+  const dur = videoRef.value ? videoRef.value.duration || 0 : 0
+  if (!dur || rect.width <= 0) return null
+  return Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)) * dur
+}
+
+function onProgressDown(event) {
+  if (!videoRef.value || isLive.value) return
+  if (event.pointerType === 'mouse' && event.button !== 0) return
+  const target = timeAtPointer(event)
+  if (target === null) return
+  scrubbing = true
+  try {
+    event.currentTarget.setPointerCapture(event.pointerId)
+  } catch (_) {}
+  currentTime.value = target
+  resetOsdTimer()
+}
+
+function onProgressMove(event) {
+  if (!scrubbing) return
+  const target = timeAtPointer(event)
+  if (target !== null) currentTime.value = target
+  resetOsdTimer()
+}
+
+function onProgressUp(event) {
+  if (!scrubbing) return
+  scrubbing = false
+  const target = timeAtPointer(event)
+  if (target !== null) seek(target - (videoRef.value.currentTime || 0))
+}
+
+function onProgressCancel() {
+  scrubbing = false
+  if (videoRef.value) currentTime.value = videoRef.value.currentTime
 }
 
 function toggleBookmark() {
@@ -855,10 +900,15 @@ onBeforeUnmount(() => {
               id="osd-progress"
               role="slider"
               tabindex="0"
-              class="tv-focusable relative w-full h-1.5 rounded-full bg-white/20 cursor-pointer"
+              class="tv-focusable relative w-full h-1.5 rounded-full bg-white/20 cursor-pointer before:content-[''] before:absolute before:inset-x-0 before:-inset-y-3"
               :aria-valuenow="Math.round(currentTime)"
               :aria-valuemin="0"
               :aria-valuemax="Math.round(duration)"
+              style="touch-action: none"
+              @pointerdown="onProgressDown"
+              @pointermove="onProgressMove"
+              @pointerup="onProgressUp"
+              @pointercancel="onProgressCancel"
             >
               <div
                 class="absolute left-0 top-0 bottom-0 bg-tv-accent rounded-full"

@@ -35,11 +35,9 @@ describe('estilos de TV', () => {
     expect(focus).toContain('--tw-ring-offset-color:#0b0f0c') // mesma cor do fundo (grafite Pulse)
   })
 
-  it('a fonte maior do celular só vale em tela de toque (TVs antigas informam ~960px de largura)', () => {
-    const rules = STYLE.match(/@media[^{]*\{\s*html\s*\{[^}]*font-size/g) || []
-
-    expect(rules.length).toBeGreaterThan(0)
-    rules.forEach((rule) => expect(rule).toMatch(/pointer:\s*coarse/))
+  it('a escala da fonte é a mesma em toda tela (TVs Android de 960px podem se declarar "toque")', () => {
+    // Uma regra de celular (pointer: coarse, até 1000px) pegou TVs e deixou episódios fora de alcance.
+    expect(STYLE).not.toMatch(/@media[^{]*\{\s*html\s*\{[^}]*font-size/)
   })
 
   it('o destaque do foco não é animado (anel e escala animados repintam a cada quadro na TV)', async () => {
@@ -78,5 +76,25 @@ describe('estilos de TV', () => {
 
   it('não esconde o ponteiro (Magic Remote da LG, mouse no PC e na Samsung)', () => {
     expect(STYLE).not.toMatch(/cursor:\s*none/)
+  })
+})
+
+describe('celular', () => {
+  it('a fonte maior e o alvo de toque de 44px só valem com a classe is-phone (não por media query)', () => {
+    expect(STYLE).toMatch(/html\.is-phone\s*\{\s*font-size:\s*calc\(100vw \/ 80\)/)
+    expect(STYLE).toMatch(/html\.is-phone button\s*\{[^}]*min-height:\s*44px/)
+  })
+
+  it('diálogos do celular cabem na altura e rolam por dentro', () => {
+    expect(STYLE).toMatch(/html\.is-phone \[role='dialog'\] > div\s*\{\s*max-height:\s*100%/)
+    expect(STYLE).toMatch(/html\.is-phone \[role='dialog'\]\s*\{[^}]*overflow-y:\s*auto/)
+  })
+
+  it('os botões do destaque não quebram o texto em duas linhas', () => {
+    const home = readFileSync('src/views/Dashboard.vue', 'utf8')
+    for (const id of ['hero-play', 'hero-info', 'hero-mylist']) {
+      const from = home.indexOf(`id="${id}"`)
+      expect(home.slice(from, home.indexOf('@click', from))).toContain('whitespace-nowrap')
+    }
   })
 })

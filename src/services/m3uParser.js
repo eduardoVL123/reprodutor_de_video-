@@ -1,4 +1,5 @@
 import { saveSection } from '@/services/catalogDb'
+import { XtreamError, ERROR_CODES } from '@/services/xtreamApi'
 
 /**
  * Parser leve e compatível com ES2017 para playlists #EXTM3U.
@@ -120,6 +121,7 @@ export function parseM3u(text) {
  */
 export async function importM3uCatalog(m3uText, { onProgress } = {}) {
   const { liveStreams, vodStreams, liveCategories, vodCategories } = parseM3u(m3uText)
+  if (!liveStreams.length && !vodStreams.length) throw new XtreamError(ERROR_CODES.EMPTY_M3U_ERROR)
 
   // Salva 'live'
   await saveSection('live', {

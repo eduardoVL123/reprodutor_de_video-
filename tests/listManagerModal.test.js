@@ -50,6 +50,20 @@ describe('ListManagerModal', () => {
     wrapper.unmount()
   })
 
+  it('lista salva sem criptografia mostra o aviso; a segura não', async () => {
+    const { wrapper, auth } = await setup()
+    auth.savedLists = [
+      { id: 'a', type: 'xtream', label: 'Segura', baseUrl: 'https://a.test', username: 'u', insecure: false },
+      { id: 'b', type: 'xtream', label: 'Aberta', baseUrl: 'http://b.test', username: 'u', insecure: true },
+    ]
+    wrapper.vm.open()
+    await flushPromises()
+
+    expect(wrapper.find('#saved-list-card-a').text()).not.toContain('SEM CRIPTOGRAFIA')
+    expect(wrapper.find('#saved-list-card-b').text()).toContain('SEM CRIPTOGRAFIA')
+    wrapper.unmount()
+  })
+
   it('exige o endereço antes de tentar conectar', async () => {
     const { wrapper, authenticate } = await setup()
     wrapper.vm.open()
@@ -103,10 +117,13 @@ describe('ListManagerModal', () => {
     await flushPromises()
     expect(wrapper.findAll('[id^="saved-list-card-"]')).toHaveLength(1)
 
+    await wrapper.find('[id^="btn-remove-"]').trigger('click') // 1º aperte: pede confirmação
+    expect(wrapper.findAll('[id^="saved-list-card-"]')).toHaveLength(1)
     await wrapper.find('[id^="btn-remove-"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.findAll('[id^="saved-list-card-"]')).toHaveLength(0)
+    await vi.waitFor(() => expect(wrapper.emitted('logged-out')).toHaveLength(1)) // era a única lista: a sessão acaba
     wrapper.unmount()
   })
 
@@ -132,6 +149,70 @@ describe('ListManagerModal', () => {
     await flushPromises()
 
     expect(wrapper.find('#modal-lists').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})
+
+describe('ListManagerModal — excluir lista', () => {
+  const LISTS = [
+    { id: 'a', type: 'xtream', label: 'Lista A', baseUrl: 'https://a.test', username: 'u' },
+    { id: 'b', type: 'xtream', label: 'Lista B', baseUrl: 'https://b.test', username: 'u' },
+  ]
+
+  async function openWithLists(result = true) {
+    const ctx = await setup()
+    ctx.auth.savedLists = LISTS
+    const removeList = vi.spyOn(ctx.auth, 'removeList').mockResolvedValue(result)
+    ctx.wrapper.vm.open()
+    await flushPromises()
+    return { ...ctx, removeList }
+  }
+
+  it('o 1º aperte na lixeira só pede confirmação; o 2º exclui', async () => {
+    const { wrapper, removeList } = await openWithLists()
+    const trash = () => wrapper.find('#btn-remove-b')
+
+    await trash().trigger('click')
+    expect(trash().text()).toContain('Confirmar exclusão')
+    expect(removeList).not.toHaveBeenCalled()
+
+    await trash().trigger('click')
+    expect(removeList).toHaveBeenCalledWith('b')
+    wrapper.unmount()
+  })
+
+  it('sair do botão (foco em outro lugar) cancela a confirmação', async () => {
+    const { wrapper, removeList } = await openWithLists()
+
+    await wrapper.find('#btn-remove-b').trigger('click')
+    await wrapper.find('#btn-remove-b').trigger('blur')
+
+    expect(wrapper.find('#btn-remove-b').text()).not.toContain('Confirmar exclusão')
+    await wrapper.find('#btn-remove-b').trigger('click') // volta a pedir confirmação, não exclui
+    expect(removeList).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('a confirmação é por lista: confirmar a "b" não vale para a "a"', async () => {
+    const { wrapper, removeList } = await openWithLists()
+
+    await wrapper.find('#btn-remove-b').trigger('click')
+    await wrapper.find('#btn-remove-a').trigger('click')
+
+    expect(removeList).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('se não der para trocar de lista, mostra o erro e não fecha', async () => {
+    const { wrapper, auth } = await openWithLists(false)
+    auth.error = 'Falha ao conectar.'
+
+    await wrapper.find('#btn-remove-b').trigger('click')
+    await wrapper.find('#btn-remove-b').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('#modal-lists').exists()).toBe(true)
+    expect(wrapper.text()).toContain('Falha ao conectar.')
     wrapper.unmount()
   })
 })

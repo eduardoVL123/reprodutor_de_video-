@@ -81,6 +81,19 @@ const sameSeries = (a, b) => !!a.seriesId && a.seriesId === b.seriesId && a.sect
 
 const sameItem = (a, b) => !!a && !!b && String(a.stream_id) === String(b.stream_id) && a.section === b.section
 
+/** Move os dados de antes dos perfis para a chave do perfil Principal e apaga a antiga (senão voltariam após "limpar"). */
+async function takeLegacy(legacyKey, newKey) {
+  try {
+    const legacy = await storage.get(legacyKey)
+    if (!Array.isArray(legacy) || legacy.length === 0) return null
+    await storage.set(newKey, legacy)
+    await storage.remove(legacyKey)
+    return legacy
+  } catch (_) {
+    return null
+  }
+}
+
 /**
  * Reprodução, fila de zapping, Minha Fila e Continuar Assistindo (RFC-003).
  */
@@ -141,17 +154,11 @@ export const usePlayerStore = defineStore('player', () => {
             return ''
           }
         })()
-        if ((!finalQueue || !finalQueue.length) && (!profileId || profileId === 'p1')) {
-          try {
-            const legacyQueue = await storage.get('player:customQueue')
-            if (Array.isArray(legacyQueue) && legacyQueue.length > 0) finalQueue = legacyQueue
-          } catch (_) {}
-        }
-        if ((!finalHistory || !finalHistory.length) && (!profileId || profileId === 'p1')) {
-          try {
-            const legacyHistory = await storage.get('player:watchHistory')
-            if (Array.isArray(legacyHistory) && legacyHistory.length > 0) finalHistory = legacyHistory
-          } catch (_) {}
+        if (!profileId || profileId === 'p1') {
+          if (!finalQueue || !finalQueue.length) finalQueue = (await takeLegacy('player:customQueue', queueKey)) || finalQueue
+          if (!finalHistory || !finalHistory.length) {
+            finalHistory = (await takeLegacy('player:watchHistory', historyKey)) || finalHistory
+          }
         }
 
         if (Array.isArray(finalQueue)) {

@@ -35,6 +35,39 @@ describe('playerStore — histórico persistido', () => {
   })
 })
 
+describe('playerStore — dados anteriores aos perfis', () => {
+  const LEGACY_ITEM = { stream_id: 9, name: 'Antigo', section: 'vod', currentTime: 100, duration: 3000, progressPct: 3 }
+
+  it('migra fila e histórico antigos para o perfil Principal e apaga as chaves antigas', async () => {
+    const { storage, usePlayerStore } = await setup()
+    await storage.set('player:customQueue', [LEGACY_ITEM])
+    await storage.set('player:watchHistory', [LEGACY_ITEM])
+
+    const player = usePlayerStore()
+    await player.hydrate(true)
+
+    expect(player.customQueue.map((q) => q.stream_id)).toEqual([9])
+    expect(player.watchHistory.map((h) => h.stream_id)).toEqual([9])
+    expect(await storage.get('player:customQueue')).toBeFalsy()
+    expect(await storage.get('player:watchHistory')).toBeFalsy()
+  })
+
+  it('limpar a fila e o histórico não faz o conteúdo antigo voltar na próxima abertura', async () => {
+    const { storage, usePlayerStore } = await setup()
+    await storage.set('player:customQueue', [LEGACY_ITEM])
+    await storage.set('player:watchHistory', [LEGACY_ITEM])
+    const player = usePlayerStore()
+    await player.hydrate(true)
+
+    await player.clearCustomQueue()
+    await player.clearHistory()
+    await player.hydrate(true)
+
+    expect(player.customQueue).toHaveLength(0)
+    expect(player.watchHistory).toHaveLength(0)
+  })
+})
+
 describe('playerStore — "Continuar assistindo"', () => {
   const MOVIE = { stream_id: 50, name: 'Filme', section: 'vod', container_extension: 'mp4' }
   const channel = (n) => ({ stream_id: 1000 + n, name: `Canal ${n}`, section: 'live' })

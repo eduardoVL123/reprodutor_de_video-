@@ -90,29 +90,6 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-      - name: Preparar APK para download direto
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk pulse-player.apk
-
-      - name: Publicar Release com APK para Smart TV (Downloader)
-        if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: v2.0.0
-          name: Pulse Player 2.0 (APK de Teste)
-          body: |
-            ### Pulse Player 2.0 — Redesign com Menu Lateral e Player OSD
-            
-            **Como instalar na Smart TV com o app Downloader:**
-            1. Abra o app **Downloader** na sua Android TV ou Fire TV.
-            2. Digite a URL direta do APK:
-               `https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk`
-            3. Baixe, instale e abra o aplicativo!
-          files: pulse-player.apk
-          prerelease: false
-          draft: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
       # Release: só roda se o repositório tiver a chave de publicação nos Secrets
       # (PULSE_KEYSTORE_BASE64, PULSE_KEYSTORE_PASSWORD, PULSE_KEY_ALIAS, PULSE_KEY_PASSWORD).
       - name: Preparar chave de publicação
@@ -145,3 +122,29 @@ jobs:
             android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
+
+      # Link fixo para a TV (Downloader): só com o APK assinado pela chave privada. O APK de debug usa uma chave
+      # pública (está no repositório), então qualquer pessoa conseguiria assinar uma "atualização" falsa com ela.
+      - name: Preparar APK assinado para download direto
+        if: steps.release_key.outputs.available == 'true'
+        run: cp android/app/build/outputs/apk/release/*.apk pulse-player.apk
+
+      - name: Publicar Release com APK para Smart TV (Downloader)
+        if: steps.release_key.outputs.available == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.0
+          name: Pulse Player 2.0 (APK de Teste)
+          body: |
+            ### Pulse Player 2.0 — Redesign com Menu Lateral e Player OSD
+            
+            **Como instalar na Smart TV com o app Downloader:**
+            1. Abra o app **Downloader** na sua Android TV ou Fire TV.
+            2. Digite a URL direta do APK:
+               `https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk`
+            3. Baixe, instale e abra o aplicativo!
+          files: pulse-player.apk
+          prerelease: false
+          draft: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

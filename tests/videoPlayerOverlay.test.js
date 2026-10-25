@@ -353,3 +353,100 @@ describe('VideoPlayerOverlay — próximo episódio antes do fim', () => {
     wrapper.unmount()
   })
 })
+
+describe('VideoPlayerOverlay — mouse, toque e teclado do PC', () => {
+  const pointer = (el, type, clientX) =>
+    el.dispatchEvent(new MouseEvent(type, { clientX, bubbles: true, cancelable: true }))
+
+  async function openWithBar() {
+    const ctx = await setup({ withNavigation: true })
+    ctx.player.playItem(MOVIE)
+    await flushPromises()
+    const playback = fakePlayback(video())
+    video().dispatchEvent(new Event('durationchange'))
+    await flushPromises()
+    const bar = document.getElementById('osd-progress')
+    bar.getBoundingClientRect = () => ({ left: 100, width: 400, right: 500, top: 0, bottom: 4, height: 4 })
+    return { ...ctx, playback, bar }
+  }
+
+  it('clicar na barra de progresso pula para o ponto clicado', async () => {
+    const { wrapper, playback, bar } = await openWithBar()
+
+    pointer(bar, 'pointerdown', 400) // 75% da barra, vídeo de 100s
+    pointer(bar, 'pointerup', 400)
+
+    expect(playback.time()).toBe(75)
+    wrapper.unmount()
+  })
+
+  it('arrastar mostra a posição ao vivo e só pula ao soltar', async () => {
+    const { wrapper, playback, bar } = await openWithBar()
+
+    pointer(bar, 'pointerdown', 140) // 10%
+    pointer(bar, 'pointermove', 300) // 50%
+    await flushPromises()
+    expect(playback.time()).toBe(20) // o vídeo ainda não foi mexido
+    expect(wrapper.find('[role="slider"]').attributes('aria-valuenow')).toBe('50')
+
+    pointer(bar, 'pointermove', 500) // fim da barra
+    pointer(bar, 'pointerup', 500)
+    expect(playback.time()).toBe(100)
+    wrapper.unmount()
+  })
+
+  it('o tempo do vídeo não briga com o dedo durante o arrasto', async () => {
+    const { wrapper, bar } = await openWithBar()
+
+    pointer(bar, 'pointerdown', 300) // 50%
+    video().dispatchEvent(new Event('timeupdate')) // o vídeo diz 20s
+    await flushPromises()
+
+    expect(wrapper.find('[role="slider"]').attributes('aria-valuenow')).toBe('50')
+    pointer(bar, 'pointerup', 300)
+    wrapper.unmount()
+  })
+
+  it('cancelar o arrasto (ex.: o navegador assumiu o gesto) volta à posição do vídeo e não pula', async () => {
+    const { wrapper, playback, bar } = await openWithBar()
+
+    pointer(bar, 'pointerdown', 460) // 90%
+    pointer(bar, 'pointercancel', 460)
+    await flushPromises()
+
+    expect(playback.time()).toBe(20)
+    expect(wrapper.find('[role="slider"]').attributes('aria-valuenow')).toBe('20')
+    wrapper.unmount()
+  })
+
+  it('solta fora do arrasto (sem ter apertado na barra) não pula', async () => {
+    const { wrapper, playback, bar } = await openWithBar()
+
+    pointer(bar, 'pointerup', 460)
+
+    expect(playback.time()).toBe(20)
+    wrapper.unmount()
+  })
+
+  it('a barra tem área de toque maior que a linha visível', async () => {
+    const { wrapper, bar } = await openWithBar()
+
+    expect(bar.className).toContain('before:-inset-y-3')
+    wrapper.unmount()
+  })
+
+  it('Espaço pausa e retoma mesmo com o menu oculto (foco no body)', async () => {
+    const { wrapper, player } = await setup({ withNavigation: true })
+    player.playItem(MOVIE)
+    await flushPromises()
+    const el = video()
+    fakePlayback(el)
+    document.activeElement.blur()
+
+    pressKey(' ', 32)
+    expect(el.pause).toHaveBeenCalledTimes(1)
+    pressKey(' ', 32)
+    expect(el.play).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})

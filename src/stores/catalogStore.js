@@ -76,11 +76,6 @@ export const useCatalogStore = defineStore('catalog', () => {
     return data
   }
 
-  const fetchLiveCategories = () => requestList(ACTIONS.live.categories)
-  const fetchLiveStreams = () => requestList(ACTIONS.live.streams)
-  const fetchVodCategories = () => requestList(ACTIONS.vod.categories)
-  const fetchVodStreams = () => requestList(ACTIONS.vod.streams)
-  const fetchSeriesCategories = () => requestList(ACTIONS.series.categories)
   const fetchSeriesStreams = async () => {
     const list = await requestList(ACTIONS.series.streams)
     return list.map((it) => {
@@ -99,9 +94,9 @@ export const useCatalogStore = defineStore('catalog', () => {
   }
 
   const fetchers = {
-    live: { categories: fetchLiveCategories, streams: fetchLiveStreams },
-    vod: { categories: fetchVodCategories, streams: fetchVodStreams },
-    series: { categories: fetchSeriesCategories, streams: fetchSeriesStreams },
+    live: { categories: () => requestList(ACTIONS.live.categories), streams: () => requestList(ACTIONS.live.streams) },
+    vod: { categories: () => requestList(ACTIONS.vod.categories), streams: () => requestList(ACTIONS.vod.streams) },
+    series: { categories: () => requestList(ACTIONS.series.categories), streams: fetchSeriesStreams },
   }
 
   // ---------- Carregamento (cache-first) ----------
@@ -198,26 +193,16 @@ export const useCatalogStore = defineStore('catalog', () => {
     await clearCatalog()
   }
 
-  async function clear() {
-    await resetCatalogState()
-  }
-
   return {
     status,
     categories,
     totals,
     counts,
-    fetchLiveCategories,
-    fetchLiveStreams,
-    fetchVodCategories,
-    fetchVodStreams,
-    fetchSeriesCategories,
     fetchSeriesStreams,
     loadSection,
     refreshSection,
     countFor,
     getItems,
     resetCatalogState,
-    clear,
   }
 })

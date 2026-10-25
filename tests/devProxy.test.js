@@ -25,6 +25,34 @@ describe('proxy anti-CORS de desenvolvimento', () => {
     expect(native).toMatch(/USER_AGENT = "PulsePlayer\//)
   })
 
+  it('recusa páginas de outros sites abertas no navegador da própria máquina', async () => {
+    const { proxyHandler } = await import('../scripts/dev-cors-proxy.mjs')
+    const res = { headersSent: false, writeHead: vi.fn(), end: vi.fn(), on: vi.fn() }
+    const req = {
+      method: 'GET',
+      url: '/__proxy__?url=http%3A%2F%2F192.168.0.1%2F',
+      headers: { origin: 'https://site-malicioso.example' },
+      socket: { remoteAddress: '127.0.0.1' },
+    }
+
+    proxyHandler(req, res)
+
+    expect(res.writeHead).toHaveBeenCalledWith(403, expect.any(Object))
+  })
+
+  it.each(['http://localhost:5173', 'http://127.0.0.1:4173', 'http://[::1]:5173'])(
+    'aceita a própria página de desenvolvimento (%s)',
+    async (origin) => {
+      const { proxyHandler } = await import('../scripts/dev-cors-proxy.mjs')
+      const res = { headersSent: false, writeHead: vi.fn(), end: vi.fn(), on: vi.fn() }
+      const req = { method: 'GET', url: '/__proxy__', headers: { origin }, socket: { remoteAddress: '127.0.0.1' } }
+
+      proxyHandler(req, res)
+
+      expect(res.writeHead).toHaveBeenCalledWith(400, expect.any(Object)) // passou da trava; falta só o parâmetro url
+    },
+  )
+
   it('recusa clientes que não estão na própria máquina', async () => {
     const { proxyHandler } = await import('../scripts/dev-cors-proxy.mjs')
     const res = { headersSent: false, writeHead: vi.fn(), end: vi.fn(), on: vi.fn() }

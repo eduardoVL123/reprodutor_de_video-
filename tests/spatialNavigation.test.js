@@ -138,6 +138,7 @@ describe('spatialNavigation — teclas de mídia', () => {
   it.each([
     [{ key: 'MediaPlay', keyCode: 415 }, 'play'],
     [{ key: 'MediaPause', keyCode: 19 }, 'pause'],
+    [{ key: ' ', keyCode: 32 }, 'playPause'], // barra de espaço do teclado do PC
     [{ key: 'MediaPlayPause', keyCode: 179 }, 'playPause'],
     [{ key: 'MediaStop', keyCode: 413 }, 'stop'],
     [{ key: 'MediaRewind', keyCode: 412 }, 'rewind'],

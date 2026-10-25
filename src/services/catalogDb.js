@@ -25,7 +25,7 @@ const db = localforage.createInstance({
 export const CHUNK_SIZE = 500
 export const ALL_CATEGORIES = 'all'
 /** Sobe quando o formato dos itens salvos muda (ex.: capas de terceiros): catálogos antigos são baixados de novo. */
-const CATALOG_VERSION = 2
+const CATALOG_VERSION = 3 // 3: itens em todas as categorias de `category_ids`
 const LRU_MAX_CHUNKS = 6
 
 const metaKey = (s) => `meta:${s}`
@@ -39,12 +39,25 @@ const indexCache = new Map()
 const catCache = new Map()
 const searchCache = new Map() // seção => Promise<string[]> (inclui construções em andamento)
 const chunkCache = new Map() // Map preserva ordem de inserção => LRU simples
+const memoryChunks = new Map() // chunks que não coube gravar (cota cheia): fora do LRU, senão seriam perdidos
 let generation = 0 // invalida leituras em voo quando o catálogo é trocado
 
-const categoryOf = (item) =>
-  item && item.category_id !== undefined && item.category_id !== null && item.category_id !== ''
-    ? String(item.category_id)
-    : 'none'
+const hasValue = (v) => v !== undefined && v !== null && v !== ''
+
+/**
+ * Categorias do item: a principal (`category_id`) e as extras (`category_ids`, painéis Xtream novos).
+ * Sem as extras, uma categoria cujos itens estão todos nela como secundária ficava vazia e sumia.
+ */
+function categoriesOf(item) {
+  if (!item) return ['none']
+  const ids = [item.category_id].concat(Array.isArray(item.category_ids) ? item.category_ids : [])
+  const unique = []
+  ids.filter(hasValue).forEach((id) => {
+    const key = String(id)
+    if (unique.indexOf(key) === -1) unique.push(key)
+  })
+  return unique.length ? unique : ['none']
+}
 
 function resetCaches(section) {
   generation++
@@ -52,8 +65,10 @@ function resetCaches(section) {
   indexCache.delete(section)
   catCache.delete(section)
   searchCache.delete(section)
-  Array.from(chunkCache.keys()).forEach((k) => {
-    if (k.indexOf(`${section}:`) === 0) chunkCache.delete(k)
+  ;[chunkCache, memoryChunks].forEach((cache) => {
+    Array.from(cache.keys()).forEach((k) => {
+      if (k.indexOf(`${section}:`) === 0) cache.delete(k)
+    })
   })
 }
 
@@ -97,7 +112,7 @@ async function removeSection(section) {
 /**
  * Grava o JSON bruto em chunks de forma sequencial (loop for).
  * Se o IndexedDB estourar a cota (QuotaExceededError na Android TV),
- * mantém os chunks em memória (chunkCache) para que o catálogo ainda funcione.
+ * mantém os chunks em memória (memoryChunks) para que o catálogo ainda funcione.
  */
 export async function saveSection(section, { categories, streams, onProgress }) {
   if (!Array.isArray(categories) || !Array.isArray(streams)) {
@@ -128,17 +143,18 @@ export async function saveSection(section, { categories, streams, onProgress }) 
       }
     })
     for (let k = 0; k < slice.length; k++) {
-      const cat = categoryOf(slice[k])
-      if (!index[cat]) index[cat] = []
-      index[cat].push(base + k)
+      categoriesOf(slice[k]).forEach((cat) => {
+        if (!index[cat]) index[cat] = []
+        index[cat].push(base + k)
+      })
       searchIndex[base + k] = normalizeText(slice[k] && slice[k].name)
     }
 
     try {
       await db.setItem(chunkKey(section, n), slice)
     } catch (quotaErr) {
-      console.warn(`[catalogDb] IndexedDB falhou ao persistir chunk ${n} (${quotaErr.message}). Mantendo em memória LRU.`)
-      chunkCache.set(`${section}:${n}`, Promise.resolve(slice))
+      console.warn(`[catalogDb] IndexedDB falhou ao persistir chunk ${n} (${quotaErr.message}). Mantendo em memória.`)
+      memoryChunks.set(`${section}:${n}`, slice)
     }
 
     if (onProgress) onProgress((n + 1) / chunkCount)
@@ -194,6 +210,7 @@ async function getIndex(section) {
 
 function readChunk(section, n) {
   const key = `${section}:${n}`
+  if (memoryChunks.has(key)) return Promise.resolve(memoryChunks.get(key))
   if (chunkCache.has(key)) {
     const hit = chunkCache.get(key)
     chunkCache.delete(key) // reinsere => marca como "mais recente"
@@ -210,13 +227,6 @@ function readChunk(section, n) {
     chunkCache.delete(chunkCache.keys().next().value)
   }
   return promise
-}
-
-/** Quantidade de itens da categoria (ou de todo o catálogo). */
-export async function getCount(section, categoryId = ALL_CATEGORIES) {
-  const meta = await getMeta(section)
-  if (!meta) return 0
-  return categoryId === ALL_CATEGORIES ? meta.count : meta.counts[String(categoryId)] || 0
 }
 
 /**
@@ -325,4 +335,5 @@ export async function clearCatalog() {
   indexCache.clear()
   searchCache.clear()
   chunkCache.clear()
+  memoryChunks.clear()
 }

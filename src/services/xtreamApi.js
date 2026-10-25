@@ -10,7 +10,8 @@
  * guardado como `resolvedUrl` para que as próximas chamadas não paguem o salto extra.
  *
  * CORS:
- *  - APK Android TV: `CapacitorHttp` intercepta o `fetch` (motor nativo, sem CORS).
+ *  - APK Android TV: o `MainActivity` intercepta estas chamadas e as refaz pelo HttpURLConnection
+ *    nativo (sem CORS). O plugin CapacitorHttp está desligado (capacitor.config.json).
  *  - PC (vite em localhost): `smartFetch` refaz a chamada via `/__proxy__`.
  *  - Tizen/webOS empacotados: o WebView não aplica CORS do mesmo modo.
  *
@@ -208,7 +209,7 @@ function fetchWithTimeout(url, timeoutMs, accept, diagUrl) {
 
 /**
  * fetch "inteligente":
- *  1. tenta direto (no APK o CapacitorHttp já elimina o CORS);
+ *  1. tenta direto (no APK o MainActivity já elimina o CORS);
  *  2. se falhar por rede/CORS no PC (localhost), refaz via `/__proxy__`.
  * @returns {Promise<{ res: Response, finalUrl: string, viaProxy: boolean }>}
  */
@@ -292,8 +293,9 @@ function isTransportFailure(err) {
 
 /**
  * Requisição genérica ao `player_api.php`.
- * @returns {Promise<{ data: any, resolvedUrl: string|null }>} `resolvedUrl` só vem
- *          preenchido quando houve redirecionamento para outro host/caminho.
+ * @returns {Promise<{ data: any, resolvedUrl: string|null, downgraded?: boolean }>} `resolvedUrl` só vem
+ *          preenchido quando houve redirecionamento para outro host/caminho; `downgraded` quando
+ *          o https falhou e a chamada (com usuário e senha na URL) foi refeita em http.
  */
 export async function apiRequest(baseUrl, credentials, { action, params, timeoutMs } = {}) {
   const execute = async (targetBase) => {
@@ -313,7 +315,7 @@ export async function apiRequest(baseUrl, credentials, { action, params, timeout
       const httpBase = baseUrl.replace(/^https:\/\//i, 'http://')
       try {
         console.warn(`[xtream] Chamada em ${baseUrl} (action=${action || 'auth'}) falhou (${err.message}). Tentando fallback em http://...`)
-        return await execute(httpBase)
+        return { ...(await execute(httpBase)), downgraded: true }
       } catch (_) {
         // Se ambos falharem, propaga o erro original
         throw err
@@ -422,7 +424,7 @@ function port8080Variant(baseUrl) {
 /**
  * Autentica no servidor. O Xtream Codes responde 200 mesmo com credenciais
  * erradas, sinalizando via `user_info.auth` (0/1) e `user_info.status`.
- * @returns {Promise<{baseUrl:string, resolvedUrl:string|null, userInfo:object, serverInfo:object}>}
+ * @returns {Promise<{baseUrl:string, resolvedUrl:string|null, userInfo:object, serverInfo:object, insecure:boolean}>}
  */
 export async function authenticate({ dns, username, password, timeoutMs }) {
   const user = String(username == null ? '' : username).trim()
@@ -478,11 +480,14 @@ export async function authenticate({ dns, username, password, timeoutMs }) {
     })
   }
 
+  const resolvedUrl = result.resolvedUrl || (usedBase !== baseUrl ? usedBase : null)
   return {
     baseUrl,
-    resolvedUrl: result.resolvedUrl || (usedBase !== baseUrl ? usedBase : null),
+    resolvedUrl,
     userInfo: info,
     serverInfo: (data && data.server_info) || {},
+    // Senha trafegando sem TLS: digitou http, redirecionou para http ou o https falhou e caiu para http.
+    insecure: Boolean(result.downgraded) || /^http:\/\//i.test(resolvedUrl || usedBase),
   }
 }
 

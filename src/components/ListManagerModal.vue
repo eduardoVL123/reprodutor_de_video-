@@ -93,10 +93,33 @@ async function switchList(listId) {
   }
 }
 
+// Excluir apaga também a senha salva e, com o controle remoto, um OK sem querer é fácil: o 1º aperte só pede confirmação.
+const confirmRemoveId = ref('')
+
+function askRemove(listId) {
+  if (confirmRemoveId.value !== listId) {
+    confirmRemoveId.value = listId
+    return
+  }
+  confirmRemoveId.value = ''
+  removeList(listId)
+}
+
 async function removeList(listId) {
   try {
     clearErrors()
-    await auth.removeList(listId)
+    const activeBefore = auth.currentListId
+    const ok = await auth.removeList(listId)
+    if (!ok) {
+      formError.value = auth.error || 'Não foi possível trocar para outra lista; a lista não foi excluída.'
+      formErrorDetail.value = auth.errorDetail || ''
+    } else if (!auth.isAuthenticated) {
+      close()
+      emit('logged-out')
+    } else if (auth.currentListId !== activeBefore) {
+      close()
+      emit('changed')
+    }
   } catch (err) {
     formError.value = err.message || 'Falha ao excluir a lista.'
     formErrorDetail.value = err.detail || String(err)
@@ -226,9 +249,15 @@ defineExpose({ open, close })
                   </span>
                   <span
                     v-if="list.id === auth.currentListId"
-                    class="px-2 py-0.5 rounded text-tv-xs font-bold bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 uppercase"
+                    class="px-2 py-0.5 rounded text-tv-xs font-bold whitespace-nowrap shrink-0 bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/30 uppercase"
                   >
                     ATIVA
+                  </span>
+                  <span
+                    v-if="list.insecure"
+                    class="px-2 py-0.5 rounded text-tv-xs font-bold whitespace-nowrap shrink-0 bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30 uppercase"
+                  >
+                    SEM CRIPTOGRAFIA
                   </span>
                 </div>
                 <p class="text-tv-xs text-neutral-400 truncate">
@@ -251,11 +280,14 @@ defineExpose({ open, close })
                 <button
                   :id="'btn-remove-' + list.id"
                   type="button"
-                  class="tv-btn !p-2 text-neutral-400 hover:text-red-400"
-                  title="Excluir lista"
-                  @click="removeList(list.id)"
+                  class="tv-btn !p-2 whitespace-nowrap"
+                  :class="confirmRemoveId === list.id ? '!px-4 text-red-300 border-red-400' : 'text-neutral-400 hover:text-red-400'"
+                  :title="confirmRemoveId === list.id ? 'Aperte de novo para excluir' : 'Excluir lista'"
+                  @click="askRemove(list.id)"
+                  @blur="confirmRemoveId = ''"
                 >
-                  <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                  <span v-if="confirmRemoveId === list.id" class="text-tv-xs font-semibold">Confirmar exclusão</span>
+                  <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
                     <polyline points="3 6 5 6 21 6" />
                     <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                   </svg>
