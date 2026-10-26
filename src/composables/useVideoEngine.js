@@ -13,7 +13,7 @@ export const PLAYBACK_ERROR =
  * Configuração otimizada para IPTV Xtream Codes em Smart TVs e Android TV (RFC-009).
  */
 const HLS_CONFIG = {
-  enableWorker: false,               // Evita falhas de WebWorker/CSP em WebViews de Smart TVs
+  enableWorker: false,               // O build ESM do hls.js não traz worker: o transmux roda no thread principal de qualquer forma
   lowLatencyMode: false,             // CRÍTICO: Servidores Xtream usam HLS padrão (.ts), LL-HLS causa travamentos constantes
   backBufferLength: 15,              // Descarta rápido o que já passou para economizar RAM da TV
   maxBufferLength: 30,               // Mantém até 30s de folga à frente
@@ -33,7 +33,7 @@ const HLS_CONFIG = {
   levelLoadingTimeOut: 12000,
   levelLoadingMaxRetry: 4,
   levelLoadingRetryDelay: 800,
-  fragLoadingTimeOut: 15000,
+  // Sem fragLoadingTimeOut: ele limita o download INTEIRO do segmento (padrão do hls.js: 120 s) e cortava segmentos lentos quase completos.
   fragLoadingMaxRetry: 6,
   fragLoadingRetryDelay: 800,
 }
@@ -87,6 +87,9 @@ export function useVideoEngine() {
   let gateOpen = false
   let lastCurTime = -1
   let stalledSeconds = 0
+  let progressEvents = 0 // eventos 'progress' do <video>: o navegador segue recebendo a mídia
+  let loadingFrag = null // segmento HLS em download (stats.loaded cresce enquanto os bytes chegam)
+  let lastDataMark = ''
 
   // Recuperação de travamento no meio da reprodução (rede caiu, servidor parou de enviar)
   let activeUrl = '' // fonte atual do <video> nativo: a reconexão usa o MESMO arquivo
@@ -161,10 +164,17 @@ export function useVideoEngine() {
     }
   }
 
+  /** Muda enquanto chegam bytes da rede (segmento HLS em download ou mídia direta). */
+  function dataMark() {
+    const frag = loadingFrag && loadingFrag.stats ? `${loadingFrag.sn}:${loadingFrag.stats.loaded}` : ''
+    return `${progressEvents}|${frag}`
+  }
+
   function startWatchdog(desc, my) {
     stopWatchdog()
     lastCurTime = -1
     stalledSeconds = 0
+    lastDataMark = dataMark()
 
     watchdogTimer = setInterval(() => {
       if (my !== token || !video) return
@@ -182,6 +192,13 @@ export function useVideoEngine() {
       }
 
       lastCurTime = cur
+      const mark = dataMark()
+      if (mark !== lastDataMark) {
+        // Parado, mas o download anda: recarregar agora jogaria fora o que já chegou e a espera recomeçaria.
+        lastDataMark = mark
+        stalledSeconds = 0
+        return
+      }
       stalledSeconds++
 
       if (stalledSeconds === 6) {
@@ -352,6 +369,7 @@ export function useVideoEngine() {
       } catch (_) {}
     }
     engineType.value = ''
+    loadingFrag = null
     networkRecoveryAttempts = 0
     mediaRecoveryAttempts = 0
     gateOpen = false
@@ -453,6 +471,7 @@ export function useVideoEngine() {
       if (my === token) setProgressTarget(65, 'Sincronizando áudio e vídeo...')
     })
     addVideoListener(video, 'progress', () => {
+      progressEvents++
       checkPrebuffer(desc, my)
     })
     addVideoListener(video, 'canplay', () => {
@@ -510,8 +529,9 @@ export function useVideoEngine() {
       }
     })
 
-    instance.on(Hls.Events.FRAG_LOADING, () => {
+    instance.on(Hls.Events.FRAG_LOADING, (_evt, data) => {
       if (my === token && hls === instance) {
+        loadingFrag = data && data.frag
         setProgressTarget(65, 'Sincronizando áudio e vídeo...')
       }
     })

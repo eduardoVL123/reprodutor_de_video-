@@ -65,6 +65,19 @@ describe('useVideoEngine — travamento no meio do episódio', () => {
     engine.destroyEngine()
   })
 
+  it('não reconecta enquanto o arquivo ainda está chegando (rede lenta): reconectar jogaria fora o download', async () => {
+    const { engine, video, state } = await startEpisodeAt(20)
+
+    for (let s = 0; s < 20; s++) {
+      video.dispatchEvent(new Event('progress')) // o navegador segue recebendo dados
+      await vi.advanceTimersByTimeAsync(1000)
+    }
+
+    expect(state.srcHistory).toHaveLength(1)
+    expect(engine.recovering.value).toBe(false)
+    engine.destroyEngine()
+  })
+
   it('desiste depois de algumas tentativas e mostra erro (não fica preso em 100% para sempre)', async () => {
     const { engine, state } = await startEpisodeAt(20)
 
