@@ -10,7 +10,7 @@ Guia do que enviar e do que testar antes. Fontes: [checklist comum Samsung](http
 | Item | Como | Situação |
 |---|---|---|
 | Política de privacidade com link público | Preencha data e contato em [`PRIVACY.md`](../../PRIVACY.md); depois do push o link do arquivo no GitHub já serve | falta preencher |
-| Lista de demonstração para o revisor | Publique [`docs/demo/pulse-demo.m3u`](../demo/pulse-demo.m3u) (link "raw" do GitHub) e gere o build com `VITE_DEMO_PLAYLIST_URL` (CI: variável `PULSE_DEMO_PLAYLIST_URL`) | falta publicar |
+| Lista de demonstração para o revisor | Publique [`docs/demo/pulse-demo.m3u`](../demo/pulse-demo.m3u) (link "raw" do GitHub) e gere o build com `VITE_DEMO_PLAYLIST_URL` (CI: variável `PULSE_DEMO_PLAYLIST_URL`) | pronto (link raw publicado; variável criada em 26/10/2026) |
 | Serviço de pareamento pelo celular (opcional, RFC-016) | Publicar [`server/pair`](../../server/pair/README.md#publicar) com HTTPS (`server/pair/deploy`) e gerar o build com `VITE_PAIR_BASE_URL` (CI: variável `PULSE_PAIR_BASE_URL`); sem isso o build não oferece o pareamento e nada nesta linha se aplica. Antes de enviar, preencha em [`PRIVACY.md`](../../PRIVACY.md) o endereço do serviço e o prazo de registros do provedor de hospedagem | falta |
 | Declarar o serviço de pareamento nos formulários das lojas | Seção 7 | falta |
 | Certificado Samsung | `PULSE_TIZEN_PACKAGE_ID` + perfil de certificado no Tizen Studio | falta |

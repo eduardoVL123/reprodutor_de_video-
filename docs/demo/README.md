@@ -9,10 +9,9 @@ Só entram vídeos de uso livre ou transmissões públicas de teste, sem logos:
 | Item | Origem | Licença |
 |---|---|---|
 | Big Buck Bunny, Elephants Dream, Tears of Steel | Blender Foundation (via archive.org e Mux) | Creative Commons BY |
-| Bipbop | Exemplo público de HLS da Apple | material de teste |
 
 Para ativar o botão, publique este arquivo num endereço fixo (por exemplo, o link "raw" do GitHub) e gere o build com
 `VITE_DEMO_PLAYLIST_URL=<endereço>` (no CI: variável do repositório `PULSE_DEMO_PLAYLIST_URL`).
 
 Confira os endereços antes de cada envio às lojas: transmissões públicas de teste saem do ar sem aviso
-(a da Akamai saiu em 10/2026).
+(a da Akamai saiu em 10/2026; a de exemplo da Apple foi tirada em 10/2026 por demorar até 17 s na primeira abertura).
