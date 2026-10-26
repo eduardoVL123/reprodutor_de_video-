@@ -112,7 +112,9 @@ const seriesStreams = () =>
 
 const getSeriesInfo = (seriesId) => {
   const sId = parseInt(seriesId, 10) || 1
-  const seasons = [1, 2, 3].map((sNum) => ({
+  // Série 2 (e a cada 5) tem 10 temporadas, como as séries longas: as abas passam da largura da tela.
+  const seasonCount = sId % 5 === 2 ? 10 : 3
+  const seasons = range(seasonCount).map((sNum) => ({
     season_number: sNum,
     name: `Temporada ${sNum}`,
     episode_count: 8,
@@ -120,7 +122,7 @@ const getSeriesInfo = (seriesId) => {
   const episodes = {}
   seasons.forEach((season) => {
     episodes[String(season.season_number)] = range(8).map((epNum) => {
-      const epId = sId * 100 + season.season_number * 10 + epNum
+      const epId = sId * 1000 + season.season_number * 20 + epNum
       return {
         id: epId,
         episode_num: epNum,

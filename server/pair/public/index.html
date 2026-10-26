@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="referrer" content="no-referrer">
+  <title>Pulse Player</title>
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body>
+  <main>
+    <p class="brand">PULSE PLAYER</p>
+
+    <form id="form" novalidate>
+      <h1 data-t="title"></h1>
+
+      <label for="code" data-t="codeLabel"></label>
+      <input id="code" class="code" type="text" inputmode="text" maxlength="12" autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
+
+      <label for="link" data-t="linkLabel"></label>
+      <textarea id="link" rows="4" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"></textarea>
+      <p class="hint" data-t="linkHint"></p>
+
+      <details>
+        <summary data-t="more"></summary>
+        <label for="user" data-t="userLabel"></label>
+        <input id="user" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false">
+        <label for="pass" data-t="passLabel"></label>
+        <input id="pass" type="password" autocomplete="off">
+        <label for="name" data-t="nameLabel"></label>
+        <input id="name" type="text" maxlength="60" autocomplete="off">
+      </details>
+
+      <p id="msg" role="alert" aria-live="polite"></p>
+      <button id="send" type="submit" data-t="send"></button>
+      <p class="small" data-t="privacy"></p>
+    </form>
+
+    <section id="done" hidden>
+      <div class="ok" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+      </div>
+      <h1 data-t="doneTitle"></h1>
+      <p class="lead" data-t="doneText"></p>
+      <p class="small" data-t="doneHint"></p>
+    </section>
+  </main>
+
+  <noscript><p class="noscript">JavaScript is required / É preciso ativar o JavaScript.</p></noscript>
+  <script src="/pair-lib.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -2,6 +2,8 @@
 import { ref, nextTick, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { registerBackHandler, pushFocusScope, focusFirstIn } from '@/utils/spatialNavigation'
+import PairPanel from '@/components/PairPanel.vue'
+import { isPairingAvailable } from '@/services/pairingApi'
 
 /**
  * Gerenciador de listas (servidores/playlists salvos). O pai abre com `open()` (via ref) e é
@@ -20,6 +22,10 @@ const formErrorDetail = ref('')
 const isConnecting = ref(false)
 const isSwitching = ref(false)
 const form = ref(emptyForm())
+
+/** RFC-016: a coluna "Adicionar" mostra o formulário ou o painel do celular (só com o pareamento configurado). */
+const pairingOn = isPairingAvailable()
+const view = ref('form') // 'form' | 'pair'
 
 let triggerId = 'btn-manage-lists'
 let popScope = null
@@ -44,6 +50,7 @@ function release() {
 function open() {
   triggerId = document.activeElement?.id || 'btn-manage-lists'
   isOpen.value = true
+  view.value = 'form'
   clearErrors()
   form.value = emptyForm()
 
@@ -59,9 +66,25 @@ function open() {
   if (cleanupBack) cleanupBack()
   cleanupBack = registerBackHandler(() => {
     if (!isOpen.value) return false
-    close()
+    if (view.value === 'pair') showForm() // Voltar sai do painel do celular antes de fechar o modal
+    else close()
     return true
   })
+}
+
+function showPair() {
+  clearErrors()
+  view.value = 'pair'
+}
+
+function showForm() {
+  view.value = 'form'
+  nextTick(() => document.getElementById('btn-pair-phone')?.focus())
+}
+
+function onPairDone() {
+  close()
+  emit('changed')
 }
 
 function close() {
@@ -326,103 +349,117 @@ defineExpose({ open, close })
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-1 uppercase tracking-wider">
             Adicionar Nova Lista
           </h3>
-          <p class="text-tv-xs text-neutral-400 mb-3">
-            Navegue com as setas e pressione OK para abrir o teclado
-          </p>
 
-          <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem]" @submit.prevent="addList">
-            <div>
-              <label for="new-list-label" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
-                Nome / Apelido (opcional)
-              </label>
-              <input
-                id="new-list-label"
-                v-model="form.label"
-                type="text"
-                readonly="readonly"
-                data-tv-editing="false"
-                class="tv-input w-full"
-                placeholder="Ex: Minha lista"
-              />
-            </div>
+          <div v-if="view === 'pair'" class="overflow-y-auto pr-2 pb-2">
+            <PairPanel :qr-rem="11" compact show-manual @manual="showForm" @done="onPairDone" />
+          </div>
 
-            <div>
-              <label for="new-list-dns" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
-                Link Curto ou URL do Servidor
-              </label>
-              <input
-                id="new-list-dns"
-                v-model="form.dns"
-                type="text"
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                readonly="readonly"
-                data-tv-editing="false"
-                class="tv-input w-full"
-                placeholder="Ex: servidor.com:8080"
-              />
-            </div>
+          <template v-else>
+            <p class="text-tv-xs text-neutral-400 mb-3">
+              Navegue com as setas e pressione OK para abrir o teclado
+            </p>
 
-            <div>
-              <label for="new-list-user" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
-                Usuário (opcional para link curto)
-              </label>
-              <input
-                id="new-list-user"
-                v-model="form.username"
-                type="text"
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                readonly="readonly"
-                data-tv-editing="false"
-                class="tv-input w-full"
-                placeholder="Seu usuário"
-              />
-            </div>
-
-            <div>
-              <label for="new-list-pass" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
-                Senha (opcional para link curto)
-              </label>
-              <input
-                id="new-list-pass"
-                v-model="form.password"
-                type="text"
-                autocomplete="off"
-                autocapitalize="off"
-                autocorrect="off"
-                spellcheck="false"
-                readonly="readonly"
-                data-tv-editing="false"
-                class="tv-input w-full"
-                placeholder="Sua senha"
-              />
-            </div>
-
-            <div class="pt-2">
-              <button
-                id="btn-save-new-list"
-                type="submit"
-                class="tv-btn tv-btn-primary w-full !py-3 font-semibold flex items-center justify-center gap-2 text-tv-sm"
-                :disabled="isConnecting"
-              >
-                <svg
-                  v-if="isConnecting"
-                  class="w-4 h-4 animate-spin text-black"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
-                  <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
-                </svg>
-                <span>{{ isConnecting ? 'Conectando...' : 'Conectar e Salvar Lista' }}</span>
+            <template v-if="pairingOn">
+              <button id="btn-pair-phone" type="button" class="tv-btn tv-btn-primary w-full !py-3 mb-2" @click="showPair">
+                Enviar pelo celular
               </button>
-            </div>
-          </form>
+              <p class="mb-3 text-center text-tv-xs text-neutral-500">ou digite</p>
+            </template>
+
+            <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem]" @submit.prevent="addList">
+              <div>
+                <label for="new-list-label" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
+                  Nome / Apelido (opcional)
+                </label>
+                <input
+                  id="new-list-label"
+                  v-model="form.label"
+                  type="text"
+                  readonly="readonly"
+                  data-tv-editing="false"
+                  class="tv-input w-full"
+                  placeholder="Ex: Minha lista"
+                />
+              </div>
+
+              <div>
+                <label for="new-list-dns" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
+                  Link Curto ou URL do Servidor
+                </label>
+                <input
+                  id="new-list-dns"
+                  v-model="form.dns"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  readonly="readonly"
+                  data-tv-editing="false"
+                  class="tv-input w-full"
+                  placeholder="Ex: servidor.com:8080"
+                />
+              </div>
+
+              <div>
+                <label for="new-list-user" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
+                  Usuário (opcional para link curto)
+                </label>
+                <input
+                  id="new-list-user"
+                  v-model="form.username"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  readonly="readonly"
+                  data-tv-editing="false"
+                  class="tv-input w-full"
+                  placeholder="Seu usuário"
+                />
+              </div>
+
+              <div>
+                <label for="new-list-pass" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
+                  Senha (opcional para link curto)
+                </label>
+                <input
+                  id="new-list-pass"
+                  v-model="form.password"
+                  type="text"
+                  autocomplete="off"
+                  autocapitalize="off"
+                  autocorrect="off"
+                  spellcheck="false"
+                  readonly="readonly"
+                  data-tv-editing="false"
+                  class="tv-input w-full"
+                  placeholder="Sua senha"
+                />
+              </div>
+
+              <div class="pt-2">
+                <button
+                  id="btn-save-new-list"
+                  type="submit"
+                  class="tv-btn tv-btn-primary w-full !py-3 font-semibold flex items-center justify-center gap-2 text-tv-sm"
+                  :disabled="isConnecting"
+                >
+                  <svg
+                    v-if="isConnecting"
+                    class="w-4 h-4 animate-spin text-black"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.25" />
+                    <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
+                  </svg>
+                  <span>{{ isConnecting ? 'Conectando...' : 'Conectar e Salvar Lista' }}</span>
+                </button>
+              </div>
+            </form>
+          </template>
         </div>
       </div>
     </div>

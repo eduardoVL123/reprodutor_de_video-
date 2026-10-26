@@ -351,9 +351,11 @@ export function isNavigable(el) {
   if (rect.width <= 0 || rect.height <= 0) return false
   if (window.getComputedStyle(el).visibility === 'hidden') return false
 
-  // Fora horizontalmente da tela
+  // Fora horizontalmente da tela. Exceção: item de fileira deslizante (HorizontalRail) ou de linha com rolagem
+  // horizontal (`data-scroll-x`), que entra na tela ao receber o foco; sem ela, perto do fim da fileira os
+  // primeiros itens (ou as últimas temporadas) ficavam inalcançáveis.
   if (rect.right <= 0 || rect.left >= window.innerWidth) {
-    return false
+    if (!(el.closest && el.closest('[data-rail-viewport], [data-scroll-x]'))) return false
   }
 
   // Recorte estrito de viewport APENAS para elementos dentro de [data-grid-root]

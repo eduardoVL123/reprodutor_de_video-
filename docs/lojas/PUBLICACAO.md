@@ -11,6 +11,8 @@ Guia do que enviar e do que testar antes. Fontes: [checklist comum Samsung](http
 |---|---|---|
 | Política de privacidade com link público | Preencha data e contato em [`PRIVACY.md`](../../PRIVACY.md); depois do push o link do arquivo no GitHub já serve | falta preencher |
 | Lista de demonstração para o revisor | Publique [`docs/demo/pulse-demo.m3u`](../demo/pulse-demo.m3u) (link "raw" do GitHub) e gere o build com `VITE_DEMO_PLAYLIST_URL` (CI: variável `PULSE_DEMO_PLAYLIST_URL`) | falta publicar |
+| Serviço de pareamento pelo celular (opcional, RFC-016) | Publicar [`server/pair`](../../server/pair/README.md#publicar) com HTTPS (`server/pair/deploy`) e gerar o build com `VITE_PAIR_BASE_URL` (CI: variável `PULSE_PAIR_BASE_URL`); sem isso o build não oferece o pareamento e nada nesta linha se aplica. Antes de enviar, preencha em [`PRIVACY.md`](../../PRIVACY.md) o endereço do serviço e o prazo de registros do provedor de hospedagem | falta |
+| Declarar o serviço de pareamento nos formulários das lojas | Seção 7 | falta |
 | Certificado Samsung | `PULSE_TIZEN_PACKAGE_ID` + perfil de certificado no Tizen Studio | falta |
 | Questionário da LG (App Self Checklist) | Baixe o arquivo oficial no link acima e preencha com a seção 5; sem ele a LG recusa antes do teste | falta |
 | Teste em TV real ou emulador | Roteiro da seção 6 | falta |
@@ -35,6 +37,8 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 >
 > Você é responsável pelas listas que adiciona. O Pulse Player não fornece, hospeda nem vende conteúdo.
 
+*Só em builds com o pareamento (seção 7), acrescente à lista de destaques:* "• Adicione sua lista pelo celular, sem digitar no controle".
+
 **Summary (en):** Video player for your own playlists.
 
 **Description (en):**
@@ -52,6 +56,12 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 > (or enter the demo playlist URL in the first field, user and password empty). It loads royalty-free Blender
 > Foundation films (CC BY) and public test streams. Back on the home screen asks "Sair do Pulse Player?";
 > "Sair" closes the app.
+
+*Só em builds com o pareamento, acrescente:*
+
+> The login screen also shows an optional "Use o seu celular" (use your phone) panel with a QR code: it lets a user
+> send a playlist link from a phone instead of typing it with the remote. You do not need it to test the app: the demo
+> button above works without it, and if that service is unreachable the app keeps working with the on-screen keyboard.
 
 ## 4. Checklist comum da Samsung
 
@@ -94,3 +104,28 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 7. Na tela inicial aperte Voltar: aparece "Sair do Pulse Player?"; "Cancelar" volta, "Sair" fecha.
 8. Volume, mudo e Exit do controle durante o vídeo.
 9. Deixe tocando 1 hora: sem travar nem fechar.
+
+Só em builds com o pareamento (seção 7):
+
+10. Na tela de login, o foco já começa em "Novo código". Do sofá (uns 3 m), escaneie o QR com a câmera de um celular:
+    **se não ler**, aumente o QR (`qrRem` do `PairPanel`) antes de enviar. Repita no Gerenciador de Listas (QR menor).
+11. No celular, cole um link de lista e envie: a TV mostra "Adicionar esta lista?" com o servidor certo; "Adicionar"
+    entra na lista e "Descartar" pede outro código. Confirme que a senha nunca aparece na tela.
+12. Deixe o código vencer (10 min): aparece "O código expirou" e "Gerar novo código" funciona só com o controle.
+13. Tire a TV da internet e abra o login: aparece o erro do pareamento e o login manual continua funcionando.
+
+## 7. Pareamento pelo celular nas lojas (RFC-016 e RFC-017)
+
+Vale só para builds gerados com `VITE_PAIR_BASE_URL` (hospedado no Cloudflare Workers, RFC-017). **As respostas abaixo são uma proposta: confirme na documentação
+atual de cada loja e com o seu jurídico antes de enviar**, porque as regras e os formulários mudam.
+
+| Onde | O que declarar |
+|---|---|
+| Política de privacidade (todas as lojas) | O link público de [`PRIVACY.md`](../../PRIVACY.md) já descreve o serviço; preencha o endereço do serviço e o prazo de registros do provedor de hospedagem (campos entre colchetes). |
+| Google Play, "Segurança dos dados" (Data safety) | O app envia ao serviço, só se o usuário escolher o pareamento, a lista e as credenciais **cifradas de ponta a ponta** (o desenvolvedor não tem a chave) e o IP, só em memória, por até 1 minuto. Não há conta, anúncios nem análise de uso. Confira na ajuda do Google Play como ele trata dado cifrado de ponta a ponta e processamento efêmero antes de marcar "coleta" ou "não coleta". |
+| Samsung Seller Office e LG Seller Lounge | Se o formulário perguntar sobre servidores externos ou coleta de dados, informe o endereço do serviço e que ele é opcional, usado só para o pareamento, sem armazenar dado legível. O revisor não precisa dele (seção 3). |
+| Ficha da loja | Pode citar "adicione sua lista pelo celular" (seção 2). Não prometa conteúdo nem use "IPTV". |
+| Aviso legal do app | Já muda sozinho conforme o build (`src/views/FTUE.vue`); `FTUE_VERSION` foi para 3, então quem aceitou antes vê o aviso de novo. |
+
+Se o serviço sair do ar depois da publicação, o app não quebra (o login manual continua), mas a opção mostra erro:
+mantenha o serviço monitorado e o domínio renovado.

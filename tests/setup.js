@@ -18,4 +18,6 @@ window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve())
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
   vi.resetModules()
+  // Um .env.local de quem desenvolve não pode ligar o pareamento (RFC-016) nos testes que não o pedem.
+  vi.stubEnv('VITE_PAIR_BASE_URL', '')
 })

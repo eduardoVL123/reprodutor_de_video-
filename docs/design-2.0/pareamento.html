@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pulse Player — Pareamento pelo celular (RFC-016)</title>
+<style>
+  :root { --bg:#0B0F0C; --card:#121215; --ink:#f1f5f9; --muted:#8e8e93; --meta:#d4d4d8; --accent:#B8F000; --accent-soft:#CCFF33; --on-accent:#0B0F0C; --line:rgba(255,255,255,.10); --err:#fca5a5 }
+  * { box-sizing:border-box; margin:0; padding:0 }
+  body { background:#1b1b1f; color:var(--ink); font-family:'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; padding:28px; zoom:.7 }
+  h1.page { font-size:24px; font-weight:700; margin:0 0 6px }
+  p.lead { color:#b8b8c0; margin:0 0 6px; font-size:15px; max-width:1100px; line-height:1.5 }
+  .label { font-size:17px; font-weight:700; margin:40px 0 10px; color:#e7e7ea }
+  .label span { color:#9a9aa3; font-weight:400 }
+  .pick { display:inline-block; font-size:12px; font-weight:800; letter-spacing:.06em; color:var(--on-accent); background:var(--accent); border-radius:4px; padding:2px 8px; margin-left:8px; vertical-align:middle }
+  .legend { color:#a1a1aa; font-size:14px; margin-top:10px; max-width:1280px; line-height:1.6 }
+
+  /* Quadro de TV 1280x720 (1080p dividido por 1,5): texto mínimo da TV (20px em 1080p) = ~14px aqui */
+  .tv { width:1280px; height:720px; position:relative; overflow:hidden; background:var(--bg); border-radius:14px; box-shadow:0 30px 80px rgba(0,0,0,.55); font-size:16px; padding:56px 96px }
+  .tv .glow { position:absolute; top:-160px; right:-160px; width:520px; height:520px; border-radius:50%; background:rgba(184,240,0,.08) }
+  .safe { position:absolute; inset:56px 96px; outline:1px dashed rgba(255,255,255,.12); pointer-events:none }
+
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; box-shadow:0 20px 60px rgba(0,0,0,.5) }
+  .eyebrow { display:flex; align-items:center; gap:8px; font-size:14px; letter-spacing:.25em; text-transform:uppercase; color:var(--accent); font-weight:800 }
+  .eyebrow svg { width:24px; height:24px; fill:var(--accent) }
+  h2 { font-size:30px; font-weight:900; letter-spacing:-.01em; color:#fff; margin-top:8px }
+  .sub { font-size:15px; color:#a3a3a3; line-height:1.5; margin-top:6px }
+  .hint { font-size:14px; color:#737373 }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:10px; min-height:44px; padding:0 22px; border-radius:10px; font-weight:700; font-size:16px; background:rgba(255,255,255,.08); border:1px solid var(--line); color:#fff }
+  .btn.primary { background:var(--accent); color:var(--on-accent); border-color:transparent }
+  .btn.wide { width:100% }
+  .btn.focus { outline:3px solid #fff; outline-offset:3px }
+  .input { height:46px; border-radius:10px; background:rgba(255,255,255,.06); border:1px solid var(--line); padding:0 14px; display:flex; align-items:center; color:#737373; font-size:15px }
+  .input.focus { outline:3px solid #fff; outline-offset:2px }
+  .field-label { font-size:14px; color:var(--muted); margin:0 0 6px }
+
+  /* QR: bloco branco com margem de 4 módulos, preto sobre branco (limão não escaneia) */
+  .qr { background:#fff; border-radius:12px; padding:14px; display:inline-block; line-height:0 }
+  .qr svg { display:block }
+  .qr-note { font-size:12px; color:#a1a1aa; margin-top:6px; line-height:1.3 }
+
+  .code { font-family:'Consolas','Courier New',monospace; font-weight:800; letter-spacing:.34em; color:#fff }
+  .url { font-family:'Consolas','Courier New',monospace; color:var(--accent-soft); font-size:18px; font-weight:700 }
+  .timer { font-size:14px; color:var(--meta); display:flex; align-items:center; gap:8px }
+  .dot { width:10px; height:10px; border-radius:50%; background:var(--accent) }
+  .dot.pulse { box-shadow:0 0 0 6px rgba(184,240,0,.2) }
+  .badge { font-size:13px; font-weight:800; letter-spacing:.06em; padding:3px 9px; border-radius:6px; border:1px solid rgba(245,158,11,.4); background:rgba(245,158,11,.15); color:#f59e0b }
+  .alert { border:1px solid rgba(239,68,68,.45); background:rgba(239,68,68,.12); color:var(--err); border-radius:12px; padding:12px 16px; font-size:15px; font-weight:600 }
+  .steps { list-style:none; display:flex; flex-direction:column; gap:12px; margin-top:18px }
+  .steps li { display:flex; gap:14px; align-items:center; font-size:16px; color:#e5e5e5 }
+  .steps b { flex:0 0 auto; width:30px; height:30px; border-radius:50%; background:var(--accent); color:var(--on-accent); display:grid; place-items:center; font-weight:900; font-size:15px }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:28px 28px; width:1280px }
+  .state-frame { width:626px; height:392px; position:relative; border-radius:14px; background:var(--bg); box-shadow:0 20px 50px rgba(0,0,0,.5); padding:20px; overflow:hidden }
+  .state-frame .card { height:100% ; padding:22px 26px; position:relative }
+  .tag { position:absolute; top:10px; right:12px; font-size:12px; color:#a1a1aa }
+
+  /* celular */
+  .phones { display:flex; gap:36px; align-items:flex-start }
+  .phone { width:340px; height:690px; border-radius:36px; background:#0f1511; border:8px solid #2a2a30; box-shadow:0 30px 80px rgba(0,0,0,.55); padding:34px 22px 22px; position:relative; overflow:hidden; color:#fff }
+  .phone:before { content:''; position:absolute; top:10px; left:50%; width:90px; height:8px; margin-left:-45px; border-radius:6px; background:#2a2a30 }
+  .phone h3 { font-size:22px; font-weight:900; margin-top:8px }
+  .phone p { font-size:14px; color:#a3a3a3; line-height:1.5; margin-top:6px }
+  .phone .ta { margin-top:14px; border:1px solid rgba(255,255,255,.18); background:rgba(255,255,255,.05); border-radius:12px; padding:12px; font-size:14px; color:#e5e5e5; min-height:96px; word-break:break-all; line-height:1.4 }
+  .phone .codebox { display:flex; gap:6px; margin-top:14px }
+  .phone .codebox i { flex:1; height:46px; border-radius:10px; border:1px solid rgba(255,255,255,.2); display:grid; place-items:center; font-style:normal; font-family:Consolas,monospace; font-weight:800; font-size:20px }
+  .phone .pbtn { margin-top:18px; height:52px; border-radius:12px; background:var(--accent); color:var(--on-accent); display:grid; place-items:center; font-weight:800; font-size:17px }
+  .phone .ok { width:84px; height:84px; border-radius:50%; background:var(--accent); display:grid; place-items:center; margin:90px auto 0 }
+  .phone .ok svg { width:44px; height:44px; stroke:var(--on-accent); stroke-width:3.5; fill:none }
+  .phone small { display:block; font-size:12px; color:#6b7280; margin-top:10px; line-height:1.4 }
+</style>
+</head>
+<body>
+
+<h1 class="page">Pulse Player — Pareamento pelo celular (RFC-016) · telas para escolher</h1>
+<p class="lead">Quadros em 1280×720 (a TV real é 1920×1080; tudo aqui está na mesma proporção). A linha tracejada marca a margem segura
+(<code>px-24</code>/<code>py-14</code>). O QR é <strong>ilustrativo e não escaneável</strong>. O texto é só uma proposta de redação.
+Em todas as opções o foco é um anel branco, e o teclado do controle continua disponível ("Digitar manualmente").</p>
+<p class="lead"><strong>Minha recomendação: opção B.</strong> Ela dá ao QR o maior tamanho, que importa porque o usuário escaneia do sofá, e
+deixa a tela com uma única tarefa. Quem prefere digitar está a um OK de distância.</p>
+
+<!-- ================== A ================== -->
+<div class="label">Opção A · Login em duas colunas <span>— celular à esquerda, formulário atual compacto à direita</span></div>
+<div class="tv">
+  <div class="glow"></div><div class="safe"></div>
+  <div class="card" style="position:absolute; inset:56px 96px; display:grid; grid-template-columns:1fr 1fr; overflow:hidden">
+    <div style="padding:34px 36px; border-right:1px solid var(--line)">
+      <div class="eyebrow"><svg viewBox="0 0 256 256"><path d="M56 122V64.25A14 14 0 0 1 77 52.12L198 122h-51.4l-9.3 16-30-52-20.8 36zM56 134h37.5l13.8-24 30 52 16.2-28H198L77 203.9A14 14 0 0 1 56 191.75z"/></svg>Pulse Player · Conexão</div>
+      <h2>Use o seu celular</h2>
+      <p class="sub">Escaneie o código, cole o link da lista e pronto. Sem digitar no controle.</p>
+      <div style="display:flex; gap:22px; margin-top:18px; align-items:flex-start">
+        <div><div class="qr" data-qr="170"></div></div>
+        <div>
+          <div class="hint">ou abra no celular</div>
+          <div class="url" style="margin:4px 0 12px">pulse.exemplo/K7M2QP</div>
+          <div class="hint">código</div>
+          <div class="code" style="font-size:30px">K7M2QP</div>
+          <div class="timer" style="margin-top:12px"><span class="dot pulse"></span>Aguardando · válido por 9:42</div>
+        </div>
+      </div>
+      <div style="margin-top:22px"><span class="btn focus">Novo código</span></div>
+    </div>
+    <div style="padding:34px 36px">
+      <div class="eyebrow" style="color:#737373">Ou digite aqui</div>
+      <div style="margin-top:14px">
+        <div class="field-label">Link Curto ou URL do Servidor</div><div class="input">Ex: servidor.com:8080</div>
+        <div class="field-label" style="margin-top:12px">Usuário (opcional para link curto)</div><div class="input">Seu usuário</div>
+        <div class="field-label" style="margin-top:12px">Senha (opcional para link curto)</div><div class="input">Sua senha</div>
+      </div>
+      <div style="margin-top:18px"><span class="btn primary wide">Entrar</span></div>
+    </div>
+  </div>
+</div>
+<div class="legend"><strong>Prós:</strong> tudo visível de uma vez; usuário antigo acha o formulário onde sempre esteve. <strong>Contras:</strong> QR pequeno (~170 px em 720p; no sofá fica no limite); a tela tem dois focos de atenção e o formulário ainda convida a digitar.
+Foco inicial: "Novo código" (ou o campo de URL, se você preferir manter o hábito).</div>
+
+<!-- ================== B ================== -->
+<div class="label">Opção B · Pareamento em destaque, manual atrás de um botão <span class="pick">RECOMENDADA</span></div>
+<div class="tv">
+  <div class="glow"></div><div class="safe"></div>
+  <div class="card" style="position:absolute; inset:56px 96px; padding:34px 44px; display:grid; grid-template-columns:auto 1fr; gap:44px; align-items:center">
+    <div style="text-align:center"><div class="qr" data-qr="330" style="padding:18px"></div></div>
+    <div>
+      <div class="eyebrow"><svg viewBox="0 0 256 256"><path d="M56 122V64.25A14 14 0 0 1 77 52.12L198 122h-51.4l-9.3 16-30-52-20.8 36zM56 134h37.5l13.8-24 30 52 16.2-28H198L77 203.9A14 14 0 0 1 56 191.75z"/></svg>Pulse Player · Conexão</div>
+      <h2 style="font-size:36px">Adicione sua lista pelo celular</h2>
+      <ol class="steps">
+        <li><b>1</b>Aponte a câmera do celular para o código ao lado</li>
+        <li><b>2</b>Cole o link da sua lista e toque em Enviar</li>
+        <li><b>3</b>Confirme aqui na TV</li>
+      </ol>
+      <div style="margin-top:20px; padding-top:16px; border-top:1px solid var(--line)">
+        <div class="hint">Sem câmera? No celular, abra <span class="url" style="font-size:17px">pulse.exemplo</span> e digite</div>
+        <div class="code" style="font-size:44px; margin-top:2px">K7M2QP</div>
+      </div>
+      <div style="display:flex; gap:14px; align-items:center; margin-top:18px">
+        <span class="btn focus">Novo código</span><span class="btn">Digitar manualmente</span>
+        <span class="timer" style="margin-left:auto"><span class="dot pulse"></span>Aguardando · 9:42</span>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="legend"><strong>Prós:</strong> QR grande (330 px em 720p ≈ 500 px em 1080p), uma tarefa só, passo a passo curto; o código digitável fica grande para quem não tem câmera. <strong>Contras:</strong> o formulário manual some atrás de "Digitar manualmente" (um OK a mais para quem sempre digita).
+Foco inicial: "Novo código". Voltar dentro do manual volta para esta tela; Voltar nesta tela segue o comportamento atual do login.</div>
+
+<!-- ================== C ================== -->
+<div class="label">Opção C · Login atual intacto + atalho "Enviar pelo celular" <span>— QR abre num painel por cima</span></div>
+<div class="tv">
+  <div class="glow"></div><div class="safe"></div>
+  <div class="card" style="position:absolute; left:50%; margin-left:-270px; top:44px; width:540px; padding:28px 36px">
+    <div class="eyebrow"><svg viewBox="0 0 256 256"><path d="M56 122V64.25A14 14 0 0 1 77 52.12L198 122h-51.4l-9.3 16-30-52-20.8 36zM56 134h37.5l13.8-24 30 52 16.2-28H198L77 203.9A14 14 0 0 1 56 191.75z"/></svg>Pulse Player · Conexão</div>
+    <h2 style="font-size:28px">Conectar ao servidor</h2>
+    <p class="sub" style="font-size:14px">Informe o endereço do servidor ou a URL de uma playlist M3U.</p>
+    <div style="margin-top:14px"><span class="btn primary wide focus">Enviar pelo celular (sem digitar)</span></div>
+    <div class="hint" style="text-align:center; margin:10px 0">ou digite</div>
+    <div class="field-label">Link Curto ou URL do Servidor</div><div class="input">Ex: servidor.com:8080</div>
+    <div class="field-label" style="margin-top:10px">Usuário (opcional para link curto)</div><div class="input">Seu usuário</div>
+    <div class="field-label" style="margin-top:10px">Senha (opcional para link curto)</div><div class="input">Sua senha</div>
+    <div style="margin-top:14px"><span class="btn wide">Entrar</span></div>
+  </div>
+  <div style="position:absolute; inset:0; background:rgba(0,0,0,.62)"></div>
+  <div class="card" style="position:absolute; left:330px; top:180px; width:620px; height:360px; padding:26px 30px; display:flex; gap:26px; align-items:center; box-shadow:0 30px 90px rgba(0,0,0,.85); border-color:rgba(255,255,255,.22)">
+    <div class="qr" data-qr="230"></div>
+    <div>
+      <h2 style="font-size:24px; margin-top:0">Escaneie com o celular</h2>
+      <div class="hint" style="margin-top:8px">ou abra <span class="url" style="font-size:15px">pulse.exemplo</span> e digite</div>
+      <div class="code" style="font-size:30px">K7M2QP</div>
+      <div class="timer" style="margin-top:8px"><span class="dot pulse"></span>Aguardando · 9:42</div>
+      <div style="display:flex; gap:10px; margin-top:16px"><span class="btn focus" style="padding:0 16px">Novo código</span><span class="btn" style="padding:0 16px">Fechar</span></div>
+    </div>
+  </div>
+</div>
+<div class="legend"><strong>Prós:</strong> menor mudança no login (o formulário continua como está) e o painel é o mesmo componente do Gerenciador de Listas. <strong>Contras:</strong> o "diferencial" fica como um botão a mais; QR mediano (230 px); um passo extra (abrir o painel) antes de ver o código.</div>
+
+<!-- ================== ESTADOS (B) ================== -->
+<div class="label">Estados do painel <span>— mostrados na opção B; valem para qualquer opção escolhida</span></div>
+<div class="grid2">
+  <div class="state-frame"><div class="card">
+    <span class="tag">1 · Aguardando</span>
+    <div class="eyebrow">Pareamento</div>
+    <h2 style="font-size:24px">Aguardando o celular</h2>
+    <div class="sub">A TV recebe sozinha assim que você tocar em Enviar.</div>
+    <div class="code" style="font-size:40px; margin-top:20px">K7M2QP</div>
+    <div class="timer" style="margin-top:12px"><span class="dot pulse"></span>Válido por 9:42</div>
+    <div style="margin-top:22px; display:flex; gap:12px"><span class="btn focus">Novo código</span><span class="btn">Digitar manualmente</span></div>
+  </div></div>
+
+  <div class="state-frame"><div class="card">
+    <span class="tag">2 · Recebido — confirmar</span>
+    <div class="eyebrow">Recebido do celular</div>
+    <h2 style="font-size:24px">Adicionar esta lista?</h2>
+    <div class="sub">Confirme só se foi você quem enviou.</div>
+    <div style="margin-top:16px; border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:rgba(255,255,255,.04)">
+      <div class="hint">Servidor</div><div style="font-size:22px; font-weight:800">servidor.exemplo.com</div>
+      <div style="margin-top:8px; display:flex; gap:10px; align-items:center"><span class="hint">Apelido: Minha lista</span><span class="badge">SEM CRIPTOGRAFIA</span></div>
+    </div>
+    <div style="margin-top:18px; display:flex; gap:12px"><span class="btn primary focus">Adicionar</span><span class="btn">Descartar</span></div>
+  </div></div>
+
+  <div class="state-frame"><div class="card">
+    <span class="tag">3 · Conectando</span>
+    <div class="eyebrow">Pareamento</div>
+    <h2 style="font-size:24px">Conectando…</h2>
+    <div class="sub">Baixando a lista de servidor.exemplo.com. Listas grandes podem demorar um pouco.</div>
+    <div style="margin-top:34px; height:8px; border-radius:6px; background:rgba(255,255,255,.12); overflow:hidden"><div style="width:45%; height:100%; background:var(--accent)"></div></div>
+    <div style="margin-top:36px"><span class="btn">Cancelar</span></div>
+  </div></div>
+
+  <div class="state-frame"><div class="card">
+    <span class="tag">4 · Expirou</span>
+    <div class="eyebrow">Pareamento</div>
+    <h2 style="font-size:24px">O código expirou</h2>
+    <div class="sub">Por segurança o código vale 10 minutos. Gere outro e tente de novo.</div>
+    <div style="margin-top:34px; display:flex; gap:12px"><span class="btn primary focus">Gerar novo código</span><span class="btn">Digitar manualmente</span></div>
+  </div></div>
+
+  <div class="state-frame"><div class="card">
+    <span class="tag">5 · Erro ao conectar na lista</span>
+    <div class="eyebrow">Pareamento</div>
+    <h2 style="font-size:24px">Não deu para abrir a lista</h2>
+    <div class="alert" style="margin-top:14px">Usuário ou senha incorretos recusados pelo servidor.</div>
+    <div class="hint" style="margin-top:8px; font-family:Consolas,monospace; word-break:break-all">Causa técnica: [AUTH_INVALID_CREDENTIALS] Host: http://servidor.exemplo.com</div>
+    <div style="margin-top:18px; display:flex; gap:12px"><span class="btn focus">Enviar de novo</span><span class="btn">Digitar manualmente</span></div>
+  </div></div>
+
+  <div class="state-frame"><div class="card">
+    <span class="tag">6 · Sem internet / servidor de pareamento fora</span>
+    <div class="eyebrow">Pareamento</div>
+    <h2 style="font-size:24px">Não consegui gerar o código</h2>
+    <div class="sub">O serviço de pareamento não respondeu. Você ainda pode digitar o endereço pelo controle.</div>
+    <div style="margin-top:34px; display:flex; gap:12px"><span class="btn focus">Tentar de novo</span><span class="btn primary">Digitar manualmente</span></div>
+  </div></div>
+</div>
+<div class="legend">O estado 2 (confirmação) é a defesa contra alguém que adivinhe o código e tente empurrar uma lista para a sua TV: ele mostra o <strong>host</strong> recebido e nada é importado sem o seu OK.
+O selo "SEM CRIPTOGRAFIA" reaproveita o aviso que já existe no Gerenciador de Listas para endereços <code>http://</code>.</div>
+
+<!-- ================== GERENCIADOR ================== -->
+<div class="label">Gerenciador de Listas · coluna "Adicionar Nova Lista" <span>— o mesmo painel, sem sair do modal (qualquer opção)</span></div>
+<div class="tv" style="background:rgba(0,0,0,.92); padding:36px 64px">
+  <div class="card" style="height:100%; padding:26px 32px; display:flex; flex-direction:column">
+    <div style="display:flex; justify-content:space-between; align-items:center; padding-bottom:14px; border-bottom:1px solid var(--line)">
+      <div><div style="font-size:26px; font-weight:800">Gerenciador de Listas</div><div class="hint">Alterne entre suas listas cadastradas ou adicione um novo servidor ou playlist</div></div>
+      <span class="btn">✕ Fechar</span>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:30px; flex:1; padding-top:18px">
+      <div>
+        <div style="font-size:15px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#d4d4d4">Listas salvas (2)</div>
+        <div style="margin-top:12px; border:1px solid var(--accent); border-radius:12px; padding:14px 16px; background:rgba(255,255,255,.04)"><b>Minha lista</b> <span class="badge" style="color:#10b981; border-color:rgba(16,185,129,.4); background:rgba(16,185,129,.15)">ATIVA</span><div class="hint" style="margin-top:4px">M3U Playlist @ http://servidor.exemplo.com</div></div>
+        <div style="margin-top:10px; border:1px solid var(--line); border-radius:12px; padding:14px 16px; display:flex; justify-content:space-between; align-items:center"><div><b>casa @ outro.exemplo</b><div class="hint" style="margin-top:4px">casa @ http://outro.exemplo</div></div><span class="btn primary" style="min-height:36px; padding:0 14px; font-size:14px">Ativar</span></div>
+      </div>
+      <div style="border-left:1px solid var(--line); padding-left:28px">
+        <div style="font-size:15px; font-weight:800; letter-spacing:.06em; text-transform:uppercase; color:#d4d4d4">Adicionar nova lista</div>
+        <div style="margin-top:12px"><span class="btn primary wide focus">Enviar pelo celular</span></div>
+        <div class="hint" style="text-align:center; margin:8px 0">ou digite</div>
+        <div class="field-label">Link Curto ou URL do Servidor</div><div class="input">Ex: servidor.com:8080</div>
+        <div class="field-label" style="margin-top:10px">Usuário</div><div class="input">Seu usuário</div>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="legend">Ao pressionar "Enviar pelo celular", a coluna da direita é substituída pelo painel de pareamento (QR + código, como na opção B em tamanho menor), com "Voltar" devolvendo o formulário.</div>
+
+<!-- ================== CELULAR ================== -->
+<div class="label">Página do celular <span>— uma tela, sem cadastro, PT-BR (e EN, conforme D4)</span></div>
+<div class="phones">
+  <div class="phone">
+    <h3>Enviar lista para a TV</h3>
+    <p>Código da TV</p>
+    <div class="codebox"><i>K</i><i>7</i><i>M</i><i>2</i><i>Q</i><i>P</i></div>
+    <p style="margin-top:16px">Cole aqui o link da lista (pode colar a mensagem inteira do WhatsApp, o link é achado sozinho)</p>
+    <div class="ta">Sua lista: http://servidor.exemplo.com/get.php?username=…&amp;password=…&amp;type=m3u_plus</div>
+    <div class="pbtn">Enviar para a TV</div>
+    <small>Os dados vão cifrados e só a sua TV consegue abrir. Nada fica guardado depois de alguns minutos.</small>
+  </div>
+  <div class="phone">
+    <h3>Enviado!</h3>
+    <div class="ok"><svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></div>
+    <p style="text-align:center; margin-top:22px; font-size:16px; color:#e5e5e5">Olhe a TV e confirme para adicionar a lista.</p>
+    <small style="text-align:center">Se a TV não mostrar nada em 1 minuto, gere um novo código na TV e envie de novo.</small>
+  </div>
+  <div class="phone">
+    <h3>Código não encontrado</h3>
+    <p>Esse código não existe ou já expirou. Confira as 6 letras na tela da TV (não usamos 0, O, 1, I nem L) ou gere um novo código.</p>
+    <div class="codebox"><i>K</i><i>7</i><i>M</i><i>2</i><i style="border-color:#ef4444">Q</i><i style="border-color:#ef4444">X</i></div>
+    <div class="pbtn" style="margin-top:22px; background:rgba(255,255,255,.1); color:#fff">Tentar de novo</div>
+  </div>
+</div>
+<div class="legend">Se o link colado pedir usuário e senha separados (servidor Xtream), aparecem dois campos opcionais abaixo do link. A validação de verdade (M3U ou Xtream) acontece na TV.</div>
+
+<script>
+/* QR ilustrativo (NÃO escaneável): três marcadores de canto + módulos aleatórios fixos. Só para dimensionar a tela. */
+(function () {
+  var N = 29, seed = 20261025
+  function rnd() { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296 }
+  function finder(x, y) { return x >= 0 && x < 7 && y >= 0 && y < 7 }
+  function isOn(x, y) {
+    var corners = [[0, 0], [N - 7, 0], [0, N - 7]]
+    for (var i = 0; i < corners.length; i++) {
+      var dx = x - corners[i][0], dy = y - corners[i][1]
+      if (finder(dx, dy)) {
+        var edge = dx === 0 || dx === 6 || dy === 0 || dy === 6
+        var core = dx >= 2 && dx <= 4 && dy >= 2 && dy <= 4
+        return edge || core
+      }
+      if (dx >= -1 && dx <= 7 && dy >= -1 && dy <= 7) return false
+    }
+    return rnd() > 0.52
+  }
+  document.querySelectorAll('[data-qr]').forEach(function (el) {
+    var size = parseInt(el.getAttribute('data-qr'), 10), d = ''
+    seed = 20261025
+    for (var y = 0; y < N; y++) for (var x = 0; x < N; x++) if (isOn(x, y)) d += 'M' + x + ' ' + y + 'h1v1h-1z'
+    el.innerHTML = '<svg width="' + size + '" height="' + size + '" viewBox="0 0 ' + N + ' ' + N + '" shape-rendering="crispEdges" role="img" aria-label="QR code ilustrativo"><path d="' + d + '" fill="#000"/></svg>'
+  })
+})()
+</script>
+</body>
+</html>

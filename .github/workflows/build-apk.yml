@@ -40,6 +40,26 @@ jobs:
       - name: Build web
         run: npm run build
 
+  pair-server:
+    name: Servidor de pareamento (Cloudflare Worker)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Validar bundle e configuração do Worker
+        run: npx wrangler deploy --dry-run --config server/pair/wrangler.jsonc
+
   apk:
     name: APK Android
     needs: quality
@@ -72,6 +92,8 @@ jobs:
         env:
           # Lista de demonstração para os revisores (docs/demo). Variável do repositório; vazia = sem o botão.
           VITE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
+          # Serviço de pareamento pelo celular (RFC-016, https sem barra final). Vazia = o app não oferece o pareamento.
+          VITE_PAIR_BASE_URL: ${{ vars.PULSE_PAIR_BASE_URL }}
 
       - name: Sincronizar Capacitor Android
         run: npx cap sync android

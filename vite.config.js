@@ -10,7 +10,10 @@ export default defineConfig({
   base: './',
   plugins: [vue(), devCorsProxy(), tvClassicScript()],
   resolve: {
-    alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
+      'cloudflare:workers': fileURLToPath(new URL('./tests/helpers/cloudflareWorkersStub.js', import.meta.url)),
+    },
   },
   build: {
     // Piso de suporte: Chromium 63 (Samsung Tizen 5.0+ / LG webOS 5+). Aparelhos mais antigos não têm

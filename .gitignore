@@ -12,6 +12,8 @@ node_modules
 dist
 dist-ssr
 *.local
+# Segredos/configuração de produção (ex.: server/pair/deploy/.env); os .env.example continuam versionados
+.env
 
 # Editor directories and files
 .vscode/*
@@ -25,3 +27,4 @@ dist-ssr
 *.sw?
 
 build/
+.wrangler/

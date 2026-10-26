@@ -15,6 +15,8 @@ e é o único responsável por eles (aviso legal no primeiro acesso, `src/views/
 | --- | --- |
 | `npm run dev` | Servidor de desenvolvimento em `http://localhost:5173` (com proxy anti-CORS local) |
 | `npm run mock` | Servidor Xtream falso em `http://localhost:8787` (usuário `teste123`, senha `senha123`; ajustável por `MOCK_*`) |
+| `npm run pair` | Servidor de pareamento em `http://localhost:8788` (Node local, [`server/pair`](server/pair/README.md)) |
+| `npm run pair:dev` | Simulação do Cloudflare Worker em `http://localhost:8788` (RFC-017) |
 | `npm test` | Testes (Vitest) |
 | `npm run lint` | ESLint |
 | `npm run build` | Build web em `dist/` (bundle único para `file://`) |
@@ -41,6 +43,22 @@ margens em WebViews sem suporte (Chromium < 84). Modelos mais antigos que isso n
 O pop-up (Picture-in-Picture) é um plugin nativo do próprio app
 (`android/.../PictureInPicturePlugin.java`): o player liga a entrada automática só enquanto um vídeo está
 tocando; dentro do pop-up os controles somem; fechar o pop-up pausa o vídeo. Não é usado em TVs.
+
+## Adicionar lista pelo celular (pareamento, RFC-016 e RFC-017)
+
+Em vez de digitar a URL da lista no controle remoto, o usuário escaneia um QR code (ou abre um endereço curto) no
+celular, cola o link recebido por WhatsApp/e-mail e confirma na TV. A lista é cifrada no celular e só a TV abre; o
+serviço no meio ([`server/pair`](server/pair/README.md), Cloudflare Workers via [`RFC-017`](docs/rfc/RFC-017-pareamento-cloudflare-workers.md))
+guarda apenas texto cifrado por alguns minutos.
+
+- **Ligar:** defina `VITE_PAIR_BASE_URL` (endereço https do serviço, sem barra final; local: `http://localhost:8788`
+  com `npm run pair`) ao gerar o build. No CI, é a variável do repositório `PULSE_PAIR_BASE_URL`. Como publicar o
+  serviço (Docker + HTTPS automático): [`server/pair/README.md`](server/pair/README.md#publicar). Vazio = o app não mostra essa opção, não contacta nenhum serviço e o login
+  fica só com o teclado do controle.
+- **Privacidade:** com o serviço ligado, o aviso legal (`src/views/FTUE.vue`) e a política ([`PRIVACY.md`](PRIVACY.md))
+  precisam descrevê-lo; o texto do aviso já muda sozinho conforme o build. O endereço do serviço também deve constar
+  nos formulários das lojas ([`docs/lojas/PUBLICACAO.md`](docs/lojas/PUBLICACAO.md), seção 7).
+- **Sem o serviço no ar** o app continua funcionando: a tela mostra o erro e "Digitar manualmente".
 
 ## Publicação
 
@@ -86,12 +104,15 @@ Passo a passo, textos da loja, informações para o revisor, checklist da Samsun
 - `src/utils/spatialNavigation.js` — navegação por controle remoto (D-pad).
 - `android/` — projeto Capacitor (WebView com requisições nativas para evitar CORS).
 - `scripts/` — servidor mock, proxy de desenvolvimento, empacotamento para TVs.
+- `server/pair/` — servidor de pareamento no Cloudflare Workers e página do celular (RFC-016 / RFC-017).
 - `tests/` — Vitest (jsdom + IndexedDB falso).
 
 ## Segurança
 
 - A senha das listas é guardada cifrada (AES-GCM, chave não extraível). Sem WebCrypto, o app cai para texto puro
   (comportamento de último recurso).
+- Pareamento pelo celular: cifra de ponta a ponta (ECDH P-256 + AES-GCM); a chave privada fica só na memória da TV e
+  a TV pede confirmação do servidor recebido antes de importar. Sem WebCrypto, a opção não é oferecida.
 - O APK usa validação TLS padrão do Android; um painel com https inválido é tentado em http (ver `xtreamApi.js`).
 - `usesCleartextTraffic` continua ativo porque servidores de mídia de usuários costumam ser só http.
 - `npm audit --omit=dev` deve ficar sem vulnerabilidades; os avisos restantes estão na cadeia de build do Tailwind 3

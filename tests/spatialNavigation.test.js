@@ -138,8 +138,8 @@ describe('spatialNavigation — teclas de mídia', () => {
   it.each([
     [{ key: 'MediaPlay', keyCode: 415 }, 'play'],
     [{ key: 'MediaPause', keyCode: 19 }, 'pause'],
-    [{ key: ' ', keyCode: 32 }, 'playPause'], // barra de espaço do teclado do PC
     [{ key: 'MediaPlayPause', keyCode: 179 }, 'playPause'],
+    [{ key: ' ', keyCode: 32 }, 'playPause'], // barra de espaço do teclado do PC
     [{ key: 'MediaStop', keyCode: 413 }, 'stop'],
     [{ key: 'MediaRewind', keyCode: 412 }, 'rewind'],
     [{ key: 'MediaFastForward', keyCode: 417 }, 'fastForward'],
@@ -330,5 +330,91 @@ describe('spatialNavigation — Voltar na tela inicial', () => {
 
     expect(ask).toHaveBeenCalledTimes(1)
     expect(exitApp).not.toHaveBeenCalled()
+  })
+})
+
+describe('spatialNavigation — fileira deslizante com itens fora da tela', () => {
+  // Fileira no fim da lista: deslocada para a esquerda, os primeiros episódios ficam fora da tela.
+  const RAIL = `
+    <div data-focus-group="episodes">
+      <div data-rail-viewport>
+        <div data-rail-track data-focus-row="rail-ep">
+          <button id="ep-0" data-rail-index="0">E1</button>
+          <button id="ep-1" data-rail-index="1">E2</button>
+          <button id="ep-2" data-rail-index="2">E3</button>
+          <button id="ep-3" data-rail-index="3">E4</button>
+        </div>
+      </div>
+    </div>
+  `
+  const RAIL_RECTS = {
+    'group:episodes': [0, 300, 1024, 200],
+    'ep-0': [-700, 320, 280, 160],
+    'ep-1': [-400, 320, 280, 160],
+    'ep-2': [-100, 320, 280, 160],
+    'ep-3': [200, 320, 280, 160],
+  }
+
+  it('Esquerda chega no episódio escondido à esquerda (a fileira o traz de volta ao focar)', async () => {
+    layout(RAIL, RAIL_RECTS)
+    nav = await setup()
+    document.getElementById('ep-3').focus()
+
+    left()
+    left()
+
+    expect(document.activeElement.id).toBe('ep-1')
+  })
+
+  it('fora de fileira deslizante, item fora da tela continua ignorado', async () => {
+    layout('<button id="a">A</button><button id="fora">B</button>', { a: [100, 100, 200, 50], fora: [-400, 100, 200, 50] })
+    nav = await setup()
+    document.getElementById('a').focus()
+
+    left()
+
+    expect(document.activeElement.id).toBe('a')
+  })
+})
+
+describe('spatialNavigation — linha com rolagem horizontal (abas de temporada)', () => {
+  it('Direita chega na aba que ainda está fora da tela (série com muitas temporadas)', async () => {
+    layout(
+      `<div data-focus-group="details"><div data-scroll-x data-focus-row="seasons">
+        <button id="t1">T1</button><button id="t2">T2</button><button id="t3">T3</button>
+      </div></div>`,
+      { 'group:details': [0, 0, 1024, 100], t1: [800, 20, 150, 40], t2: [980, 20, 150, 40], t3: [1160, 20, 150, 40] },
+    )
+    nav = await setup()
+    document.getElementById('t2').focus()
+
+    right()
+
+    expect(document.activeElement.id).toBe('t3')
+  })
+})
+
+describe('spatialNavigation — entrar na fileira de episódios', () => {
+  it('Baixo da aba de temporada vai para o episódio ativo (E1), não para o que estiver embaixo', async () => {
+    layout(
+      `<div data-focus-group="details"><button id="tab-8">Temporada 8</button></div>
+       <div data-focus-group="episodes">
+         <button id="ep-0" data-focus-active="true">E1</button><button id="ep-1">E2</button><button id="ep-2">E3</button>
+       </div>`,
+      {
+        'group:details': [0, 0, 1024, 100],
+        'tab-8': [700, 20, 150, 40],
+        'group:episodes': [0, 120, 1024, 200],
+        'ep-0': [20, 140, 280, 160],
+        'ep-1': [320, 140, 280, 160],
+        'ep-2': [640, 140, 280, 160],
+      },
+    )
+    nav = await setup()
+    document.getElementById('tab-8').focus()
+
+    down()
+
+    expect(document.activeElement.id).toBe('ep-0')
   })
 })

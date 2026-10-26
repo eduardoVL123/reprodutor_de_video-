@@ -91,6 +91,12 @@ const seriesResume = computed(() => {
   return hit ? byId.get(String(hit.stream_id)) : null
 })
 
+/** Episódio em que Baixo (vindo das abas) entra: o que está sendo assistido nesta temporada, senão o E1. */
+const activeEpisodeIndex = computed(() => {
+  const resume = seriesResume.value
+  return resume && resume.seasonKey === activeSeasonKey.value ? resume.episodeIndex : 0
+})
+
 const seriesPlayLabel = computed(() => {
   const resume = seriesResume.value
   if (resume) return `Continuar T${resume.seasonNumber}:E${resume.ep.episode_num}`
@@ -498,7 +504,7 @@ onBeforeUnmount(() => {
       <!-- Temporadas em abas e Episódios em Fileira 16:9 (Mockup Detalhes de série) -->
       <div v-else class="px-20 mt-4 shrink-0 space-y-4">
         <!-- Seletor de Temporadas -->
-        <div data-focus-row="series-seasons" class="flex items-center gap-3 overflow-x-auto py-1">
+        <div data-focus-row="series-seasons" data-scroll-x class="flex items-center gap-3 overflow-x-auto py-1">
           <button
             v-for="season in seasons"
             :id="'season-tab-' + season.key"
@@ -525,6 +531,7 @@ onBeforeUnmount(() => {
             v-if="currentEpisodes.length > 0"
             :key="activeSeasonKey"
             :items="currentEpisodes"
+            :active-index="activeEpisodeIndex"
             id-prefix="episode-card"
             :item-key="(ep) => ep.id"
             :gap="1.2"
