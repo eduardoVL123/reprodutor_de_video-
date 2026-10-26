@@ -6,6 +6,7 @@ afterEach(() => {
   if (wrapper) wrapper.unmount()
   wrapper = null
   vi.unstubAllEnvs()
+  vi.doUnmock('@/utils/compat') // o teste de celular não pode vazar para os seguintes
   document.body.innerHTML = ''
 })
 
@@ -63,5 +64,23 @@ describe('Login — digitar menos', () => {
     await flushPromises()
 
     expect(auth.login).toHaveBeenCalledWith({ dns: 'https://exemplo.test/pulse-demo.m3u', username: '', password: '' })
+  })
+})
+
+describe('Login no celular', () => {
+  it('não mostra as dicas de controle remoto da TV (no celular basta tocar no campo)', async () => {
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => true }))
+    await setup()
+
+    expect(wrapper.text()).not.toContain('pressione OK')
+    expect(wrapper.text()).not.toContain('controle remoto da sua TV')
+  })
+
+  it('na TV as dicas continuam', async () => {
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => false }))
+    await setup()
+
+    expect(wrapper.text()).toContain('pressione OK')
+    expect(wrapper.text()).toContain('controle remoto da sua TV')
   })
 })

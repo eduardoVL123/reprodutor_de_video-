@@ -6,12 +6,20 @@ import BrandMark from '@/components/BrandMark.vue'
 import PairPanel from '@/components/PairPanel.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
 import { URL_SNIPPETS, applySnippet } from '@/utils/urlSnippets'
+import { isPhone } from '@/utils/compat'
 
 const router = useRouter()
 const auth = useAuthStore()
 
-/** RFC-016: com o serviço de pareamento configurado, o celular entra à esquerda e o formulário à direita. */
-const pairingOn = isPairingAvailable()
+/** No celular não há controle remoto: some a dica das setas. */
+const onPhone = isPhone()
+
+/**
+ * RFC-016: com o serviço de pareamento configurado, na TV o celular entra à esquerda e o formulário à direita;
+ * no celular o formulário vem primeiro e o pareamento fica embaixo, como opção extra.
+ */
+const pairingOn = isPairingAvailable() && !onPhone
+const pairingBelow = isPairingAvailable() && onPhone
 
 const dns = ref('')
 const username = ref('')
@@ -91,7 +99,8 @@ onBeforeUnmount(() => auth.clearError())
       </div>
 
       <form
-        class="px-14 py-12 pb-[20rem]"
+        class="px-14 py-12"
+        :class="pairingBelow ? '' : 'pb-[20rem]'"
         novalidate
         @submit.prevent="submit"
       >
@@ -107,7 +116,7 @@ onBeforeUnmount(() => auth.clearError())
               Informe o endereço do seu servidor ou a URL de uma playlist M3U.
             </p>
           </template>
-          <p class="mt-2 text-tv-xs text-neutral-500 flex items-center gap-2">
+          <p v-if="!onPhone" class="mt-2 text-tv-xs text-neutral-500 flex items-center gap-2">
             <svg class="w-4 h-4 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="4" width="20" height="16" rx="2" />
               <line x1="6" y1="8" x2="6.01" y2="8" />
@@ -151,7 +160,7 @@ onBeforeUnmount(() => auth.clearError())
               {{ snippet }}
             </button>
           </div>
-          <p class="text-tv-xs text-neutral-500">
+          <p v-if="!onPhone" class="text-tv-xs text-neutral-500">
             Dica: no app de controle remoto da sua TV no celular, dá para digitar com o teclado do celular.
           </p>
 
@@ -237,6 +246,10 @@ onBeforeUnmount(() => auth.clearError())
           Experimentar com vídeos de demonstração
         </button>
       </form>
+
+      <div v-if="pairingBelow" class="px-14 pt-10 pb-12 border-t border-white/10">
+        <PairPanel :qr-rem="12" @done="onPairDone" />
+      </div>
     </div>
   </section>
 </template>

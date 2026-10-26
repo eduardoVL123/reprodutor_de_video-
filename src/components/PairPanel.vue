@@ -3,6 +3,7 @@ import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { usePairing } from '@/composables/usePairing'
 import { qrSvgData } from '@/utils/qrSvg'
 import { formatTime } from '@/utils/formatTime'
+import { isPhone } from '@/utils/compat'
 
 /**
  * Adicionar lista pelo celular (RFC-016): QR + código na TV, confirmação do que chegou e erros.
@@ -21,6 +22,9 @@ const pairing = usePairing()
 const { state, code, pageUrl, displayUrl, secondsLeft, received, error, errorDetail, errorKind } = pairing
 
 const root = ref(null)
+
+/** No celular não há controle remoto e a câmera não lê a própria tela: o endereço vira link para o navegador. */
+const onPhone = isPhone()
 
 const qr = computed(() => {
   if (!pageUrl.value) return null
@@ -74,8 +78,14 @@ onMounted(() => {
   <div ref="root" data-focus-group="pair-panel">
     <!-- Esperando o celular -->
     <template v-if="state === 'waiting' || state === 'starting'">
-      <h2 class="text-tv-lg font-black text-white tracking-tight">Use o seu celular</h2>
-      <p class="mt-2 text-tv-sm text-neutral-400">Escaneie o código, cole o link da lista e pronto. Sem digitar no controle.</p>
+      <h2 class="text-tv-lg font-black text-white tracking-tight">{{ onPhone ? 'Adicionar pelo link' : 'Use o seu celular' }}</h2>
+      <p class="mt-2 text-tv-sm text-neutral-400">
+        {{
+          onPhone
+            ? 'Toque no endereço, cole o link da sua lista no navegador e volte para o app.'
+            : 'Escaneie o código, cole o link da lista e pronto. Sem digitar no controle.'
+        }}
+      </p>
 
       <div class="mt-6 flex items-start" :class="compact ? 'gap-6' : 'gap-8'">
         <svg
@@ -100,8 +110,16 @@ onMounted(() => {
         </div>
 
         <div v-if="code" class="min-w-0">
-          <p class="text-tv-xs text-neutral-500">ou abra no celular</p>
-          <p id="pair-url" class="font-mono text-tv-base font-bold text-tv-accent-soft break-all">{{ displayUrl }}</p>
+          <p class="text-tv-xs text-neutral-500">{{ onPhone ? 'abra no navegador' : 'ou abra no celular' }}</p>
+          <a
+            v-if="onPhone"
+            id="pair-url"
+            :href="pageUrl"
+            target="_blank"
+            rel="noopener"
+            class="tv-focusable block font-mono text-tv-base font-bold text-tv-accent-soft underline break-all"
+          >{{ displayUrl }}</a>
+          <p v-else id="pair-url" class="font-mono text-tv-base font-bold text-tv-accent-soft break-all">{{ displayUrl }}</p>
           <p class="mt-4 text-tv-xs text-neutral-500">código</p>
           <p
             id="pair-code"

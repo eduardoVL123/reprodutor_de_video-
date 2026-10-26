@@ -284,3 +284,27 @@ describe('PairPanel — controle remoto', () => {
     expect(readFileSync('src/components/PairPanel.vue', 'utf8')).not.toMatch(/text-\[0\.\d+rem\]/)
   })
 })
+
+describe('PairPanel no celular', () => {
+  afterEach(() => vi.doUnmock('@/utils/compat'))
+
+  it('o endereço vira link que abre no navegador e o texto não fala em controle remoto', async () => {
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => true }))
+    await mountPanel()
+
+    const link = wrapper.find('a#pair-url')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('https://pulse.test/K7M2QP')
+    expect(link.attributes('target')).toBe('_blank')
+    expect(link.classes()).toContain('tv-focusable')
+    expect(wrapper.text()).not.toContain('controle')
+  })
+
+  it('na TV o endereço continua só para ler', async () => {
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => false }))
+    await mountPanel()
+
+    expect(wrapper.find('a#pair-url').exists()).toBe(false)
+    expect(wrapper.find('#pair-url').text()).toBe('pulse.test/K7M2QP')
+  })
+})

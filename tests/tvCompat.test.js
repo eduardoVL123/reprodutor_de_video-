@@ -84,30 +84,34 @@ describe('detecção de celular', () => {
   const PIXEL = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 Chrome/120.0 Mobile Safari/537.36'
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148'
   const ANDROID_TV = 'Mozilla/5.0 (Linux; Android 11; BRAVIA 4K UR2) AppleWebKit/537.36 Chrome/96.0 Safari/537.36'
+  // APK na TV: o WebView do Android diz "Mobile" até em TV (ex.: Philips com Android TV).
+  const ANDROID_TV_WEBVIEW =
+    'Mozilla/5.0 (Linux; Android 12; 65PUS8807/12; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/120.0 Mobile Safari/537.36'
   const TABLET = 'Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 Chrome/120.0 Safari/537.36'
   const TIZEN = 'Mozilla/5.0 (SMART-TV; LINUX; Tizen 5.0) AppleWebKit/537.36 Chrome/63.0 TV Safari/537.36'
   const WEBOS = 'Mozilla/5.0 (Web0S; Linux/SmartTV) AppleWebKit/537.36 Chrome/68.0 Safari/537.36 WebAppManager'
 
   it.each([
-    [PIXEL, true],
-    [IPHONE, true],
-    [ANDROID_TV, false],
-    [TABLET, false],
-    [TIZEN, false],
-    [WEBOS, false],
-  ])('isPhone(%s) = %s', async (ua, expected) => {
+    [PIXEL, 5, true],
+    [IPHONE, 5, true],
+    [ANDROID_TV_WEBVIEW, 0, false], // diz "Mobile", mas TV não tem tela de toque
+    [ANDROID_TV, 0, false],
+    [TABLET, 10, false],
+    [TIZEN, 0, false],
+    [WEBOS, 0, false],
+  ])('isPhone(%s, %s toques) = %s', async (ua, touchPoints, expected) => {
     const { isPhone } = await import('@/utils/compat')
 
-    expect(isPhone(ua)).toBe(expected)
+    expect(isPhone(ua, touchPoints)).toBe(expected)
   })
 
-  it('marca o <html> com is-phone só em celular', async () => {
+  it('marca o <html> com is-phone só em celular (o APK na TV fica com a escala de TV)', async () => {
     const { applyCompatClasses } = await import('@/utils/compat')
     const phone = document.createElement('html')
     const tv = document.createElement('html')
 
-    applyCompatClasses(phone, () => true, PIXEL)
-    applyCompatClasses(tv, () => true, ANDROID_TV)
+    applyCompatClasses(phone, () => true, PIXEL, 5)
+    applyCompatClasses(tv, () => true, ANDROID_TV_WEBVIEW, 0)
 
     expect(phone.classList.contains('is-phone')).toBe(true)
     expect(tv.classList.contains('is-phone')).toBe(false)

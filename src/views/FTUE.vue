@@ -77,14 +77,15 @@ function onKeyDown(e) {
 
 onMounted(() => {
   window.addEventListener('keydown', onKeyDown)
-  acceptBtn.value?.focus() // foco inicial no botão principal
+  acceptBtn.value?.focus({ preventScroll: true }) // foco no botão principal sem rolar: a leitura começa pelo título
 })
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
 </script>
 
 <template>
+  <!-- Rola quando não cabe (celular deitado): com items-center + overflow-hidden o topo ficava fora de alcance. -->
   <section
-    class="relative w-full h-full flex items-center justify-center overflow-hidden
+    class="relative w-full h-full flex justify-center overflow-y-auto
            bg-tv-deep"
   >
     <div
@@ -92,7 +93,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
       aria-modal="true"
       aria-labelledby="ftue-title"
       aria-describedby="ftue-notice"
-      class="relative w-[96rem] max-w-full rounded-2xl border border-white/10
+      class="relative w-[96rem] max-w-full my-auto rounded-2xl border border-white/10
              bg-[#121215] px-16 py-12 shadow-2xl"
     >
       <header class="flex items-center gap-8 mb-8">

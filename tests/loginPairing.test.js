@@ -10,6 +10,7 @@ afterEach(() => {
   if (wrapper) wrapper.unmount()
   wrapper = null
   vi.unstubAllEnvs()
+  vi.doUnmock('@/utils/compat') // o teste de celular não pode vazar para os seguintes
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
@@ -68,6 +69,18 @@ describe('Login sem o serviço de pareamento configurado', () => {
 })
 
 describe('Login com pareamento (layout A)', () => {
+  it('no celular o formulário vem primeiro e o pareamento fica embaixo, como opção extra', async () => {
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => true }))
+    const { pairingState } = await setup()
+
+    const panel = wrapper.find('[data-focus-group="pair-panel"]')
+    expect(panel.exists()).toBe(true)
+    expect(wrapper.find('form').element.compareDocumentPosition(panel.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.find('h1').text()).toBe('Conectar ao servidor')
+    expect(pairingState.start).toHaveBeenCalledTimes(1)
+    expect(document.activeElement.id).toBe('login-dns')
+  })
+
   it('mostra o painel do celular e o formulário manual lado a lado', async () => {
     const { pairingState } = await setup()
 
