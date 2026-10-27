@@ -13,6 +13,9 @@
   "plugins": {
     "CapacitorHttp": {
       "enabled": false
+    },
+    "SystemBars": {
+      "hidden": true
     }
   }
 }

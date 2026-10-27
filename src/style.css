@@ -142,7 +142,7 @@ video::-webkit-media-controls-start-playback-button {
 
   /* Fileira deslizante (components/ui/HorizontalRail.vue): sobra espaço para o item focado crescer sem corte. */
   .tv-rail {
-    @apply relative overflow-hidden pt-4 pb-6 pl-3 -mt-4 -mb-6 -ml-3;
+    @apply relative overflow-hidden pt-4 pb-6 pl-3 pr-3 -mt-4 -mb-6 -ml-3 -mr-3;
   }
   /* Setas da fileira para o mouse (PC): escondidas até o ponteiro entrar na fileira. */
   .tv-rail-arrow {

@@ -91,9 +91,8 @@ describe('MediaDetailsModal — visual 2.0 e episódios em fileira', () => {
   it('ao trocar de temporada, a fileira de episódios volta para o primeiro episódio', async () => {
     wrapper = await setup({ item: SERIES, section: 'series' })
     await flushPromises()
-    const rect = (width) => () => ({ left: 0, top: 0, width, height: 150, right: width, bottom: 150, x: 0, y: 0 })
-    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(300)
-    wrapper.find('#episode-card-1').element.getBoundingClientRect = rect(280)
+    Object.defineProperty(wrapper.find('[data-rail-track]').element, 'clientWidth', { configurable: true, value: 300 })
+    Object.defineProperty(wrapper.find('#episode-card-1').element, 'offsetWidth', { configurable: true, value: 280 })
     await wrapper.find('#episode-card-1').trigger('focusin')
     expect(wrapper.find('[data-rail-track]').attributes('style')).not.toContain('translateX(0px)')
 

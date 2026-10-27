@@ -41,3 +41,9 @@ describe('Android — endurecimento (verificação estática; o APK é compilado
     expect(publish).not.toContain('app-debug.apk')
   })
 })
+
+describe('Android — tela cheia no celular', () => {
+  it('o plugin SystemBars do Capacitor 8 esconde as barras (sem isso ele mostra a barra de notificações ao abrir)', () => {
+    expect(capacitorConfig.plugins.SystemBars).toMatchObject({ hidden: true })
+  })
+})

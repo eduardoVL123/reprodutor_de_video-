@@ -34,15 +34,34 @@ describe('HorizontalRail — fileira deslizante para o controle remoto', () => {
     wrapper.unmount()
   })
 
-  it('ao focar um item, a fileira desliza para deixá-lo no início', async () => {
+  it('ao focar um item, a fileira desliza para deixá-lo inteiro no início (o zoom do foco não conta)', async () => {
     const wrapper = await setup()
-    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(500)
-    wrapper.findAll('button').forEach((b) => (b.element.getBoundingClientRect = rect(200)))
+    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(524)
+    Object.defineProperty(wrapper.find('[data-rail-track]').element, 'clientWidth', { configurable: true, value: 500 })
+    wrapper.findAll('button').forEach((b) => {
+      b.element.getBoundingClientRect = rect(216) // item focado com scale(1.08): a caixa visual cresce
+      Object.defineProperty(b.element, 'offsetWidth', { configurable: true, value: 200 }) // o layout não
+    })
 
     await wrapper.find('#filmes-3').trigger('focusin')
 
     // 6 itens de 200px + 5 espaços de 1rem (16px) = 1280px; janela 500px; item 3 → 3 × 216 = 648px.
+    // Com a largura do zoom (216) daria 3 × 232 = 696px: o item ficava cortado na borda esquerda.
     expect(wrapper.find('[data-rail-track]').attributes('style')).toContain('translateX(-648px)')
+    wrapper.unmount()
+  })
+
+  it('no último item a fileira para com ele inteiro dentro da área visível, com folga para o zoom do foco', async () => {
+    const wrapper = await setup()
+    // Caixa da fileira = 12px de folga + 500px de conteúdo + 12px de folga; o trilho ocupa só o conteúdo.
+    wrapper.find('[data-rail-viewport]').element.getBoundingClientRect = rect(524)
+    Object.defineProperty(wrapper.find('[data-rail-track]').element, 'clientWidth', { configurable: true, value: 500 })
+    wrapper.findAll('button').forEach((b) => Object.defineProperty(b.element, 'offsetWidth', { configurable: true, value: 200 }))
+
+    await wrapper.find('#filmes-5').trigger('focusin')
+
+    // 1280px de itens − 500px de conteúdo = 780px: o último termina na borda do conteúdo, e a folga mostra o anel.
+    expect(wrapper.find('[data-rail-track]').attributes('style')).toContain('translateX(-780px)')
     wrapper.unmount()
   })
 

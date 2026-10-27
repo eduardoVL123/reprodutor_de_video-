@@ -123,3 +123,25 @@ describe('useVideoEngine (HLS) — buffer secou no meio do canal', () => {
     engine.destroyEngine()
   })
 })
+
+describe('useVideoEngine (HLS) — canal que não abre em nenhum formato', () => {
+  it('o erro final mostra também a causa do formato principal (ex.: HTTP 404), não só a do alternativo', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { useVideoEngine } = await import('@/composables/useVideoEngine')
+    const engine = useVideoEngine()
+    const video = document.createElement('video')
+    video.play = vi.fn(() => Promise.resolve())
+    video.pause = vi.fn()
+
+    await engine.attachAndPlay(video, { ...LIVE, fallbackUrl: 'http://srv.test/live/u/p/9.m3u8' })
+    const hls = instances[instances.length - 1]
+    for (let i = 0; i < 4; i++) {
+      hls.emit(EVENTS.ERROR, { fatal: true, type: 'networkError', details: 'manifestLoadError', response: { code: 404 } })
+    }
+    video.dispatchEvent(new Event('error')) // o alternativo também falha
+
+    expect(engine.error.value).not.toBe('')
+    expect(engine.errorDetail.value).toContain('HTTP 404')
+    engine.destroyEngine()
+  })
+})

@@ -94,6 +94,7 @@ export function useVideoEngine() {
   // Recuperação de travamento no meio da reprodução (rede caiu, servidor parou de enviar)
   let activeUrl = '' // fonte atual do <video> nativo: a reconexão usa o MESMO arquivo
   let usingFallback = false
+  let fallbackCause = '' // por que o formato principal falhou: vai junto no erro final se o alternativo também falhar
   let hasProgressed = false // o tempo já avançou nesta mídia (passou do início)
   let resumePoint = 0 // último instante tocado de verdade: a reconexão volta para cá
   let stallRecoveries = 0
@@ -383,6 +384,7 @@ export function useVideoEngine() {
     teardownMedia()
     activeUrl = ''
     usingFallback = false
+    fallbackCause = ''
     hasProgressed = false
     resumePoint = 0
     stallRecoveries = 0
@@ -422,7 +424,8 @@ export function useVideoEngine() {
     error.value = PLAYBACK_ERROR
     const format = ext || 'mídia'
     const masked = triedUrl ? maskSecrets(triedUrl) : '-'
-    errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}`
+    const before = usingFallback && fallbackCause ? ` | Formato principal: ${fallbackCause}` : ''
+    errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}${before}`
   }
 
   function switchToFallback(desc, my, reason) {
@@ -430,6 +433,7 @@ export function useVideoEngine() {
     console.warn('[player] Tentando formato alternativo após:', reason, maskSecrets(desc.fallbackUrl))
     teardownMedia()
     usingFallback = true
+    fallbackCause = reason
     // Recomeça a barra de carregamento (senão ela ficaria parada em 100%).
     targetProgress = 15
     loadingProgress.value = 0
@@ -581,7 +585,7 @@ export function useVideoEngine() {
       }
 
       if (desc.fallbackUrl) {
-        switchToFallback(desc, my, reason)
+        switchToFallback(desc, my, diagDetail)
       } else {
         fail(my, reason, diagDetail, desc.primaryUrl, desc.containerExtension || 'm3u8')
       }

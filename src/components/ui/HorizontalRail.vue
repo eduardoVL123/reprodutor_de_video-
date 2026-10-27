@@ -107,10 +107,12 @@ function onFocusIn(event) {
   if (!itemEl || !viewportEl.value || isPointerFocus()) return
   offset.value = railOffset({
     index: Number(itemEl.getAttribute('data-rail-index')),
-    itemSize: itemEl.getBoundingClientRect().width,
+    // offsetWidth é a largura de layout: o getBoundingClientRect inclui o zoom do foco (1.08) e o erro somava a cada item.
+    itemSize: itemEl.offsetWidth,
     gap: props.gap * rootFontPx(),
     count: props.items.length,
-    viewport: viewportEl.value.getBoundingClientRect().width,
+    // Só a largura do conteúdo: a folga lateral da fileira (.tv-rail) fica livre para o anel e o zoom do foco.
+    viewport: trackEl.value.clientWidth,
   })
 }
 </script>
