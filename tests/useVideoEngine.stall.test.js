@@ -106,3 +106,28 @@ describe('useVideoEngine — canal ou vídeo que nunca começa', () => {
     engine.destroyEngine()
   })
 })
+
+describe('useVideoEngine — linha do tempo no erro (diagnóstico do celular)', () => {
+  it('o erro de "não começou" traz os eventos do carregamento com os segundos e o estado final do <video>', async () => {
+    vi.useFakeTimers()
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { useVideoEngine } = await import('@/composables/useVideoEngine')
+    const engine = useVideoEngine()
+    const { video } = fakeVideo()
+    await engine.attachAndPlay(video, EPISODE)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    video.dispatchEvent(new Event('loadstart'))
+    video.dispatchEvent(new Event('progress'))
+    await vi.advanceTimersByTimeAsync(2000)
+    video.dispatchEvent(new Event('progress'))
+    await vi.advanceTimersByTimeAsync(40000) // depois disso nada chega, nem no formato alternativo
+
+    const detail = engine.errorDetail.value
+    expect(detail).toMatch(/Linha do tempo: .*loadstart 1s/)
+    expect(detail).toMatch(/progress×2 \(último 3s\)/)
+    expect(detail).toMatch(/alternativo \d+s/)
+    expect(detail).toMatch(/fim \d+s readyState=\d networkState=\d/)
+    engine.destroyEngine()
+  })
+})

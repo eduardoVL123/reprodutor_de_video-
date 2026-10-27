@@ -44,6 +44,9 @@ const STALL_RECOVERY_AFTER_S = 10
 const MAX_STALL_RECOVERIES = 3
 /** Antes do primeiro quadro só vale uma tentativa: o erro aparece em ~25 s (Samsung: resposta em até 30 s). */
 const MAX_STARTUP_RECOVERIES = 1
+/** Eventos do <video> anotados na linha do tempo do erro ('progress' vira só contagem: dispara a cada ~350 ms). */
+const TIMELINE_EVENTS = ['loadstart', 'loadedmetadata', 'canplay', 'playing', 'waiting', 'stalled', 'suspend']
+const MAX_TIMELINE_MARKS = 16
 
 let hlsModulePromise = null
 
@@ -99,6 +102,41 @@ export function useVideoEngine() {
   let resumePoint = 0 // último instante tocado de verdade: a reconexão volta para cá
   let stallRecoveries = 0
   let lastRecoveryAt = -1
+
+  // Linha do tempo do carregamento: vai no texto do erro para diagnosticar aparelhos sem acesso ao console
+  let startedAt = 0
+  let timeline = []
+  let progressCount = 0
+  let lastProgressAt = -1
+
+  function elapsedS() {
+    return Math.round((Date.now() - startedAt) / 1000)
+  }
+
+  function mark(label) {
+    const last = timeline[timeline.length - 1]
+    if (timeline.length >= MAX_TIMELINE_MARKS || (last && last.startsWith(`${label} `))) return
+    timeline.push(`${label} ${elapsedS()}s`)
+  }
+
+  function trackTimeline(my) {
+    TIMELINE_EVENTS.forEach((name) =>
+      addVideoListener(video, name, () => {
+        if (my === token) mark(name)
+      }),
+    )
+    addVideoListener(video, 'progress', () => {
+      if (my !== token) return
+      progressCount++
+      lastProgressAt = elapsedS()
+    })
+  }
+
+  function timelineSummary() {
+    const progress = `progress×${progressCount}${progressCount ? ` (último ${lastProgressAt}s)` : ''}`
+    const state = video ? `readyState=${video.readyState} networkState=${video.networkState}` : ''
+    return `Linha do tempo: ${[...timeline, progress, `fim ${elapsedS()}s ${state}`].join(' · ')}`
+  }
 
   function startProgressTimer() {
     if (progressTimer) return
@@ -262,6 +300,7 @@ export function useVideoEngine() {
       `[player] Reconectando (${stallRecoveries}/${MAX_STALL_RECOVERIES}) em ${Math.round(resumePoint)}s`,
     )
     loadingStage.value = 'Reconectando ao servidor...'
+    mark('reconexão')
     recovering.value = true
     lastRecoveryAt = resumePoint
     if (hls) reloadHls(desc, my)
@@ -418,14 +457,15 @@ export function useVideoEngine() {
   function fail(my, reason, detail, triedUrl, ext) {
     if (my !== token) return
     console.warn('[player] Reprodução falhou:', reason, detail)
-    const eng = engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native') // antes do teardown, que zera engineType
+    const summary = timelineSummary() // antes do teardown, que zera o estado do <video>
+    const eng =engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native') // antes do teardown, que zera engineType
     token++
     teardownMedia()
     error.value = PLAYBACK_ERROR
     const format = ext || 'mídia'
     const masked = triedUrl ? maskSecrets(triedUrl) : '-'
     const before = usingFallback && fallbackCause ? ` | Formato principal: ${fallbackCause}` : ''
-    errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}${before}`
+    errorDetail.value = `[Engine: ${eng}] [Formato: ${format}] ${detail || reason || 'Erro na reprodução'} | URL: ${masked}${before} | ${summary}`
   }
 
   function switchToFallback(desc, my, reason) {
@@ -434,6 +474,7 @@ export function useVideoEngine() {
     teardownMedia()
     usingFallback = true
     fallbackCause = reason
+    mark('alternativo')
     // Recomeça a barra de carregamento (senão ela ficaria parada em 100%).
     targetProgress = 15
     loadingProgress.value = 0
@@ -443,6 +484,7 @@ export function useVideoEngine() {
 
   function startNative(url, desc, my, isFallback) {
     engineType.value = 'native'
+    trackTimeline(my)
     setProgressTarget(20, 'Conectando à transmissão...')
 
     nativeErrorListener = () => {
@@ -592,6 +634,7 @@ export function useVideoEngine() {
     })
 
     if (video) {
+      trackTimeline(my)
       addVideoListener(video, 'loadedmetadata', () => {
         if (my === token) setProgressTarget(65, 'Sincronizando áudio e vídeo...')
       })
@@ -635,6 +678,10 @@ export function useVideoEngine() {
     error.value = ''
     errorDetail.value = ''
     video = videoElement || null
+    startedAt = Date.now()
+    timeline = []
+    progressCount = 0
+    lastProgressAt = -1
     loadingProgress.value = 0
     targetProgress = 15
     loadingStage.value = 'Conectando à transmissão...'
