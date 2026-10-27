@@ -47,3 +47,14 @@ describe('Android — tela cheia no celular', () => {
     expect(capacitorConfig.plugins.SystemBars).toMatchObject({ hidden: true })
   })
 })
+
+describe('Android — app ocupa a tela inteira do celular', () => {
+  it('a página declara viewport-fit=cover: sem isso o SystemBars do Capacitor encolhe o app (margem da câmera e das barras)', () => {
+    expect(read('index.html')).toMatch(/<meta name="viewport" content="[^"]*viewport-fit=cover/)
+    expect(capacitorConfig.plugins.SystemBars).toMatchObject({ initialViewportFitValueHint: 'cover' })
+  })
+
+  it('a janela usa a área ao lado da câmera (Android 9 a 14 deixava uma faixa preta na horizontal)', () => {
+    expect(activity).toContain('LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES')
+  })
+})

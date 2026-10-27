@@ -6,6 +6,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -32,6 +33,12 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(PictureInPicturePlugin.class);
         registerPlugin(CastPlugin.class);
         super.onCreate(savedInstanceState);
+        // Android 9 a 14: na horizontal a janela desviava da câmera e sobrava uma faixa preta (15+ já ocupa).
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            WindowManager.LayoutParams params = getWindow().getAttributes();
+            params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
+            getWindow().setAttributes(params);
+        }
         hideSystemUI();
         setupWebView();
     }
