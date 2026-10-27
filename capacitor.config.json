@@ -16,7 +16,8 @@
     },
     "SystemBars": {
       "hidden": true,
-      "initialViewportFitValueHint": "cover"
+      "initialViewportFitValueHint": "cover",
+      "insetsHandling": "disable"
     }
   }
 }

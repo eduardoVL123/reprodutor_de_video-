@@ -49,12 +49,20 @@ describe('Android — tela cheia no celular', () => {
 })
 
 describe('Android — app ocupa a tela inteira do celular', () => {
-  it('a página declara viewport-fit=cover: sem isso o SystemBars do Capacitor encolhe o app (margem da câmera e das barras)', () => {
+  it('a página declara viewport-fit=cover (desenha também ao lado da câmera)', () => {
     expect(read('index.html')).toMatch(/<meta name="viewport" content="[^"]*viewport-fit=cover/)
     expect(capacitorConfig.plugins.SystemBars).toMatchObject({ initialViewportFitValueHint: 'cover' })
   })
 
   it('a janela usa a área ao lado da câmera (Android 9 a 14 deixava uma faixa preta na horizontal)', () => {
     expect(activity).toContain('LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES')
+  })
+
+  it('o SystemBars não aplica margens: com WebView < 140 (TVs, celulares sem atualização) ele encolhia o app', () => {
+    expect(capacitorConfig.plugins.SystemBars).toMatchObject({ insetsHandling: 'disable' })
+  })
+
+  it('só o teclado reduz a área do app (o que o SystemBars fazia antes de ser desligado)', () => {
+    expect(activity).toMatch(/setOnApplyWindowInsetsListener[\s\S]*WindowInsetsCompat\.Type\.ime\(\)/)
   })
 })

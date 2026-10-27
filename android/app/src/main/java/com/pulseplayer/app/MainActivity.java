@@ -11,6 +11,8 @@ import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
 import com.getcapacitor.Bridge;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
@@ -39,6 +41,7 @@ public class MainActivity extends BridgeActivity {
             params.layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES;
             getWindow().setAttributes(params);
         }
+        keepKeyboardFromCoveringContent();
         hideSystemUI();
         setupWebView();
     }
@@ -234,6 +237,19 @@ public class MainActivity extends BridgeActivity {
             return true;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * O SystemBars do Capacitor fica com insetsHandling "disable": com WebView abaixo da 140 ele punha a margem das
+     * barras e da câmera no app inteiro (o app ficava menor que a tela). Daquilo só o teclado precisa continuar.
+     */
+    private void keepKeyboardFromCoveringContent() {
+        ViewCompat.setOnApplyWindowInsetsListener(getWindow().getDecorView(), (view, insets) -> {
+            boolean keyboardVisible = insets.isVisible(WindowInsetsCompat.Type.ime());
+            int bottom = keyboardVisible ? insets.getInsets(WindowInsetsCompat.Type.ime()).bottom : 0;
+            view.setPadding(0, 0, 0, bottom);
+            return insets;
+        });
     }
 
     private void hideSystemUI() {
