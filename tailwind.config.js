@@ -19,6 +19,11 @@ const flexGapFallback = plugin(({ matchUtilities, theme }) => {
   )
 })
 
+/** `phone:` vale só com `html.is-phone` (src/utils/compat.js): celular pelo User-Agent e toque, nunca pela largura. */
+const phoneVariant = plugin(({ addVariant }) => {
+  addVariant('phone', 'html.is-phone &')
+})
+
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./index.html', './src/**/*.{vue,js}'],
@@ -58,5 +63,5 @@ export default {
       },
     },
   },
-  plugins: [flexGapFallback],
+  plugins: [flexGapFallback, phoneVariant],
 }

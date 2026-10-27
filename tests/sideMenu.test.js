@@ -15,6 +15,15 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('SideMenu — menu inferior só no celular', () => {
+  it('decide pelo html.is-phone (variante phone:), nunca pela largura: janela estreita no PC mantém o menu lateral', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('src/components/SideMenu.vue', 'utf8')
+    expect(source).not.toMatch(/\b(max-)?(sm|md|lg|xl):/)
+    expect(source).toContain('phone:flex-row')
+  })
+})
+
 describe('SideMenu — menu lateral recolhido (layout B)', () => {
   it('tem os destinos na ordem do mockup, cada um com id único', async () => {
     wrapper = await setup()
