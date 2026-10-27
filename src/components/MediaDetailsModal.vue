@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { usePlayerStore } from '@/stores/playerStore'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
 import { pushFocusScope, registerBackHandler } from '@/utils/spatialNavigation'
-import { formatTime } from '@/utils/formatTime'
+import { formatTime, durationLabel } from '@/utils/formatTime'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import { episodesOf as episodesOfSeries, seasonsOf, episodeTitle, buildSeriesPlaylist } from '@/utils/seriesPlaylist'
 import BrandMark from '@/components/BrandMark.vue'
@@ -110,7 +110,7 @@ const episodeImage = (ep) => (ep.info && ep.info.movie_image) || info.value.post
 function episodeDuration(ep) {
   const secs = Number(ep.info && ep.info.duration_secs) || 0
   if (secs > 0) return `${Math.round(secs / 60)} min`
-  return (ep.info && ep.info.duration) || ''
+  return durationLabel(ep.info && ep.info.duration)
 }
 
 function episodeProgressPct(ep) {
@@ -504,7 +504,8 @@ onBeforeUnmount(() => {
       <!-- Temporadas em abas e Episódios em Fileira 16:9 (Mockup Detalhes de série) -->
       <div v-else class="px-20 mt-4 shrink-0 space-y-4">
         <!-- Seletor de Temporadas -->
-        <div data-focus-row="series-seasons" data-scroll-x class="flex items-center gap-3 overflow-x-auto py-1">
+        <!-- py-2/px-2: a faixa rola de lado e cortaria o anel do foco (ring + offset) em cima e embaixo -->
+        <div data-focus-row="series-seasons" data-scroll-x class="flex items-center gap-3 overflow-x-auto py-2 px-2 -mx-2">
           <button
             v-for="season in seasons"
             :id="'season-tab-' + season.key"

@@ -3,8 +3,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 let recovering = null
 
-async function setup({ withNavigation = false } = {}) {
+async function setup({ withNavigation = false, castAvailable = false } = {}) {
   const attachAndPlay = vi.fn(async () => {})
+  const destroyEngine = vi.fn()
   vi.doMock('@/composables/useVideoEngine', async () => {
     const { ref } = await import('vue')
     recovering = ref(false)
@@ -17,10 +18,25 @@ async function setup({ withNavigation = false } = {}) {
         loadingStage: ref(''),
         recovering,
         attachAndPlay,
-        destroyEngine: vi.fn(),
+        destroyEngine,
       }),
     }
   })
+  const cast = {
+    castMediaFor: (stream, item, section) => ({ url: stream.primaryUrl, title: item.name, live: section === 'live' }),
+    isCastAvailable: vi.fn(async () => castAvailable),
+    requestCastSession: vi.fn(async () => 'TV da sala'),
+    loadOnCast: vi.fn(async () => {}),
+    playOnCast: vi.fn(async () => {}),
+    pauseOnCast: vi.fn(async () => {}),
+    stopCasting: vi.fn(async () => {}),
+    statusCallback: null,
+  }
+  cast.onCastMediaStatus = vi.fn((cb) => {
+    cast.statusCallback = cb
+    return vi.fn()
+  })
+  vi.doMock('@/services/cast', () => cast)
   const platform = {
     exitApp: vi.fn(),
     setPictureInPictureEnabled: vi.fn(async () => {}),
@@ -44,7 +60,7 @@ async function setup({ withNavigation = false } = {}) {
   const { default: VideoPlayerOverlay } = await import('@/components/VideoPlayerOverlay.vue')
   const { usePlayerStore } = await import('@/stores/playerStore')
   const wrapper = mount(VideoPlayerOverlay, { global: { plugins: [pinia] }, attachTo: document.body })
-  return { wrapper, player: usePlayerStore(), attachAndPlay, platform }
+  return { wrapper, player: usePlayerStore(), attachAndPlay, destroyEngine, platform, cast }
 }
 
 const MOVIE = { stream_id: 1, name: 'Filme', section: 'vod', directUrl: 'http://srv.test/a.mp4' }
@@ -447,6 +463,118 @@ describe('VideoPlayerOverlay — mouse, toque e teclado do PC', () => {
     expect(el.pause).toHaveBeenCalledTimes(1)
     pressKey(' ', 32)
     expect(el.play).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
+
+describe('VideoPlayerOverlay — transmitir para a TV (Chromecast)', () => {
+  const EPISODES = [1, 2].map((n) => ({ ...MOVIE, stream_id: n, name: `Ep ${n}`, directUrl: `http://srv.test/e${n}.mp4` }))
+  const click = (id) => document.getElementById(id).dispatchEvent(new MouseEvent('click', { bubbles: true }))
+
+  async function castFirstEpisode() {
+    const ctx = await setup({ castAvailable: true })
+    ctx.player.playPlaylist({ items: EPISODES, startIndex: 0, section: 'vod' })
+    await flushPromises()
+    click('osd-cast')
+    await flushPromises()
+    return ctx
+  }
+
+  it('sem Google Cast no aparelho o botão não aparece', async () => {
+    const { wrapper, player } = await setup()
+    player.playItem(MOVIE)
+    await flushPromises()
+
+    expect(document.getElementById('osd-cast')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('transmitir desliga o vídeo do celular e manda o item para a TV escolhida', async () => {
+    const { wrapper, destroyEngine, cast } = await castFirstEpisode()
+
+    expect(destroyEngine).toHaveBeenCalled()
+    expect(cast.loadOnCast).toHaveBeenCalledWith(expect.objectContaining({ url: 'http://srv.test/e1.mp4', title: 'Ep 1' }))
+    expect(document.getElementById('cast-layer').textContent).toContain('Transmitindo para TV da sala')
+    wrapper.unmount()
+  })
+
+  it('cancelar a escolha da TV deixa o vídeo tocando no celular', async () => {
+    const ctx = await setup({ castAvailable: true })
+    ctx.cast.requestCastSession.mockRejectedValueOnce(new Error('cancelled'))
+    ctx.player.playItem(MOVIE)
+    await flushPromises()
+    click('osd-cast')
+    await flushPromises()
+
+    expect(ctx.destroyEngine).not.toHaveBeenCalled()
+    expect(document.getElementById('cast-layer')).toBeNull()
+    ctx.wrapper.unmount()
+  })
+
+  it('play/pausa controla o vídeo na TV conforme o estado dela', async () => {
+    const { wrapper, cast } = await castFirstEpisode()
+    cast.statusCallback({ state: 'playing' })
+    await flushPromises()
+    click('cast-play-pause')
+    expect(cast.pauseOnCast).toHaveBeenCalled()
+
+    cast.statusCallback({ state: 'paused' })
+    await flushPromises()
+    click('cast-play-pause')
+    expect(cast.playOnCast).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('trocar de item manda o próximo para a TV, sem tocar no celular', async () => {
+    const { wrapper, player, cast, attachAndPlay } = await castFirstEpisode()
+    attachAndPlay.mockClear()
+
+    await player.next()
+    await flushPromises()
+
+    expect(cast.loadOnCast).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Ep 2' }))
+    expect(attachAndPlay).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('se a TV não abrir o vídeo, avisa e oferece voltar ao celular', async () => {
+    const ctx = await setup({ castAvailable: true })
+    ctx.cast.loadOnCast.mockRejectedValueOnce(new Error('A TV não conseguiu abrir o vídeo (código 2100).'))
+    ctx.player.playItem(MOVIE)
+    await flushPromises()
+    click('osd-cast')
+    await flushPromises()
+
+    expect(document.getElementById('cast-layer').textContent).toContain('A TV não conseguiu abrir este vídeo')
+    ctx.attachAndPlay.mockClear()
+    click('cast-stop')
+    await flushPromises()
+
+    expect(ctx.cast.stopCasting).toHaveBeenCalled()
+    expect(document.getElementById('cast-layer')).toBeNull()
+    expect(ctx.attachAndPlay).toHaveBeenCalledTimes(1)
+    ctx.wrapper.unmount()
+  })
+
+  it('transmissão encerrada pela TV ou pela notificação volta ao celular', async () => {
+    const { wrapper, cast, attachAndPlay } = await castFirstEpisode()
+    attachAndPlay.mockClear()
+
+    cast.statusCallback({ state: 'ended' })
+    await flushPromises()
+
+    expect(document.getElementById('cast-layer')).toBeNull()
+    expect(attachAndPlay).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  it('fechar o player encerra a transmissão', async () => {
+    const { wrapper, cast } = await castFirstEpisode()
+
+    click('cast-close')
+    await flushPromises()
+
+    expect(cast.stopCasting).toHaveBeenCalled()
     wrapper.unmount()
   })
 })

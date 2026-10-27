@@ -48,6 +48,11 @@
 
         </activity>
 
+        <!-- Transmitir para o Chromecast (CastPlugin.java): receptor padrão do Google. -->
+        <meta-data
+            android:name="com.google.android.gms.cast.framework.OPTIONS_PROVIDER_CLASS_NAME"
+            android:value="com.pulseplayer.app.CastOptionsProvider" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

@@ -62,7 +62,7 @@ export async function setPictureInPictureEnabled(enabled) {
 }
 
 /** Listener nativo (registro assíncrono) com cancelamento síncrono. */
-function cancellable(handlePromise) {
+export function cancellable(handlePromise) {
   let handle = null
   let cancelled = false
   handlePromise

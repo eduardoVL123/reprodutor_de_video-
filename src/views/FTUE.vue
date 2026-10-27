@@ -11,10 +11,12 @@ const LEGAL_NOTICE =
   'Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo. O usuário é o único responsável pelos links inseridos.'
 
 // A promessa de privacidade tem que ser verdadeira para o build: só cita o pareamento (RFC-016) se ele existir nele.
+const CAST_TEXT =
+  'No celular, se você transmitir para uma TV (Chromecast), o endereço do vídeo, com usuário e senha, vai para a TV escolhida na sua rede, que busca o vídeo direto no servidor.'
 const PRIVACY_TEXT =
-  'Não coletamos nem enviamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista.'
+  'Não coletamos nem enviamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista. ' + CAST_TEXT
 const PRIVACY_TEXT_WITH_PAIRING =
-  'Não coletamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você adicionar a lista pelo celular, ela passa cifrada, por alguns minutos, pelo serviço de pareamento do desenvolvedor, que não consegue ler esse conteúdo e o apaga em seguida. Capas e logotipos vêm dos endereços da sua lista.'
+  'Não coletamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você adicionar a lista pelo celular, ela passa cifrada, por alguns minutos, pelo serviço de pareamento do desenvolvedor, que não consegue ler esse conteúdo e o apaga em seguida. Capas e logotipos vêm dos endereços da sua lista. ' + CAST_TEXT
 
 const terms = [
   {

@@ -42,3 +42,65 @@ describe('CatalogBrowser — foco ao abrir a aba', () => {
     expect(document.activeElement.id).toBe('cat-0')
   })
 })
+
+const DAY = 86400
+const now = () => Math.floor(Date.now() / 1000)
+
+async function setupRows({ section = 'vod', items = [] } = {}) {
+  const { createPinia, setActivePinia } = await import('pinia')
+  const pinia = createPinia()
+  setActivePinia(pinia)
+  const { useCatalogStore } = await import('@/stores/catalogStore')
+  const catalog = useCatalogStore()
+  catalog.loadSection = vi.fn(async () => {})
+  catalog.getItems = vi.fn(async (_section, _cat, start, count) => items.slice(start, start + count))
+  catalog.countFor = vi.fn(() => 500)
+  catalog.categories = { live: CATEGORIES, vod: CATEGORIES, series: CATEGORIES }
+  catalog.status[section].state = 'ready'
+
+  const { default: CatalogBrowser } = await import('@/components/CatalogBrowser.vue')
+  const w = mount(CatalogBrowser, { props: { section }, global: { plugins: [pinia] }, attachTo: document.body })
+  await flushPromises()
+  return w
+}
+
+describe('CatalogBrowser — fileiras por categoria', () => {
+  it('não inventa programação nem progresso nos canais (o app não tem guia de programação)', async () => {
+    wrapper = await setupRows({ section: 'live', items: [{ stream_id: 9, name: 'Canal 9' }] })
+
+    expect(wrapper.text()).toContain('Canal 9')
+    expect(wrapper.text()).not.toContain('Até 22:00')
+    expect(wrapper.text()).not.toContain('Programação a seguir')
+  })
+
+  it('selo NOVO só no que entrou na lista nos últimos dias (dado do servidor), nunca em tudo', async () => {
+    wrapper = await setupRows({
+      items: [
+        { stream_id: 1, name: 'Recente', added: String(now() - DAY) },
+        { stream_id: 2, name: 'Antigo', added: '1700000000' },
+        { stream_id: 3, name: 'Sem data' },
+      ],
+    })
+
+    expect(wrapper.find('#item-7-0').text()).toContain('NOVO')
+    expect(wrapper.find('#item-7-1').text()).not.toContain('NOVO')
+    expect(wrapper.find('#item-7-2').text()).not.toContain('NOVO')
+  })
+
+  it('categorias e fileiras rolam de lado com o controle (data-scroll-x) e "Ver todos" é focável com id', async () => {
+    wrapper = await setupRows({ items: [{ stream_id: 1, name: 'Filme' }] })
+
+    expect(wrapper.find('[data-focus-row="categories"]').attributes()).toHaveProperty('data-scroll-x')
+    expect(wrapper.find('[data-focus-row="rail-7"]').attributes()).toHaveProperty('data-scroll-x')
+    expect(wrapper.find('#see-all-7').classes()).toContain('tv-focusable')
+  })
+
+  it('"Ver todos" abre a categoria inteira em grade, não só os primeiros itens', async () => {
+    wrapper = await setupRows({ items: [{ stream_id: 1, name: 'Filme' }] })
+
+    await wrapper.find('#see-all-7').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-grid-root]').attributes('data-grid-total')).toBe('500')
+  })
+})

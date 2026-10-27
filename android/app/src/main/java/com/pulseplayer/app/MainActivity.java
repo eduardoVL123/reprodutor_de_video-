@@ -30,6 +30,7 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         // Plugins do próprio app precisam ser registrados antes do Capacitor iniciar.
         registerPlugin(PictureInPicturePlugin.class);
+        registerPlugin(CastPlugin.class);
         super.onCreate(savedInstanceState);
         hideSystemUI();
         setupWebView();

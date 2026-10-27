@@ -98,3 +98,16 @@ describe('celular', () => {
     }
   })
 })
+
+describe('TVs antigas (Chromium 63)', () => {
+  it('nenhuma tela usa aspect-ratio (aspect-video, aspect-[2/3]...): o card ficaria sem altura', async () => {
+    const { readdirSync } = await import('node:fs')
+    const vueFiles = (dir) =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? vueFiles(`${dir}/${e.name}`) : e.name.endsWith('.vue') ? [`${dir}/${e.name}`] : [],
+      )
+    const offenders = vueFiles('src').filter((f) => /\baspect-(video|square|auto|\[)/.test(readFileSync(f, 'utf8')))
+
+    expect(offenders).toEqual([])
+  })
+})

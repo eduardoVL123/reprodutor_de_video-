@@ -8,3 +8,8 @@ export function formatTime(sec) {
   const pad = (n) => String(n).padStart(2, '0')
   return h > 0 ? `${pad(h)}:${pad(m)}:${pad(remS)}` : `${pad(m)}:${pad(remS)}`
 }
+
+/** Duração em texto vinda do servidor; só zeros ("00:00:00") é o "não sei" dele e vira ''. */
+export function durationLabel(text) {
+  return /[1-9]/.test(String(text || '')) ? String(text) : ''
+}

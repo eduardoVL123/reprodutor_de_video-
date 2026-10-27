@@ -17,7 +17,7 @@ export const STORAGE_KEYS = Object.freeze({
 })
 
 /** Sobe quando o Aviso Legal / Privacidade muda: quem aceitou uma versão anterior vê o aviso de novo. */
-export const FTUE_VERSION = 3 // 3: o aviso passa a falar do pareamento pelo celular (RFC-016)
+export const FTUE_VERSION = 4 // 3: pareamento pelo celular (RFC-016); 4: transmitir para a TV (Chromecast)
 
 export const storage = {
   get: (key) => store.getItem(key),

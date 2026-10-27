@@ -513,8 +513,8 @@ onBeforeUnmount(() => {
       @switch-profile="openProfileGate"
     />
 
-    <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem) -->
-    <main class="flex-1 min-w-0 h-full pl-[7rem] flex flex-col overflow-hidden relative">
+    <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem no desktop, e rodapé no mobile) -->
+    <main class="flex-1 min-w-0 h-full pl-0 md:pl-[7rem] pb-16 md:pb-0 flex flex-col overflow-hidden relative">
       <!-- Aba TV ao Vivo -->
       <div v-if="activeTab === 'live'" class="w-full h-full">
         <CatalogBrowser section="live" />

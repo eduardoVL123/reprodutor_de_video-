@@ -20,6 +20,7 @@
  */
 
 import { canUseDevProxy, devProxyUrl, maskSecrets } from '@/services/netEnv'
+import { durationLabel } from '@/utils/formatTime'
 
 export const GENERIC_CONNECTION_ERROR =
   'Falha ao conectar. Verifique seus dados ou a conexão com a internet.'
@@ -377,7 +378,7 @@ export function normalizeVodInfo(data, item) {
     poster: info.movie_image || info.cover_big || info.cover || cover,
     rating: info.rating || base.rating || '',
     year: String(info.releasedate || info.releaseDate || '').slice(0, 4),
-    duration: info.duration || formatDurationSecs(info.duration_secs),
+    duration: durationLabel(info.duration) || formatDurationSecs(info.duration_secs),
     genre: info.genre || base.genre || '',
     cast: info.cast || info.actors || '',
     director: info.director || '',

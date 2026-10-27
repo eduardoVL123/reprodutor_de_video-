@@ -7,6 +7,16 @@ import { formatTime } from '@/utils/formatTime'
 import { useVideoEngine, PLAYBACK_ERROR } from '@/composables/useVideoEngine'
 import { registerBackHandler, registerKeyHandler, focusFirstIn, pushFocusScope } from '@/utils/spatialNavigation'
 import { onAppBackground, onPictureInPictureChange, setPictureInPictureEnabled } from '@/services/platform'
+import {
+  castMediaFor,
+  isCastAvailable,
+  requestCastSession,
+  loadOnCast,
+  playOnCast,
+  pauseOnCast,
+  stopCasting,
+  onCastMediaStatus,
+} from '@/services/cast'
 import { parseSeriesTitle } from '@/utils/seriesTitle'
 import GridView from '@/components/GridView.vue'
 
@@ -32,6 +42,15 @@ const isPaused = ref(false)
 const isBuffering = ref(false)
 const isInPip = ref(false) // app no pop-up (Picture-in-Picture) do Android: só o vídeo aparece
 const lastFocusedControlId = ref('osd-play-pause')
+
+// Transmitir para a TV (Chromecast): enquanto transmite, o vídeo do celular fica desligado
+const CAST_ERROR =
+  'A TV não conseguiu abrir este vídeo. Alguns servidores não permitem transmitir para a TV; assista no celular ou tente outro item.'
+const castAvailable = ref(false)
+const castDevice = ref('') // nome da TV conectada; vazio = vídeo no celular
+const castState = ref('buffering')
+const castError = ref('')
+const isCasting = computed(() => !!castDevice.value)
 
 function onControlsFocusIn(e) {
   if (e.target && e.target.id) {
@@ -64,6 +83,8 @@ let popAutoAdvanceScope = null
 let popErrorScope = null
 let cleanupBackground = null
 let cleanupPip = null
+let cleanupCast = null
+let popCastScope = null
 
 const isLive = computed(() => player.mode === 'live' || player.currentSection === 'live')
 /** Pop-up só com vídeo de fato tocando: pausado, carregando, com erro ou em menu, sair do app não abre janela. */
@@ -153,21 +174,88 @@ async function startPlayback() {
     return
   }
 
-  const stream = buildStreamUrl({
+  await attachAndPlay(videoRef.value, currentStream())
+}
+
+function currentStream() {
+  return buildStreamUrl({
     apiBase: auth.apiBase,
     credentials: auth.credentials,
     section: player.currentSection,
-    item,
+    item: player.currentItem,
   })
+}
 
-  await attachAndPlay(videoRef.value, stream)
+// Transmitir para a TV
+async function startCasting() {
+  let device
+  try {
+    device = await requestCastSession()
+  } catch (_) {
+    resetOsdTimer() // escolha cancelada: o vídeo segue no celular
+    return
+  }
+  saveCurrentProgress()
+  const position = isLive.value ? 0 : currentTime.value
+  // Muitas contas aceitam uma conexão só: o celular solta o vídeo antes de a TV pedir o seu.
+  destroyEngine()
+  hasRenderedFrame.value = false
+  isBuffering.value = false
+  castDevice.value = device || 'TV'
+  sendToCast(position)
+}
+
+async function sendToCast(position = 0) {
+  cancelAutoAdvance()
+  playingItem = player.currentItem
+  lastPlayedToken = player.playToken
+  const token = player.playToken
+  castError.value = ''
+  castState.value = 'buffering'
+  const media = castMediaFor(currentStream(), player.currentItem, player.currentSection)
+  try {
+    if (!media) throw new Error('sem stream')
+    await loadOnCast({ ...media, position })
+  } catch (_) {
+    if (token === player.playToken && isCasting.value) castError.value = CAST_ERROR
+  }
+}
+
+function endCasting() {
+  if (!isCasting.value) return
+  stopCasting()
+  castDevice.value = ''
+}
+
+function stopCastingAndResume() {
+  endCasting()
+  retryPlayback()
+}
+
+function toggleCastPlayback() {
+  if (castState.value === 'playing' || castState.value === 'buffering') pauseOnCast()
+  else playOnCast()
+}
+
+function onCastStatus({ state }) {
+  if (!isCasting.value) return
+  if (state === 'ended') {
+    castDevice.value = '' // encerrada pela TV ou pela notificação: o vídeo volta ao celular
+    retryPlayback()
+  } else if (state === 'error') {
+    castError.value = CAST_ERROR
+  } else {
+    castState.value = state
+  }
 }
 
 // Watchers
 watch(
   () => player.playToken,
   () => {
-    if (player.isOpen) {
+    if (player.isOpen && isCasting.value) {
+      sendToCast()
+    } else if (player.isOpen) {
       startPlayback()
       // Zapping com o menu oculto: o botão focado sumiu; o foco volta para os controles.
       nextTick(() => {
@@ -197,6 +285,7 @@ watch(
         focusOsdControl()
       })
     } else {
+      endCasting()
       lastPlayedToken = -1
       hasRenderedFrame.value = false
       isBuffering.value = false
@@ -254,6 +343,20 @@ watch(autoAdvance, (val) => {
       popAutoAdvanceScope()
       popAutoAdvanceScope = null
     }
+  }
+})
+
+watch(isCasting, (casting) => {
+  if (popCastScope) {
+    popCastScope()
+    popCastScope = null
+  }
+  if (casting) {
+    nextTick(() => {
+      const el = document.getElementById('cast-layer')
+      if (el) popCastScope = pushFocusScope(el)
+      document.getElementById('cast-play-pause')?.focus()
+    })
   }
 })
 
@@ -596,13 +699,19 @@ onMounted(() => {
       return true
     }
 
-    // 3. OSD visível -> oculta OSD imediatamente
+    // 3. Transmitindo para a TV -> fecha o player (e a transmissão)
+    if (isCasting.value) {
+      closePlayer()
+      return true
+    }
+
+    // 4. OSD visível -> oculta OSD imediatamente
     if (isOsdVisible.value) {
       isOsdVisible.value = false
       return true
     }
 
-    // 4. OSD já oculto -> fecha o player e restaura foco
+    // 5. OSD já oculto -> fecha o player e restaura foco
     closePlayer()
     return true
   })
@@ -693,9 +802,16 @@ onMounted(() => {
       resetOsdTimer()
     }
   })
+  isCastAvailable().then((available) => {
+    castAvailable.value = available
+  })
+  cleanupCast = onCastMediaStatus(onCastStatus)
 })
 
 onBeforeUnmount(() => {
+  endCasting()
+  if (cleanupCast) cleanupCast()
+  if (popCastScope) popCastScope()
   if (videoRef.value) {
     saveCurrentProgress()
   }
@@ -752,7 +868,7 @@ onBeforeUnmount(() => {
       leave-to-class="opacity-0"
     >
       <div
-        v-if="(isBuffering || !hasRenderedFrame) && !engineError"
+        v-if="(isBuffering || !hasRenderedFrame) && !engineError && !isCasting"
         class="absolute inset-0 z-20 flex flex-col items-center justify-center select-none pointer-events-none"
         :class="!hasRenderedFrame ? 'bg-black' : 'bg-black/40'"
         role="status"
@@ -824,6 +940,75 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- Transmitindo para a TV (Chromecast): o vídeo do celular fica desligado -->
+    <div
+      v-if="isCasting"
+      id="cast-layer"
+      class="absolute inset-0 z-30 flex flex-col items-center justify-center bg-tv-deep px-24 py-14 text-center"
+      role="status"
+    >
+      <svg class="w-16 h-16 mb-4 fill-current text-tv-accent" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z" />
+      </svg>
+      <p class="text-tv-sm text-tv-meta font-medium mb-1">Transmitindo para {{ castDevice }}</p>
+      <h2 class="text-tv-2xl font-black text-white max-w-[65rem] truncate leading-tight">
+        {{ player.currentItem?.name }}
+      </h2>
+      <p v-if="castError" class="mt-4 max-w-[45rem] text-tv-base text-red-300 leading-relaxed">{{ castError }}</p>
+
+      <div class="flex items-center gap-4 mt-8">
+        <button
+          id="cast-prev"
+          type="button"
+          class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
+          :disabled="!player.hasPrev"
+          title="Anterior"
+          @click="player.prev()"
+        >
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <polygon points="19 20 9 12 19 4 19 20" />
+            <line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5" />
+          </svg>
+        </button>
+        <button
+          v-if="!castError"
+          id="cast-play-pause"
+          type="button"
+          class="tv-btn !w-[4.75rem] !h-[4.75rem] !p-0 rounded-full bg-white text-black hover:bg-neutral-200 flex items-center justify-center shadow-xl"
+          :title="castState === 'paused' || castState === 'idle' ? 'Reproduzir na TV' : 'Pausar na TV'"
+          @click="toggleCastPlayback"
+        >
+          <svg v-if="castState === 'paused' || castState === 'idle'" class="w-7 h-7 fill-current translate-x-0.5" viewBox="0 0 24 24">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+          <svg v-else class="w-7 h-7 fill-current" viewBox="0 0 24 24">
+            <rect x="6" y="4" width="4" height="16" />
+            <rect x="14" y="4" width="4" height="16" />
+          </svg>
+        </button>
+        <button
+          id="cast-next"
+          type="button"
+          class="tv-btn tv-glass !w-[3.5rem] !h-[3.5rem] !p-0 rounded-full flex items-center justify-center text-white"
+          :disabled="!player.hasNext"
+          title="Próximo"
+          @click="player.next()"
+        >
+          <svg class="w-5 h-5 fill-current" viewBox="0 0 24 24">
+            <polygon points="5 4 15 12 5 20 5 4" />
+            <line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5" />
+          </svg>
+        </button>
+      </div>
+
+      <div class="flex items-center gap-4 mt-6">
+        <button id="cast-stop" type="button" class="tv-btn tv-btn-primary" @click="stopCastingAndResume">
+          {{ castError ? 'Assistir no celular' : 'Parar transmissão' }}
+        </button>
+        <button id="cast-close" type="button" class="tv-btn" @click="closePlayer()">Fechar reprodutor</button>
+      </div>
+    </div>
+
     <!-- Camada OSD (On-Screen Display) -->
     <transition
       enter-active-class="transition-opacity duration-200"
@@ -834,7 +1019,7 @@ onBeforeUnmount(() => {
       leave-to-class="opacity-0"
     >
       <div
-        v-if="isOsdVisible && !engineError && !isInPip"
+        v-if="isOsdVisible && !engineError && !isInPip && !isCasting"
         id="player-osd"
         class="absolute inset-0 flex flex-col justify-between pointer-events-auto bg-gradient-to-t from-black/90 via-transparent to-black/80 px-24 py-14 z-10"
       >
@@ -1007,8 +1192,22 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <!-- Fila e Minha Lista -->
+            <!-- Transmitir, Fila e Minha Lista -->
             <div class="flex items-center gap-4">
+              <button
+                v-if="castAvailable"
+                id="osd-cast"
+                type="button"
+                class="tv-btn tv-glass !px-6 !py-3 rounded-xl flex items-center gap-2 font-bold text-tv-xs text-white"
+                @click="startCasting"
+              >
+                <!-- Ícone padrão de Cast (os termos do Google Cast pedem o ícone oficial) -->
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 3H3c-1.1 0-2 .9-2 2v3h2V5h18v14h-7v2h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM1 18v3h3c0-1.66-1.34-3-3-3zm0-4v2c2.76 0 5 2.24 5 5h2c0-3.87-3.13-7-7-7zm0-4v2c4.97 0 9 4.03 9 9h2c0-6.08-4.93-11-11-11z" />
+                </svg>
+                <span>Transmitir</span>
+              </button>
+
               <button
                 id="osd-queue"
                 type="button"

@@ -91,11 +91,6 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
         <p class="text-tv-sm font-medium text-white truncate">{{ label || 'Transmissão contínua' }}</p>
         <p class="text-tv-xs text-neutral-500 mt-0.5 truncate">Canal {{ item?.num || index + 1 }} · Ao vivo</p>
       </div>
-
-      <!-- Base do Card: Barra fina de 2px -->
-      <div class="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
-        <div class="h-full w-2/5 bg-tv-accent" />
-      </div>
     </div>
 
     <!-- Poster (filme/série) ocupando o card com faixa escura na base -->

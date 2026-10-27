@@ -21,6 +21,7 @@ responsável por eles.
 | Aceite do aviso legal (data e versão) | Comprovar o consentimento | Somente no aparelho |
 | **Opcional, só se o usuário escolher "adicionar pelo celular":** a lista que ele cola no celular (endereço, usuário, senha e apelido), cifrada | Levar a lista do celular para a TV sem digitar no controle | Cifrada de ponta a ponta no celular; o serviço de pareamento guarda **só o texto cifrado**, na memória, por até 10 minutos (60 segundos depois que o celular envia) e o apaga assim que a TV o lê. Nunca em disco. |
 | **Opcional, mesmo caso:** endereço de rede (IP) de quem usa o serviço de pareamento | Limitar abuso (muitas tentativas seguidas) | Contador na memória do serviço, por até 1 minuto; não é gravado em arquivo pelo serviço |
+| **Opcional, só no celular, se o usuário tocar em "Transmitir":** endereço do vídeo (inclui usuário e senha da lista) e o título | Tocar o vídeo na TV escolhida (Chromecast / Google Cast) | Enviado pela rede local para o aparelho Google Cast escolhido, que busca o vídeo direto no servidor do usuário. O aplicativo não guarda nem envia isso a mais ninguém. |
 
 ## O que o aplicativo não faz
 
@@ -65,6 +66,16 @@ endereço de rede (IP) de quem o acessa unicamente para limitar abusos através 
 volátil de até 1 minuto.
 
 Quem não usa essa opção não envia nada ao serviço: a TV só o contacta quando a tela "Use o seu celular" está aberta.
+
+### Transmitir para a TV (opcional, só no celular)
+
+No aplicativo para celular e tablet Android, o player mostra "Transmitir" quando o aparelho tem Google Play
+Services. Ao escolher uma TV com Google Cast (Chromecast ou TV compatível), o aplicativo envia pela rede local o
+endereço do vídeo (que inclui o usuário e a senha da lista) e o título para essa TV. A TV abre o receptor padrão do
+Google (Default Media Receiver) e busca o vídeo **direto no servidor do usuário**; o aplicativo não passa o vídeo por
+nenhum servidor do desenvolvedor. A descoberta das TVs e a conexão são feitas pelo Google Play Services do aparelho,
+conforme a política de privacidade do Google. Enquanto a transmissão estiver ativa, outros aparelhos na mesma rede
+podem ver o que está tocando na TV. Quem não toca em "Transmitir" não envia nada para nenhuma TV.
 
 ## Controle e exclusão
 

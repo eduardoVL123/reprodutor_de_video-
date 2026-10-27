@@ -54,14 +54,20 @@ describe('aviso legal (FTUE)', () => {
     )
   })
 
-  it('o texto mudou, então quem aceitou a versão 2 vê o aviso de novo', async () => {
-    const { FTUE_VERSION, storage, STORAGE_KEYS, hasAcceptedFtue } = await import('@/services/storage')
-    expect(FTUE_VERSION).toBe(3)
+  it.each([false, true])('avisa que transmitir manda o endereço do vídeo para a TV escolhida (pareamento: %s)', async (pairing) => {
+    const w = await mountFtue({ pairing })
 
-    await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-01T00:00:00.000Z', version: 2 })
-    expect(await hasAcceptedFtue()).toBe(false)
+    expect(privacyCard(w)).toMatch(/transmitir para uma TV \(Chromecast\), o endereço do vídeo/)
+  })
+
+  it('o texto mudou, então quem aceitou a versão 3 vê o aviso de novo', async () => {
+    const { FTUE_VERSION, storage, STORAGE_KEYS, hasAcceptedFtue } = await import('@/services/storage')
+    expect(FTUE_VERSION).toBe(4)
 
     await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-26T00:00:00.000Z', version: 3 })
+    expect(await hasAcceptedFtue()).toBe(false)
+
+    await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-27T00:00:00.000Z', version: 4 })
     expect(await hasAcceptedFtue()).toBe(true)
   })
 })

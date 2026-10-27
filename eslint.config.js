@@ -3,7 +3,7 @@ import globals from 'globals'
 import pluginVue from 'eslint-plugin-vue'
 
 export default [
-  { ignores: ['dist/**', 'build/**', 'android/**', 'node_modules/**'] },
+  { ignores: ['dist/**', 'build/**', 'android/**', 'node_modules/**', '**/.wrangler/**'] },
   js.configs.recommended,
   ...pluginVue.configs['flat/essential'],
   {

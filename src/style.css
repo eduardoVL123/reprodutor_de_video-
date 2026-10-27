@@ -39,7 +39,7 @@ body,
   overflow: hidden; /* sem scrollbars nativas */
   background-color: #0b0f0c;
   color: #f1f5f9;
-  font-family: 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  font-family: 'Outfit', 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
@@ -124,6 +124,12 @@ video::-webkit-media-controls-start-playback-button {
   }
   .tv-badge-live {
     @apply bg-tv-accent border-transparent text-tv-on-accent;
+  }
+  .tv-badge-live-red {
+    @apply inline-flex items-center gap-1 rounded bg-[#ef4444] border-transparent text-white text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 shadow-sm;
+  }
+  .tv-badge-new {
+    @apply inline-flex items-center rounded bg-tv-accent border-transparent text-tv-on-accent text-[10px] font-extrabold uppercase tracking-wider px-1.5 py-0.5 shadow-sm;
   }
 
   /* Barra de progresso ("continuar assistindo", episódios) */

@@ -36,18 +36,18 @@ function onSelectTab(tab) {
   <nav
     data-focus-group="side-menu"
     :data-open="isOpen ? 'true' : 'false'"
-    class="fixed top-0 bottom-0 left-0 z-30 flex flex-col justify-between py-14 select-none"
+    class="fixed top-0 bottom-0 left-0 z-30 flex flex-col justify-between py-14 max-md:py-0 max-md:top-auto max-md:bottom-0 max-md:right-0 max-md:w-full max-md:h-16 max-md:flex-row max-md:items-center max-md:justify-around max-md:px-2 max-md:bg-[#0b0f0c]/95 max-md:border-t max-md:border-white/10 max-md:border-r-0 max-md:shadow-none select-none"
     :class="[
       isOpen
         ? 'w-[19rem] px-6 bg-tv-deep/95 shadow-[12px_0_40px_rgba(0,0,0,0.85)] border-r border-white/10'
-        : 'w-[7rem] px-3 bg-gradient-to-r from-black/85 via-black/40 to-transparent'
+        : 'w-[7rem] px-3 bg-gradient-to-r from-black/85 via-black/40 to-transparent max-md:bg-[#0b0f0c]/95'
     ]"
     @focusin="onFocusIn"
     @focusout="onFocusOut"
   >
     <!-- Topo: símbolo do Pulse Player -->
-    <div class="flex flex-col gap-6">
-      <div class="flex items-center gap-3 h-[3.5rem] px-3 overflow-hidden">
+    <div class="flex flex-col max-md:flex-row max-md:items-center max-md:justify-around max-md:w-full gap-6 max-md:gap-0">
+      <div class="hidden md:flex items-center gap-3 h-[3.5rem] px-3 overflow-hidden">
         <BrandMark :size="2" class="text-tv-accent" />
         <span
           class="text-tv-base font-black whitespace-nowrap transition-opacity duration-150 leading-none"
@@ -59,12 +59,12 @@ function onSelectTab(tab) {
       </div>
 
       <!-- Links Principais -->
-      <div class="flex flex-col gap-2">
+      <div class="flex flex-col max-md:flex-row max-md:items-center max-md:justify-around max-md:w-full gap-2 max-md:gap-0">
         <!-- 1. Busca -->
         <button
           id="nav-search"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'search'
               ? 'bg-white/15 text-white font-bold'
@@ -81,7 +81,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             Busca
@@ -92,7 +92,7 @@ function onSelectTab(tab) {
         <button
           id="nav-home"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'home'
               ? 'bg-white/15 text-white font-bold'
@@ -108,7 +108,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             Início
@@ -119,7 +119,7 @@ function onSelectTab(tab) {
         <button
           id="nav-live"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'live'
               ? 'bg-white/15 text-white font-bold'
@@ -136,7 +136,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             TV ao vivo
@@ -147,7 +147,7 @@ function onSelectTab(tab) {
         <button
           id="nav-vod"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'vod'
               ? 'bg-white/15 text-white font-bold'
@@ -164,7 +164,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             Filmes
@@ -175,7 +175,7 @@ function onSelectTab(tab) {
         <button
           id="nav-series"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'series'
               ? 'bg-white/15 text-white font-bold'
@@ -192,7 +192,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             Séries
@@ -203,7 +203,7 @@ function onSelectTab(tab) {
         <button
           id="nav-favorites"
           type="button"
-          class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left"
+          class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left"
           :class="[
             activeTab === 'favorites'
               ? 'bg-white/15 text-white font-bold'
@@ -219,7 +219,7 @@ function onSelectTab(tab) {
             </svg>
           </div>
           <span
-            class="ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
+            class="hidden md:inline ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
             Minha lista
@@ -229,12 +229,12 @@ function onSelectTab(tab) {
     </div>
 
     <!-- Base: Gerenciar Listas e Trocar Perfil -->
-    <div class="flex flex-col gap-2 pt-4 border-t border-white/[0.08]">
+    <div class="flex flex-col max-md:flex-row max-md:items-center max-md:gap-0 max-md:pt-0 max-md:border-t-0 gap-2 pt-4 border-t border-white/[0.08]">
       <!-- 7. Listas -->
       <button
         id="btn-manage-lists"
         type="button"
-        class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
+        class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
         title="Gerenciar Listas"
         @click="emit('manage-lists')"
       >
@@ -249,7 +249,7 @@ function onSelectTab(tab) {
           </svg>
         </div>
         <div
-          class="ml-4 min-w-0 transition-opacity duration-150"
+          class="hidden md:block ml-4 min-w-0 transition-opacity duration-150"
           :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
         >
           <div class="text-tv-sm text-white font-medium truncate">Listas</div>
@@ -261,7 +261,7 @@ function onSelectTab(tab) {
       <button
         id="btn-switch-profile"
         type="button"
-        class="tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
+        class="tv-focusable flex items-center justify-center md:justify-start h-[3.5rem] max-md:h-12 max-md:w-12 max-md:px-0 rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
         title="Trocar Perfil"
         @click="emit('switch-profile')"
       >
@@ -272,7 +272,7 @@ function onSelectTab(tab) {
           {{ (profile.name || 'P').charAt(0).toUpperCase() }}
         </div>
         <div
-          class="ml-4 min-w-0 transition-opacity duration-150"
+          class="hidden md:block ml-4 min-w-0 transition-opacity duration-150"
           :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
         >
           <div class="text-tv-sm text-white font-medium truncate">{{ profile.name }}</div>
