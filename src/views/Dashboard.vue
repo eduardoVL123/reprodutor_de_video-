@@ -230,6 +230,10 @@ function handleHeroInfo() {
   openListModal()
 }
 
+async function loadSectionsInOrder(sections) {
+  for (const section of sections) await catalog.loadSection(section)
+}
+
 /**
  * Carrega as seções do catálogo e monta as fileiras do Início.
  */
@@ -240,15 +244,8 @@ async function loadCatalogShowcase({ reset = false } = {}) {
     liveShowcase.value = []
   }
 
-  const loads = []
-  if (catalog.status.vod.state === 'idle') loads.push(catalog.loadSection('vod'))
-  if (catalog.status.series.state === 'idle') loads.push(catalog.loadSection('series'))
-  if (catalog.status.live.state === 'idle') loads.push(catalog.loadSection('live'))
-  if (loads.length > 0) {
-    try {
-      await Promise.all(loads)
-    } catch (_) {}
-  }
+  // Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
+  await loadSectionsInOrder(['vod', 'series', 'live'].filter((s) => catalog.status[s].state === 'idle'))
 
   try {
     const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 20)
@@ -446,9 +443,6 @@ function onProfileSelected() {
 }
 
 async function showcaseAfterListChange() {
-  catalog.loadSection('vod')
-  catalog.loadSection('live')
-  catalog.loadSection('series')
   await loadCatalogShowcase({ reset: true })
 }
 
@@ -1020,7 +1014,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- Gerenciador de listas -->
-    <ActivationRequired v-if="showActivation" :code="license.code" @retry="license.refresh(auth.session)" @manage-lists="openListModal" />
+    <ActivationRequired v-if="showActivation" :code="license.code" :suspended="license.access === 'suspended'" @retry="license.refresh(auth.session)" @manage-lists="openListModal" />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->

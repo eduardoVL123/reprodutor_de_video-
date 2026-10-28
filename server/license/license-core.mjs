@@ -9,20 +9,23 @@ import { generateCode, createLimiter, readJsonBody, SECURITY_HEADERS, CORS_HEADE
 import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost } from './license-rules.mjs'
 import { findDevice, findDeviceByCode, insertDevice, activationEndsAt, partnerForHost, upsertEntry } from './license-db.mjs'
 import { createAdminRoutes } from './license-admin.mjs'
+import { createApiRoutes } from './license-api.mjs'
 import { plansPage, PLANS_CSS, NOT_FOUND_PAGE } from './license-pages.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
 export const MAX_BODY_BYTES = 4096
 export const PLATFORMS = ['android', 'tizen', 'webos', 'web']
 // newDevicesPerDay: corta o ataque barato de criar aparelhos falsos para inflar os ativos de um parceiro.
-export const LIMITS = { hello: 30, access: 60, entry: 60, miss: 20, newDevicesPerDay: 20 }
+export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20 }
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
+// Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
+const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
 const PLANS_ROUTE = new RegExp(`^/a/([${CODE_ALPHABET}]{${DEVICE_CODE_LENGTH}})$`)
 
 export function json(status, body, extra = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS, ...CORS_HEADERS, ...extra },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS, ...LICENSE_CORS, ...extra },
   })
 }
 
@@ -36,6 +39,7 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
   const limiter = createLimiter(now)
   const dailyLimiter = createLimiter(now, DAY_MS)
   const handleAdmin = createAdminRoutes({ db, now, adminToken, json })
+  const handleApi = createApiRoutes({ db, now, json, limiter })
 
   /** Aparelho da chave; cria com 7 dias de teste na primeira vez (reinstalar acha o mesmo). */
   async function ensureDevice(deviceKey, platform, ip) {
@@ -73,7 +77,7 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     const at = now()
     const { device, activationEnd } = await deviceState(body, ip)
     const partner = await partnerOf(body.host, at)
-    const result = accessFor({ trialEndsAt: device.trial_ends_at, activationEndsAt: activationEnd, isPartner: !!partner, now: at })
+    const result = accessFor({ trialEndsAt: device.trial_ends_at, activationEndsAt: activationEnd, isPartner: !!partner, now: at, blockedAt: device.blocked_at })
     return { at, device, activationEnd, partner, access: result }
   }
 
@@ -105,8 +109,9 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
 
   async function handle(request, ip = '') {
     const url = new URL(request.url)
-    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...CORS_HEADERS } })
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...LICENSE_CORS } })
     if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url)
+    if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url)
     if (request.method === 'GET' && url.pathname === '/a/plans.css') return page(200, PLANS_CSS, 'text/css; charset=utf-8')
     const plans = request.method === 'GET' && url.pathname.match(PLANS_ROUTE)
     if (plans) {
@@ -114,10 +119,7 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
       return device ? page(200, plansPage(device.code, contactUrl)) : page(404, NOT_FOUND_PAGE)
     }
     const route = request.method === 'POST' && routes[url.pathname]
-    if (!route) {
-      limiter.add('miss', ip)
-      return fail(404, 'Não encontrado.')
-    }
+    if (!route) return fail(404, 'Não encontrado.')
     const bucket = url.pathname.slice(4)
     const wait = limiter.retryAfter(bucket, ip, limits[bucket])
     if (wait) return fail(429, 'Muitas tentativas. Aguarde um pouco.', { 'Retry-After': String(wait) })

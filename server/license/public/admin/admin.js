@@ -4,6 +4,7 @@
   const $ = (id) => document.getElementById(id)
   const fmtDate = (ms) => (ms ? new Date(ms).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '—')
   const fmtDay = (iso) => iso.split('-').reverse().join('/')
+  const fmtMoney = (cents) => (cents == null ? 'Sob consulta' : (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }))
   let partners = []
 
   function token() {
@@ -64,6 +65,8 @@
     say('')
     if (name === 'partners') loadPartners()
     if (name === 'report') loadReportPartners()
+    if (name === 'devices') loadDeviceList(true)
+    if (name === 'resellers') loadResellers()
   }
 
   // Parceiros
@@ -130,7 +133,7 @@
     try {
       const cycles = await api('GET', `partners/${id}/cycles`)
       for (const c of cycles.slice().reverse()) {
-        $('cycle-rows').appendChild(row([`${c.index + 1}`, fmtDay(c.start), fmtDay(c.end), String(c.actives), button('Abrir', () => openCycle(id, c.index))]))
+        $('cycle-rows').appendChild(row([`${c.index + 1}`, fmtDay(c.start), fmtDay(c.end), String(c.actives), fmtMoney(c.amountCents), button('Abrir', () => openCycle(id, c.index))]))
       }
       if (!cycles.length) say('A parceria ainda não começou.')
     } catch (err) {
@@ -142,7 +145,7 @@
   async function openCycle(id, index) {
     try {
       const cycle = await api('GET', `partners/${id}/cycles/${index}`)
-      $('cycle-title').textContent = `Ciclo ${index + 1}: ${fmtDay(cycle.start)} a ${fmtDay(cycle.end)} — ${cycle.actives} ativos`
+      $('cycle-title').textContent = `Ciclo ${index + 1}: ${fmtDay(cycle.start)} a ${fmtDay(cycle.end)} — ${cycle.actives} ativos — ${fmtMoney(cycle.amountCents)}`
       $('device-rows').textContent = ''
       for (const d of cycle.devices) $('device-rows').appendChild(row([d.code, fmtDate(d.firstAt), fmtDate(d.lastAt), d.active ? 'Sim' : 'Não']))
       $('cycle-csv').dataset.path = `partners/${id}/cycles/${index}?format=csv`
@@ -166,7 +169,46 @@
   })
 
   // Aparelhos
+  const STATUS_LABEL = { trial: 'Em teste', activated: 'Ativado', blocked: 'Bloqueado', expired: 'Sem acesso' }
+  const PERIOD_LABEL = { '1m': '1 mês', '3m': '3 meses', '1y': '1 ano' }
   let currentCode = ''
+  let devicePage = 0
+  let searchTimer = null
+
+  async function loadDeviceList(reset) {
+    if (reset) {
+      devicePage = 0
+      $('device-list-rows').textContent = ''
+    }
+    const params = new URLSearchParams({ status: $('device-filter').value, q: $('device-search').value.trim(), page: String(devicePage) })
+    try {
+      const { items, nextPage } = await api('GET', `devices?${params}`)
+      for (const d of items) {
+        $('device-list-rows').appendChild(
+          row([d.code, STATUS_LABEL[d.status] || d.status, d.platform, d.activationEndsAt ? fmtDate(d.activationEndsAt) : '—', d.note || '', button('Abrir', () => openDevice(d.code))]),
+        )
+      }
+      devicePage = nextPage || 0
+      $('device-more').hidden = nextPage == null
+    } catch (err) {
+      say(err.message, true)
+    }
+  }
+  $('device-filter').addEventListener('change', () => loadDeviceList(true))
+  $('device-search').addEventListener('input', () => {
+    clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => loadDeviceList(true), 300)
+  })
+  $('device-more').addEventListener('click', () => loadDeviceList(false))
+
+  function listItems(el, lines) {
+    el.textContent = ''
+    for (const text of lines) {
+      const li = document.createElement('li')
+      li.textContent = text
+      el.appendChild(li)
+    }
+  }
 
   function showDevice(info) {
     currentCode = info.code
@@ -175,6 +217,7 @@
     const entries = [
       ['Código', info.code],
       ['Plataforma', info.platform],
+      ['Situação', info.blockedAt ? `Bloqueado desde ${fmtDate(info.blockedAt)}` : 'Liberado para uso'],
       ['Primeiro acesso', fmtDate(info.firstSeenAt)],
       ['Teste até', fmtDate(info.trialEndsAt)],
       ['Ativado até', info.activationEndsAt ? fmtDate(info.activationEndsAt) : 'Sem ativação'],
@@ -186,42 +229,178 @@
       dd.textContent = v
       dl.append(dt, dd)
     }
-    const list = $('activation-list')
-    list.textContent = ''
-    for (const a of info.activations) {
-      const li = document.createElement('li')
-      li.textContent = `${fmtDate(a.startsAt)} → ${fmtDate(a.endsAt)}${a.note ? ` · ${a.note}` : ''}${a.revokedAt ? ` · revogada em ${fmtDate(a.revokedAt)}` : ''}`
-      list.appendChild(li)
-    }
+    $('device-note').value = info.note || ''
+    listItems(
+      $('activation-list'),
+      (info.activations || []).map(
+        (a) =>
+          `${fmtDate(a.startsAt)} → ${fmtDate(a.endsAt)}${a.resellerId ? ` · revendedor #${a.resellerId}` : ''}${a.note ? ` · ${a.note}` : ''}${a.revokedAt ? ` · revogada em ${fmtDate(a.revokedAt)}` : ''}`,
+      ),
+    )
+    listItems($('device-events'), (info.events || []).map((e) => `${fmtDate(e.at)} · ${e.action}${e.detail ? ` · ${e.detail}` : ''} · ${e.actor}`))
     $('device-detail').hidden = false
   }
 
-  $('device-form').addEventListener('submit', async (e) => {
-    e.preventDefault()
+  async function openDevice(code) {
     try {
-      showDevice(await api('GET', `devices/${encodeURIComponent($('device-code').value.trim().toUpperCase())}`))
+      showDevice(await api('GET', `devices/${encodeURIComponent(code)}`))
       say('')
     } catch (err) {
       $('device-detail').hidden = true
       say(err.message, true)
     }
+  }
+
+  $('device-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    openDevice($('device-code').value.trim().toUpperCase())
   })
 
-  $('device-activate').addEventListener('click', async () => {
+  /** Ação no aparelho aberto; o botão fica travado até a resposta (clique duplo não repete a ação). */
+  async function deviceAction(btn, method, path, body, done) {
+    if (btn.disabled) return
+    btn.disabled = true
     try {
-      showDevice(await api('POST', `devices/${currentCode}/activate`, { note: $('activation-note').value }))
-      $('activation-note').value = ''
-      say('Aparelho liberado por mais 1 ano.')
+      const info = await api(method, `devices/${currentCode}${path}`, body)
+      if (method === 'DELETE') {
+        $('device-detail').hidden = true
+        loadDeviceList(true)
+      } else showDevice(info)
+      say(done)
+    } catch (err) {
+      say(err.message, true)
+    } finally {
+      btn.disabled = false
+    }
+  }
+
+  // Cada chamada soma o período: sem a trava, um clique duplo (ou impaciente) libera duas vezes por um pagamento.
+  $('device-activate').addEventListener('click', (e) => {
+    const period = $('activation-period').value
+    const body = { note: $('activation-note').value }
+    if (period === 'until') body.until = $('activation-until').value
+    else body.period = period
+    const label = period === 'until' ? `até ${body.until ? fmtDay(body.until) : '(escolha a data)'}` : `por mais ${PERIOD_LABEL[period]}`
+    if (e.currentTarget.disabled || !confirm(`Liberar ${currentCode} ${label}?`)) return
+    $('activation-note').value = ''
+    deviceAction(e.currentTarget, 'POST', '/activate', body, 'Aparelho liberado.')
+  })
+
+  $('device-revoke').addEventListener('click', (e) => {
+    if (!confirm(`Revogar a ativação de ${currentCode}?`)) return
+    deviceAction(e.currentTarget, 'POST', '/revoke', {}, 'Ativação revogada.')
+  })
+  $('device-block').addEventListener('click', (e) => deviceAction(e.currentTarget, 'POST', '/block', {}, 'Aparelho bloqueado.'))
+  $('device-unblock').addEventListener('click', (e) => deviceAction(e.currentTarget, 'POST', '/unblock', {}, 'Aparelho desbloqueado.'))
+  $('device-trial').addEventListener('click', (e) =>
+    deviceAction(e.currentTarget, 'POST', '/trial', { days: Number($('trial-days').value) }, 'Dias de teste adicionados.'),
+  )
+  $('device-note-save').addEventListener('click', (e) => deviceAction(e.currentTarget, 'POST', '/note', { note: $('device-note').value }, 'Observação salva.'))
+  $('device-delete').addEventListener('click', (e) => {
+    if (!confirm(`Apagar todos os dados de ${currentCode}? Se o app abrir de novo nele, volta como aparelho novo, com teste.`)) return
+    deviceAction(e.currentTarget, 'DELETE', '', null, 'Dados do aparelho apagados.')
+  })
+
+  // Revendedores
+  const MOVE_LABEL = {
+    purchase: 'Compra',
+    grant: 'Cortesia',
+    refund: 'Estorno',
+    activation: 'Ativação',
+    transfer_in: 'Recebido da revenda acima',
+    transfer_out: 'Repassado para revenda',
+  }
+  let resellers = []
+  let currentReseller = null
+
+  async function loadResellers() {
+    try {
+      resellers = await api('GET', 'resellers')
+    } catch (err) {
+      return say(err.message, true)
+    }
+    const byId = new Map(resellers.map((r) => [r.id, r]))
+    $('reseller-rows').textContent = ''
+    for (const r of resellers) {
+      const parent = r.parentId ? (byId.get(r.parentId) || {}).name || `#${r.parentId}` : '—'
+      $('reseller-rows').appendChild(row([r.name, parent, String(r.credits), r.active ? 'Ativa' : 'Bloqueada', `…${r.keyHint}`, button('Abrir', () => openReseller(r.id))]))
+    }
+    const select = $('reseller-parent')
+    select.length = 1
+    for (const r of resellers) select.appendChild(new Option(r.name, r.id))
+  }
+
+  function showKey(name, key) {
+    $('reseller-key').textContent = `Chave de ${name} (aparece só agora, copie e entregue): ${key}`
+  }
+
+  $('reseller-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const parentId = $('reseller-parent').value
+    const body = { name: $('reseller-name').value, contact: $('reseller-contact').value, parentId: parentId ? Number(parentId) : null }
+    try {
+      const created = await api('POST', 'resellers', body)
+      showKey(body.name, created.key)
+      $('reseller-name').value = ''
+      $('reseller-contact').value = ''
+      say('Revendedor criado.')
+      loadResellers()
     } catch (err) {
       say(err.message, true)
     }
   })
 
-  $('device-revoke').addEventListener('click', async () => {
-    if (!confirm(`Revogar a ativação de ${currentCode}?`)) return
+  async function openReseller(id) {
+    currentReseller = resellers.find((r) => r.id === id) || null
+    if (!currentReseller) return
+    $('reseller-title').textContent = `${currentReseller.name} — ${currentReseller.credits} créditos`
+    $('reseller-toggle').textContent = currentReseller.active ? 'Bloquear' : 'Desbloquear'
+    $('reseller-detail').hidden = false
     try {
-      showDevice(await api('POST', `devices/${currentCode}/revoke`, {}))
-      say('Ativação revogada.')
+      const moves = await api('GET', `resellers/${id}/movements`)
+      $('movement-rows').textContent = ''
+      for (const m of moves) {
+        const detail = m.deviceCode || (m.counterpartId ? `revenda #${m.counterpartId}` : '') || m.note
+        const value = m.amountCents == null ? '—' : fmtMoney(m.amountCents)
+        $('movement-rows').appendChild(row([fmtDate(m.createdAt), MOVE_LABEL[m.kind] || m.kind, (m.delta > 0 ? '+' : '') + m.delta, value, detail || '']))
+      }
+    } catch (err) {
+      say(err.message, true)
+    }
+  }
+
+  $('credit-form').addEventListener('submit', async (e) => {
+    e.preventDefault()
+    const value = $('credit-value').value
+    const body = { amount: Number($('credit-amount').value), kind: $('credit-kind').value, note: $('credit-note').value }
+    if (value !== '') body.amountCents = Math.round(Number(value) * 100)
+    try {
+      await api('POST', `resellers/${currentReseller.id}/credits`, body)
+      $('credit-amount').value = ''
+      $('credit-value').value = ''
+      $('credit-note').value = ''
+      say('Créditos lançados.')
+      await loadResellers()
+      openReseller(currentReseller.id)
+    } catch (err) {
+      say(err.message, true)
+    }
+  })
+
+  $('reseller-toggle').addEventListener('click', async () => {
+    try {
+      await api('POST', `resellers/${currentReseller.id}/active`, { active: !currentReseller.active })
+      await loadResellers()
+      openReseller(currentReseller.id)
+    } catch (err) {
+      say(err.message, true)
+    }
+  })
+
+  $('reseller-rotate').addEventListener('click', async () => {
+    if (!confirm(`Trocar a chave de ${currentReseller.name}? A chave atual para de funcionar na hora.`)) return
+    try {
+      showKey(currentReseller.name, (await api('POST', `resellers/${currentReseller.id}/key`, {})).key)
     } catch (err) {
       say(err.message, true)
     }

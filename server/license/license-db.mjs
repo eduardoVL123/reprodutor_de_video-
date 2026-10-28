@@ -42,8 +42,63 @@ export const MIGRATIONS = [
   )`,
 ]
 
+/** RFC-019: tabelas novas (só acrescentam; o banco de produção já tem dados da RFC-018). */
+MIGRATIONS.push(
+  `CREATE TABLE IF NOT EXISTS resellers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER,
+    name TEXT NOT NULL,
+    contact TEXT,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_hint TEXT,
+    credits INTEGER NOT NULL DEFAULT 0 CHECK (credits >= 0),
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS resellers_parent ON resellers (parent_id)`,
+  `CREATE TABLE IF NOT EXISTS credit_movements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    reseller_id INTEGER NOT NULL,
+    delta INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    device_code TEXT,
+    counterpart_id INTEGER,
+    amount_cents INTEGER,
+    note TEXT,
+    created_by TEXT,
+    created_at INTEGER NOT NULL,
+    idempotency_key TEXT,
+    response TEXT,
+    UNIQUE (reseller_id, idempotency_key)
+  )`,
+  `CREATE INDEX IF NOT EXISTS credit_movements_reseller ON credit_movements (reseller_id, id)`,
+  `CREATE TABLE IF NOT EXISTS device_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_key TEXT NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT,
+    actor TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS device_events_device ON device_events (device_key, id)`,
+)
+
+/** Colunas novas em tabelas existentes: ALTER TABLE não tem IF NOT EXISTS, então "já existe" é ignorado. */
+export const COLUMN_MIGRATIONS = [
+  'ALTER TABLE devices ADD COLUMN blocked_at INTEGER',
+  'ALTER TABLE devices ADD COLUMN note TEXT',
+  'ALTER TABLE activations ADD COLUMN reseller_id INTEGER',
+]
+
 export async function migrate(db) {
   for (const sql of MIGRATIONS) await db.prepare(sql).run()
+  for (const sql of COLUMN_MIGRATIONS) {
+    try {
+      await db.prepare(sql).run()
+    } catch (err) {
+      if (!/duplicate column/i.test(String(err && err.message))) throw err
+    }
+  }
 }
 
 export const findDevice = (db, deviceKey) => db.prepare('SELECT * FROM devices WHERE device_key = ?').bind(deviceKey).first()

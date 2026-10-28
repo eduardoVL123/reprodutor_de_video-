@@ -73,8 +73,12 @@ export function normalizeHost(urlOrHost) {
   }
 }
 
-/** Acesso do aparelho (R3): ativação vale sobre tudo; no teste ninguém paga; depois, parceiro ou bloqueio. */
-export function accessFor({ trialEndsAt, activationEndsAt, isPartner, now }) {
+/**
+ * Acesso do aparelho (R3): suspenso pelo dono vale sobre tudo (RFC-019); depois a ativação; no teste ninguém paga;
+ * depois do teste, parceiro ou bloqueio.
+ */
+export function accessFor({ trialEndsAt, activationEndsAt, isPartner, now, blockedAt = null }) {
+  if (blockedAt) return 'suspended'
   if (activationEndsAt && activationEndsAt > now) return 'activated'
   if (now < trialEndsAt) return 'trial'
   return isPartner ? 'partner' : 'blocked'
@@ -85,9 +89,9 @@ export function isActive({ firstAt, lastAt }) {
   return lastAt - firstAt >= ACTIVE_GAP_MS
 }
 
-/** Nova data de fim da ativação: 1 ano somado ao fim atual, ou a agora se já venceu. */
-export function extendActivation(currentEndsAt, now) {
+/** Nova data de fim da ativação: meses (padrão 12 = 1 ano) somados ao fim atual, ou a agora se já venceu. */
+export function extendActivation(currentEndsAt, now, months = 12) {
   const from = new Date(Math.max(now, currentEndsAt || 0))
-  from.setUTCFullYear(from.getUTCFullYear() + 1)
+  from.setUTCMonth(from.getUTCMonth() + months)
   return from.getTime()
 }

@@ -13,6 +13,7 @@
         <button type="button" data-tab="partners" class="tab active">Parceiros</button>
         <button type="button" data-tab="report" class="tab">Relatório</button>
         <button type="button" data-tab="devices" class="tab">Aparelhos</button>
+        <button type="button" data-tab="resellers" class="tab">Revendedores</button>
         <button type="button" id="logout" class="link">Sair</button>
       </nav>
     </header>
@@ -50,7 +51,7 @@
         <h2>Relatório de ativos</h2>
         <label>Parceiro <select id="report-partner"></select></label>
         <table>
-          <thead><tr><th>Ciclo</th><th>De</th><th>Até</th><th>Ativos</th><th></th></tr></thead>
+          <thead><tr><th>Ciclo</th><th>De</th><th>Até</th><th>Ativos</th><th>Valor do mês</th><th></th></tr></thead>
           <tbody id="cycle-rows"></tbody>
         </table>
         <div id="cycle-detail" hidden>
@@ -65,19 +66,110 @@
 
       <section id="devices" class="panel" hidden>
         <h2>Aparelhos</h2>
+        <div class="actions">
+          <label>Situação
+            <select id="device-filter">
+              <option value="">Todos</option>
+              <option value="trial">Em teste</option>
+              <option value="activated">Ativados</option>
+              <option value="blocked">Bloqueados</option>
+              <option value="expired">Sem acesso (fora do teste, sem ativação)</option>
+            </select>
+          </label>
+          <label>Buscar (código ou observação) <input id="device-search" maxlength="60" /></label>
+        </div>
+        <table>
+          <thead><tr><th>Código</th><th>Situação</th><th>Plataforma</th><th>Ativado até</th><th>Observação</th><th></th></tr></thead>
+          <tbody id="device-list-rows"></tbody>
+        </table>
+        <button type="button" id="device-more" class="link" hidden>Carregar mais</button>
+
         <form id="device-form">
           <label>Código do aparelho <input id="device-code" required maxlength="16" autocapitalize="characters" /></label>
-          <button type="submit">Buscar</button>
+          <button type="submit">Abrir</button>
         </form>
         <div id="device-detail" hidden>
           <dl id="device-info"></dl>
-          <label>Observação (ex.: comprovante do Pix) <input id="activation-note" maxlength="200" /></label>
+
+          <h3>Liberar acesso</h3>
           <div class="actions">
-            <button type="button" id="device-activate">Liberar 1 ano</button>
+            <label>Período
+              <select id="activation-period">
+                <option value="1m">1 mês</option>
+                <option value="3m">3 meses</option>
+                <option value="1y" selected>1 ano</option>
+                <option value="until">Até uma data</option>
+              </select>
+            </label>
+            <label>Até <input id="activation-until" type="date" /></label>
+          </div>
+          <label>Observação da liberação (ex.: comprovante do Pix) <input id="activation-note" maxlength="200" /></label>
+          <div class="actions">
+            <button type="button" id="device-activate">Liberar</button>
             <button type="button" id="device-revoke" class="danger">Revogar ativação</button>
           </div>
+
+          <h3>Acesso</h3>
+          <div class="actions">
+            <button type="button" id="device-block" class="danger">Bloquear</button>
+            <button type="button" id="device-unblock">Desbloquear</button>
+            <label>Dias de teste <input id="trial-days" type="number" min="1" max="365" value="7" /></label>
+            <button type="button" id="device-trial">Dar dias de teste</button>
+          </div>
+          <label>Observação do aparelho (nome do cliente) <input id="device-note" maxlength="200" /></label>
+          <div class="actions">
+            <button type="button" id="device-note-save">Salvar observação</button>
+            <button type="button" id="device-delete" class="danger">Apagar dados (LGPD)</button>
+          </div>
+
           <h3>Histórico de ativações</h3>
           <ul id="activation-list"></ul>
+          <h3>Histórico de ações</h3>
+          <ul id="device-events"></ul>
+        </div>
+      </section>
+
+      <section id="resellers" class="panel" hidden>
+        <h2>Revendedores</h2>
+        <table>
+          <thead><tr><th>Nome</th><th>Acima dele</th><th>Créditos</th><th>Situação</th><th>Chave</th><th></th></tr></thead>
+          <tbody id="reseller-rows"></tbody>
+        </table>
+        <form id="reseller-form">
+          <h3>Novo revendedor</h3>
+          <label>Nome <input id="reseller-name" required maxlength="100" /></label>
+          <label>Contato (WhatsApp ou e-mail) <input id="reseller-contact" maxlength="120" /></label>
+          <label>Abaixo de <select id="reseller-parent"><option value="">Ninguém (direto com vocês)</option></select></label>
+          <button type="submit">Criar</button>
+        </form>
+        <p id="reseller-key" class="key" role="status"></p>
+
+        <div id="reseller-detail" hidden>
+          <h3 id="reseller-title"></h3>
+          <form id="credit-form">
+            <div class="actions">
+              <label>Quantidade <input id="credit-amount" type="number" min="1" required /></label>
+              <label>Tipo
+                <select id="credit-kind">
+                  <option value="purchase">Compra (valor pela tabela)</option>
+                  <option value="grant">Cortesia</option>
+                  <option value="refund">Estorno (tira créditos)</option>
+                </select>
+              </label>
+              <label>Valor pago em R$ (opcional) <input id="credit-value" type="number" min="0" step="0.01" /></label>
+            </div>
+            <label>Observação <input id="credit-note" maxlength="200" /></label>
+            <button type="submit">Lançar</button>
+          </form>
+          <div class="actions">
+            <button type="button" id="reseller-toggle" class="danger">Bloquear</button>
+            <button type="button" id="reseller-rotate">Trocar chave</button>
+          </div>
+          <h3>Extrato</h3>
+          <table>
+            <thead><tr><th>Quando</th><th>Movimento</th><th>Créditos</th><th>Valor</th><th>Detalhe</th></tr></thead>
+            <tbody id="movement-rows"></tbody>
+          </table>
         </div>
       </section>
 

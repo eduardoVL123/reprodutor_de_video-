@@ -139,6 +139,14 @@ describe('chamadas ao serviço (G3: só chave, plataforma e domínio)', () => {
 describe('bloqueio (G2: falha aberta)', () => {
   const LIST = { baseUrl: 'http://outra.com' }
 
+  it('aparelho suspenso pelo dono (RFC-019) também bloqueia', async () => {
+    setup({ fetchImpl: async () => reply(200, { access: 'suspended', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    expect(license.shouldBlock(LIST)).toBe(true)
+  })
+
   it('com resposta "blocked" do servidor, bloqueia essa lista', async () => {
     setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
     const { useLicenseStore } = await import('@/stores/licenseStore')
@@ -254,5 +262,20 @@ describe('entrada (R4: lista de parceiro carregada por mais de 10 s)', () => {
     license.scheduleEntry(LIST)
     await vi.advanceTimersByTimeAsync(20000)
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+})
+
+describe('lista com endereço sem ponto (ex.: http://servidor:8080)', () => {
+  it('também consulta o serviço e é bloqueada quando o teste acaba', async () => {
+    const LAN = { baseUrl: 'http://servidor:8080' }
+    const fetchMock = setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+
+    await license.refresh(LAN)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).host).toBe('')
+    expect(license.shouldBlock(LAN)).toBe(true)
   })
 })

@@ -102,9 +102,14 @@ describe('painel — relatório do ciclo (exemplo do dono: parceria em 02/04)', 
     clock = brt(2026, 5, 10)
     const { body } = await call('GET', `/admin/api/partners/${partnerId}/cycles`)
     expect(body).toEqual([
-      { index: 0, start: '2026-04-02', end: '2026-05-02', actives: 1 },
-      { index: 1, start: '2026-05-03', end: '2026-06-03', actives: 0 },
+      { index: 0, start: '2026-04-02', end: '2026-05-02', actives: 1, amountCents: 35000 },
+      { index: 1, start: '2026-05-03', end: '2026-06-03', actives: 0, amountCents: 0 },
     ])
+  })
+
+  it('o ciclo aberto também traz o valor do mês pela tabela do parceiro (RFC-019 R5)', async () => {
+    const { body } = await call('GET', `/admin/api/partners/${partnerId}/cycles/0`)
+    expect(body.amountCents).toBe(35000)
   })
 
   it('abre o ciclo com os aparelhos que formam o número', async () => {
@@ -170,5 +175,43 @@ describe('painel — aparelhos', () => {
 
   it('código desconhecido é 404', async () => {
     expect((await call('GET', '/admin/api/devices/ZZZZZZZZ')).status).toBe(404)
+  })
+})
+
+describe('painel — trocar domínios do parceiro', () => {
+  const body = (hosts) => ({ name: 'Servidor X', startedOn: '2026-04-02', active: true, hosts })
+  const hostsOf = async (id) => (await call('GET', '/admin/api/partners')).body.find((p) => p.id === id).hosts
+
+  it('troca os domínios: entram os novos e saem os que sumiram', async () => {
+    const { id } = (await call('POST', '/admin/api/partners', body(['a.com', 'b.com']))).body
+    expect((await call('PUT', `/admin/api/partners/${id}`, body(['b.com', 'c.com']))).status).toBe(200)
+    expect(await hostsOf(id)).toEqual(['b.com', 'c.com'])
+  })
+
+  it('se a gravação falhar no meio, o parceiro não fica sem domínio', async () => {
+    const { id } = (await call('POST', '/admin/api/partners', body(['a.com']))).body
+    const real = db.prepare
+    db.prepare = (sql) => {
+      if (/INSERT OR IGNORE INTO partner_hosts/.test(sql)) throw new Error('D1 caiu')
+      return real(sql)
+    }
+    const res = await call('PUT', `/admin/api/partners/${id}`, body(['novo.com']))
+    db.prepare = real
+    expect(res.status).toBe(500)
+    expect(await hostsOf(id)).toEqual(['a.com'])
+  })
+})
+
+describe('painel — lista de ciclos', () => {
+  it('conta como ativo só o aparelho com 24 h ou mais entre a primeira e a última entrada', async () => {
+    const { id } = (await call('POST', '/admin/api/partners', { name: 'P', startedOn: '2026-03-01', active: true, hosts: ['p.com'] })).body
+    for (const key of ['d'.repeat(64), 'e'.repeat(64)]) await call('POST', '/v1/hello', { deviceKey: key }, null)
+    clock = brt(2026, 3, 10)
+    await entry('d'.repeat(64), 'p.com', clock)
+    await entry('e'.repeat(64), 'p.com', clock)
+    await entry('d'.repeat(64), 'p.com', clock + 25 * 3600e3)
+    clock = brt(2026, 3, 12)
+    const cycles = (await call('GET', `/admin/api/partners/${id}/cycles`)).body
+    expect(cycles[0]).toMatchObject({ index: 0, actives: 1 })
   })
 })

@@ -14,6 +14,7 @@ import { normalizeHost } from '../../server/license/license-rules.mjs'
 const STATE_KEY = 'license:state'
 export const ENTRY_DELAY_MS = 10 * 1000
 export const BLOCK_STALE_MS = 7 * 24 * 3600 * 1000
+const BLOCKING = ['blocked', 'suspended'] // suspended: o dono bloqueou o aparelho (RFC-019)
 
 export const listHost = (session) => normalizeHost(session && session.baseUrl)
 
@@ -51,7 +52,7 @@ export const useLicenseStore = defineStore('license', () => {
 
   /** Pergunta ao serviço sobre a lista da sessão; em falha mantém o que estava salvo. */
   async function refresh(session) {
-    if (!isLicenseEnabled() || !listHost(session)) return
+    if (!isLicenseEnabled() || !session) return
     await load()
     try {
       const id = await identity(session)
@@ -65,7 +66,7 @@ export const useLicenseStore = defineStore('license', () => {
   }
 
   function shouldBlock(session) {
-    if (!isLicenseEnabled() || access.value !== 'blocked') return false
+    if (!isLicenseEnabled() || !BLOCKING.includes(access.value)) return false
     return host.value === listHost(session) && Date.now() - checkedAt.value < BLOCK_STALE_MS
   }
 

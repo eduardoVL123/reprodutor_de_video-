@@ -13,18 +13,28 @@ afterEach(async () => {
   vi.resetModules()
 })
 
-async function mountScreen({ storeBuild = '' } = {}) {
+async function mountScreen({ storeBuild = '', suspended = false } = {}) {
   vi.stubEnv('VITE_LICENSE_BASE_URL', 'https://licenca.test')
   vi.stubEnv('VITE_LICENSE_STORE_BUILD', storeBuild)
   const nav = await import('@/utils/spatialNavigation')
   nav.initSpatialNavigation()
   const { default: ActivationRequired } = await import('@/views/ActivationRequired.vue')
-  const wrapper = mount(ActivationRequired, { props: { code: 'QDU5NXY7' }, attachTo: document.body })
+  const wrapper = mount(ActivationRequired, { props: { code: 'QDU5NXY7', suspended }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
 
 describe('tela de ativação', () => {
+  it('aparelho suspenso: avisa e manda falar com o suporte, sem QR nem planos', async () => {
+    const wrapper = await mountScreen({ suspended: true })
+    expect(wrapper.text()).toContain('Aparelho suspenso')
+    expect(wrapper.text()).toMatch(/suporte/)
+    expect(wrapper.find('#activation-qr').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('teste de 7 dias')
+    expect(wrapper.find('#activation-code').text()).toBe('QDU5NXY7')
+    wrapper.unmount()
+  })
+
   it('mostra o código, o QR da página de planos e o foco começa em "Já paguei, verificar"', async () => {
     const wrapper = await mountScreen()
     expect(wrapper.text()).toContain('Ative este aparelho')

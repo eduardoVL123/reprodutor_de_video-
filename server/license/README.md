@@ -24,7 +24,11 @@ No app, `VITE_LICENSE_BASE_URL=http://127.0.0.1:8789` no `.env.local`.
 - `license-rules.mjs` — regras puras (teste, ciclos, ativo, domínio). O app usa `normalizeHost` daqui.
 - `license-db.mjs` — tabelas e consultas (SQL de SQLite, compatível com Cloudflare D1).
 - `license-core.mjs` — rotas `/v1/hello`, `/v1/access`, `/v1/entry` e página `/a/:code` (Web Standards).
-- `license-admin.mjs` — API do painel (`/admin/api/*`), com token.
+- `license-admin.mjs` — API do painel (`/admin/api/*`), com token: parceiros, relatório (com valor do mês), aparelhos
+  (liberar, revogar, bloquear, dias de teste, observação, apagar) e revendedores (RFC-019).
+- `license-api.mjs` — API pública dos revendedores (`/api/v1/*`), documentada em [`API.md`](API.md).
+- `license-resellers.mjs` — regras de revenda: chaves, créditos, ativação e repasse (débito atômico e idempotente).
+- `pricing.mjs` — tabelas de preço do dono (créditos, assinatura de R$ 25, mensalidade do parceiro), em centavos.
 - `sqlite-d1.mjs` — `node:sqlite` com a interface do D1.
 - `license-server.mjs` — servidor Node local; `public/admin/` — páginas do painel.
 

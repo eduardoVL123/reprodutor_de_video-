@@ -10,7 +10,8 @@ import { pushFocusScope } from '@/utils/spatialNavigation'
  * QR e endereço levam à página de planos com o código; na versão das lojas (D4) não há QR nem preço.
  * Fica abaixo dos diálogos (z-40): Gerenciar listas e "Sair do app?" abrem por cima.
  */
-const props = defineProps({ code: { type: String, required: true } })
+// suspended: o dono bloqueou o aparelho (RFC-019); não há o que comprar, só falar com o suporte.
+const props = defineProps({ code: { type: String, required: true }, suspended: { type: Boolean, default: false } })
 defineEmits(['retry', 'manage-lists'])
 
 const rootEl = ref(null)
@@ -18,7 +19,7 @@ const storeBuild = isStoreBuild()
 const pageUrl = computed(() => plansPageUrl(props.code))
 const displayUrl = computed(() => pageUrl.value.replace(/^https?:\/\//i, ''))
 const qr = computed(() => {
-  if (storeBuild) return null
+  if (storeBuild || props.suspended) return null
   try {
     return qrSvgData(pageUrl.value)
   } catch (_) {
@@ -66,16 +67,24 @@ onBeforeUnmount(() => {
 
       <div class="min-w-0 max-w-[48rem]">
         <BrandMark :size="2.5" class="block mb-5 text-tv-accent" />
-        <h1 id="activation-title" class="text-tv-xl font-bold text-white">Ative este aparelho</h1>
-        <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
-          O período de teste de 7 dias terminou. Para continuar com esta lista, ative o aparelho.
-        </p>
-        <p v-if="!storeBuild" class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
-          Escaneie o QR code ou abra <span class="text-white font-semibold">{{ displayUrl }}</span> e veja os planos.
-        </p>
-        <p v-else class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
-          Fale com seu fornecedor e informe o código abaixo.
-        </p>
+        <template v-if="suspended">
+          <h1 id="activation-title" class="text-tv-xl font-bold text-white">Aparelho suspenso</h1>
+          <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
+            O acesso deste aparelho foi suspenso. Fale com o suporte e informe o código abaixo.
+          </p>
+        </template>
+        <template v-else>
+          <h1 id="activation-title" class="text-tv-xl font-bold text-white">Ative este aparelho</h1>
+          <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
+            O período de teste de 7 dias terminou. Para continuar com esta lista, ative o aparelho.
+          </p>
+          <p v-if="!storeBuild" class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
+            Escaneie o QR code ou abra <span class="text-white font-semibold">{{ displayUrl }}</span> e veja os planos.
+          </p>
+          <p v-else class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
+            Fale com seu fornecedor e informe o código abaixo.
+          </p>
+        </template>
 
         <p class="mt-6 text-tv-xs uppercase tracking-[0.25em] text-neutral-500 font-bold">Código do aparelho</p>
         <p id="activation-code" class="mt-1 font-mono text-tv-2xl font-black tracking-[0.2em] text-tv-accent">{{ code }}</p>
