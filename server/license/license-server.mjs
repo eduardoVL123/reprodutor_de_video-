@@ -20,6 +20,10 @@ const ADMIN_FILES = {
   '/admin/': { file: 'admin/index.html', type: 'text/html; charset=utf-8' },
   '/admin/admin.js': { file: 'admin/admin.js', type: 'text/javascript; charset=utf-8' },
   '/admin/admin.css': { file: 'admin/admin.css', type: 'text/css; charset=utf-8' },
+  // Painel do revendedor (RFC-022)
+  '/revenda/': { file: 'revenda/index.html', type: 'text/html; charset=utf-8' },
+  '/revenda/revenda.js': { file: 'revenda/revenda.js', type: 'text/javascript; charset=utf-8' },
+  '/revenda/revenda.css': { file: 'revenda/revenda.css', type: 'text/css; charset=utf-8' },
   // Site (RFC-021)
   '/': { file: 'site/index.html', type: 'text/html; charset=utf-8' },
   '/assinar': { file: 'site/assinar.html', type: 'text/html; charset=utf-8' },
@@ -64,7 +68,7 @@ export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', 
       res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
       return res.end('ok')
     }
-    const page = req.method === 'GET' && ADMIN_FILES[path === '/admin' ? '/admin/' : path]
+    const page = req.method === 'GET' && ADMIN_FILES[path === '/admin' || path === '/revenda' ? `${path}/` : path]
     if (page) {
       const content = readFileSync(join(publicDir, page.file)) // antes do writeHead: arquivo faltando vira 500, não resposta pendurada
       res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': page.type, 'Content-Security-Policy': PAGE_CSP })

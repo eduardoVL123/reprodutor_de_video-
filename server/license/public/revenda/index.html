@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Painel do revendedor · Pulse Player</title>
+    <link rel="stylesheet" href="/revenda/revenda.css" />
+  </head>
+  <body>
+    <header>
+      <span class="brand">Pulse<span>Player</span> · Revenda</span>
+      <button type="button" id="logout" class="link" hidden>Sair</button>
+    </header>
+
+    <main>
+      <p id="message" role="status"></p>
+
+      <section id="login" hidden>
+        <h1>Entrar</h1>
+        <form id="login-form" class="card">
+          <label for="key">Chave do painel</label>
+          <input id="key" type="password" autocomplete="current-password" required />
+          <button type="submit">Entrar</button>
+          <a id="support-link" class="link" href="#" hidden rel="noopener noreferrer">Perdi a chave</a>
+        </form>
+      </section>
+
+      <div id="app" hidden>
+        <nav class="jump">
+          <a href="#ativar">Ativar TV</a>
+          <a href="#clientes">Meus clientes</a>
+          <a href="#revendas">Revendas</a>
+          <a href="#extrato">Extrato</a>
+          <a href="#comprar">Comprar créditos</a>
+          <a href="#chave">Minha chave</a>
+        </nav>
+
+        <section class="card hero">
+          <p id="reseller-name" class="name"></p>
+          <p class="muted">Créditos disponíveis</p>
+          <p id="balance" class="balance">0</p>
+          <p class="muted">1 crédito ativa 1 aparelho por 1 ano.</p>
+        </section>
+
+        <section id="ativar">
+          <h2>Ativar TV</h2>
+          <form id="activate-form" class="card">
+            <label for="activate-code">Código do aparelho (aparece na tela da TV)</label>
+            <input id="activate-code" class="code" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
+            <button type="submit" id="activate-button">Ativar 1 ano (1 crédito)</button>
+            <p id="activate-status" role="status"></p>
+          </form>
+        </section>
+
+        <section id="clientes">
+          <h2>Meus clientes</h2>
+          <label>Buscar código <input id="client-search" type="text" maxlength="12" autocomplete="off" /></label>
+          <table>
+            <thead><tr><th>Código</th><th>Ativado em</th><th>Vence em</th><th></th></tr></thead>
+            <tbody id="client-rows"></tbody>
+          </table>
+          <button type="button" id="client-more" class="link" hidden>Carregar mais</button>
+        </section>
+
+        <section id="revendas">
+          <h2>Revendas</h2>
+          <table>
+            <thead><tr><th>Nome</th><th>Contato</th><th>Créditos</th><th></th><th></th></tr></thead>
+            <tbody id="sub-rows"></tbody>
+          </table>
+          <form id="transfer-form" class="card" hidden>
+            <h3 id="transfer-title"></h3>
+            <label for="transfer-amount">Quantos créditos passar?</label>
+            <input id="transfer-amount" type="number" min="1" step="1" />
+            <button type="submit">Passar créditos</button>
+          </form>
+          <form id="sub-form" class="card">
+            <h3>Nova revenda</h3>
+            <label for="sub-name">Nome</label>
+            <input id="sub-name" maxlength="100" required />
+            <label for="sub-contact">Contato (WhatsApp ou e-mail)</label>
+            <input id="sub-contact" maxlength="120" />
+            <button type="submit">Criar revenda</button>
+          </form>
+          <p id="sub-key" class="key" role="status"></p>
+        </section>
+
+        <section id="extrato">
+          <h2>Extrato</h2>
+          <table>
+            <thead><tr><th>Quando</th><th>Movimento</th><th>Créditos</th><th>Detalhe</th></tr></thead>
+            <tbody id="movement-rows"></tbody>
+          </table>
+        </section>
+
+        <section id="comprar">
+          <h2>Comprar créditos</h2>
+          <table>
+            <thead><tr><th>Quantidade</th><th>Preço por crédito</th></tr></thead>
+            <tbody id="tier-rows"></tbody>
+          </table>
+          <form id="buy-form" class="card">
+            <label for="buy-qty">Quantos créditos?</label>
+            <input id="buy-qty" type="number" min="10" step="1" value="10" />
+            <p id="buy-total" class="total"></p>
+            <button type="submit">Comprar pelo WhatsApp</button>
+            <a id="buy-whatsapp" class="button" href="#" hidden rel="noopener noreferrer">Abrir o WhatsApp</a>
+          </form>
+        </section>
+
+        <section id="chave">
+          <h2>Minha chave e API</h2>
+          <p class="muted">
+            A chave dá acesso aos seus créditos: guarde num lugar seguro. Painéis de outros sistemas usam a mesma chave pela API
+            (peça a documentação ao Pulse Player).
+          </p>
+          <button type="button" id="rotate-key" class="danger">Trocar minha chave</button>
+          <p id="my-key" class="key" role="status"></p>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
+    </footer>
+    <script src="/revenda/revenda.js"></script>
+  </body>
+</html>

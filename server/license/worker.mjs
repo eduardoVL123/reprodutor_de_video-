@@ -9,7 +9,7 @@ import { SECURITY_HEADERS, PAGE_CSP } from '../pair/pair-core.mjs'
 import { createLicenseHandler } from './license-core.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
 
-const ADMIN_PAGES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css', '/site/site.js', '/site/site.css', '/site/pair-lib.js'])
+const ADMIN_PAGES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css', '/revenda/', '/revenda/revenda.js', '/revenda/revenda.css', '/site/site.js', '/site/site.css', '/site/pair-lib.js'])
 // Páginas do site (RFC-021) -> caminho canônico nos assets (o Workers serve /x.html como /x e index.html como /).
 const SITE_PAGES = { '/': '/site/', '/assinar': '/site/assinar', '/creditos': '/site/creditos' }
 const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8' }
@@ -31,7 +31,7 @@ export default {
   async fetch(request, env) {
     const url = new URL(request.url)
     if (url.pathname === '/healthz') return new Response('ok', { headers: { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' } })
-    if (url.pathname === '/admin') return Response.redirect(new URL('/admin/', url).toString(), 301)
+    if (url.pathname === '/admin' || url.pathname === '/revenda') return Response.redirect(new URL(`${url.pathname}/`, url).toString(), 301)
     if (request.method === 'GET' && SITE_PAGES[url.pathname]) {
       return withHeaders(await env.ASSETS.fetch(new Request(new URL(SITE_PAGES[url.pathname], url).toString())), 'text/html; charset=utf-8')
     }

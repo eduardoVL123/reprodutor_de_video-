@@ -31,6 +31,8 @@ No app, `VITE_LICENSE_BASE_URL=http://127.0.0.1:8789` no `.env.local`.
 - `license-inbox.mjs` — caixa de entrada cifrada da TV (RFC-021): o site manda a lista cifrada, a TV busca e confirma.
 - `public/site/` — site público (RFC-021): `/` Enviar lista, `/assinar`, `/creditos` (vendas pelo WhatsApp por enquanto).
   `pair-lib.js` é cópia idêntica de `server/pair/public/pair-lib.js` (há teste que exige isso).
+- `public/revenda/` — painel do revendedor (RFC-022) em `/revenda/`: entra com a chave da revenda e usa só a API
+  `/api/v1/*` (ativar TV, clientes, revendas, extrato, comprar créditos pelo WhatsApp, trocar chave).
 - `pricing.mjs` — tabelas de preço do dono (créditos, assinatura de R$ 25, mensalidade do parceiro), em centavos.
 - `sqlite-d1.mjs` — `node:sqlite` com a interface do D1.
 - `license-server.mjs` — servidor Node local; `public/admin/` — páginas do painel.

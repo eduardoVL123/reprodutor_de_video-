@@ -101,6 +101,15 @@ describe('Worker da licença', () => {
     }
   })
 
+  it('serve o painel do revendedor (RFC-022) em /revenda/', async () => {
+    const env = mockEnv()
+    const res = await worker.fetch(new Request('https://licenca.test/revenda/'), env)
+    expect(res.status).toBe(200)
+    expect(res.headers.get('Content-Security-Policy')).toContain("script-src 'self'")
+    expect(await res.text()).toContain('activate-form')
+    expect((await worker.fetch(new Request('https://licenca.test/revenda'), env)).status).toBe(301)
+  })
+
   it('a rotina diária (cron) roda a limpeza de 24 meses', async () => {
     const env = mockEnv()
     await post(env, '/v1/access', { deviceKey: 'd'.repeat(64), host: 'x.com' })

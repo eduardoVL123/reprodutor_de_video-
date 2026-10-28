@@ -1,0 +1,34 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #0b0f0c; color: #f1f5f9; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 1px solid #1f2a22; }
+.brand { font-weight: 800; }
+.brand span { color: #b8f000; margin: 0 .25rem; }
+main { max-width: 44rem; margin: 0 auto; padding: 1rem; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.2rem; margin: 2rem 0 .5rem; }
+h3 { font-size: 1rem; margin: 0; }
+.jump { display: flex; flex-wrap: wrap; gap: .5rem; margin-bottom: 1rem; }
+.jump a { color: #cbd5e1; border: 1px solid #2a332c; border-radius: 999px; padding: .3rem .8rem; text-decoration: none; font-size: .9rem; }
+.card { display: flex; flex-direction: column; gap: .5rem; background: #121915; border: 1px solid #2a332c; border-radius: 1rem; padding: 1rem; margin: .75rem 0; }
+.hero { align-items: center; text-align: center; }
+.name { font-weight: 700; font-size: 1.1rem; margin: 0; }
+.balance { font-size: 3rem; font-weight: 900; color: #b8f000; margin: 0; }
+.muted { color: #94a3b8; margin: 0; font-size: .9rem; }
+.total { font-weight: 800; color: #b8f000; margin: 0; }
+label { color: #cbd5e1; font-size: .95rem; display: grid; gap: .25rem; }
+input { background: #0b0f0c; color: #f1f5f9; border: 1px solid #2a332c; border-radius: .6rem; padding: .7rem .75rem; font: inherit; width: 100%; }
+input.code { font-family: ui-monospace, Consolas, monospace; font-size: 1.3rem; letter-spacing: .2em; text-transform: uppercase; }
+button, .button { background: #b8f000; color: #0b0f0c; border: 0; border-radius: .7rem; padding: .75rem 1rem; font: inherit; font-weight: 800; cursor: pointer; text-align: center; text-decoration: none; }
+button:disabled { opacity: .6; cursor: wait; }
+button.link, a.link { background: transparent; color: #94a3b8; text-decoration: underline; font-weight: 400; padding: .25rem; }
+button.danger { background: #7f1d1d; color: #fff; }
+table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .4rem; border-bottom: 1px solid #1f2a22; }
+tr.soon td { color: #fbbf24; }
+.key { word-break: break-all; color: #b8f000; }
+#message { min-height: 1.5rem; }
+.ok { color: #b8f000; }
+.error { color: #fca5a5; }
+footer { border-top: 1px solid #1f2a22; padding: 1rem; color: #94a3b8; font-size: .8rem; text-align: center; margin-top: 2rem; }
+/* Celular: em Meus clientes some "Ativado em" (o vencimento é o que importa); as outras tabelas ficam inteiras. */
+@media (max-width: 30rem) { #clientes th:nth-child(2), #clientes td:nth-child(2) { display: none; } }
