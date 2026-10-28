@@ -81,6 +81,15 @@ MIGRATIONS.push(
     created_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS device_events_device ON device_events (device_key, id)`,
+  // RFC-021: listas enviadas pelo site, só texto cifrado, até a TV buscar (no máximo 7 dias).
+  `CREATE TABLE IF NOT EXISTS inbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_key TEXT NOT NULL,
+    box TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    expires_at INTEGER NOT NULL
+  )`,
+  `CREATE INDEX IF NOT EXISTS inbox_device ON inbox (device_key, id)`,
 )
 
 /** Colunas novas em tabelas existentes: ALTER TABLE não tem IF NOT EXISTS, então "já existe" é ignorado. */
@@ -88,6 +97,7 @@ export const COLUMN_MIGRATIONS = [
   'ALTER TABLE devices ADD COLUMN blocked_at INTEGER',
   'ALTER TABLE devices ADD COLUMN note TEXT',
   'ALTER TABLE activations ADD COLUMN reseller_id INTEGER',
+  'ALTER TABLE devices ADD COLUMN inbox_pub TEXT',
 ]
 
 export async function migrate(db) {
@@ -134,6 +144,7 @@ export const RETENTION_MS = 730 * 24 * 3600 * 1000
 /** Apaga entradas e ativações encerradas há mais de 24 meses e os aparelhos que ficaram sem nenhuma das duas. */
 export async function purgeExpired(db, now) {
   const cutoff = now - RETENTION_MS
+  await db.prepare('DELETE FROM inbox WHERE expires_at <= ?').bind(now).run()
   await db.prepare('DELETE FROM partner_cycle_entries WHERE last_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db

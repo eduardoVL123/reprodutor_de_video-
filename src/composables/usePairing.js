@@ -19,7 +19,7 @@ const BAD_DATA_MESSAGE = 'Não foi possível abrir os dados recebidos. Gere um n
 const UNAVAILABLE_MESSAGE = new PairingError('UNAVAILABLE').userMessage
 
 /** Servidor (host:porta) e se a conexão é sem criptografia, com a mesma regra do login (sem protocolo = http). */
-function describeList(dns) {
+export function describeList(dns) {
   const url = new URL(normalizeBaseUrl(dns))
   return { host: url.host, insecure: url.protocol === 'http:' }
 }

@@ -9,7 +9,9 @@ import { SECURITY_HEADERS, PAGE_CSP } from '../pair/pair-core.mjs'
 import { createLicenseHandler } from './license-core.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
 
-const ADMIN_PAGES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css'])
+const ADMIN_PAGES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css', '/site/site.js', '/site/site.css', '/site/pair-lib.js'])
+// Páginas do site (RFC-021) -> caminho canônico nos assets (o Workers serve /x.html como /x e index.html como /).
+const SITE_PAGES = { '/': '/site/', '/assinar': '/site/assinar', '/creditos': '/site/creditos' }
 const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8' }
 const SWEEP_EVERY_MS = 60 * 1000
 
@@ -30,6 +32,9 @@ export default {
     const url = new URL(request.url)
     if (url.pathname === '/healthz') return new Response('ok', { headers: { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' } })
     if (url.pathname === '/admin') return Response.redirect(new URL('/admin/', url).toString(), 301)
+    if (request.method === 'GET' && SITE_PAGES[url.pathname]) {
+      return withHeaders(await env.ASSETS.fetch(new Request(new URL(SITE_PAGES[url.pathname], url).toString())), 'text/html; charset=utf-8')
+    }
     if (request.method === 'GET' && ADMIN_PAGES.has(url.pathname)) {
       const res = await env.ASSETS.fetch(new Request(new URL(url.pathname, url).toString()))
       return withHeaders(res, TYPES[url.pathname.split('.').pop()] || 'text/html; charset=utf-8')

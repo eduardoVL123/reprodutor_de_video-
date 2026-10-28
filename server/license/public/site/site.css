@@ -1,0 +1,29 @@
+* { box-sizing: border-box; }
+body { margin: 0; background: #0b0f0c; color: #f1f5f9; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; }
+header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem; border-bottom: 1px solid #1f2a22; }
+.brand { color: #f1f5f9; font-weight: 800; font-size: 1.25rem; text-decoration: none; }
+.brand span { color: #b8f000; margin-left: .25rem; }
+nav { display: flex; flex-wrap: wrap; gap: .5rem; }
+.tab { color: #cbd5e1; text-decoration: none; border: 1px solid #2a332c; border-radius: 999px; padding: .4rem .9rem; font-size: .95rem; }
+.tab.active { background: #b8f000; color: #0b0f0c; border-color: #b8f000; font-weight: 700; }
+main { max-width: 34rem; margin: 0 auto; padding: 1.5rem 1rem 2rem; }
+h1 { font-size: 1.6rem; margin: .5rem 0 1rem; }
+.lead { color: #cbd5e1; }
+.small { color: #94a3b8; font-size: .85rem; }
+.card { display: flex; flex-direction: column; gap: .5rem; background: #121915; border: 1px solid #2a332c; border-radius: 1rem; padding: 1rem; margin: 1rem 0; width: 100%; }
+table.card { display: table; border-collapse: collapse; }
+th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #1f2a22; }
+label { color: #cbd5e1; font-size: .95rem; margin-top: .25rem; }
+input, textarea { background: #0b0f0c; color: #f1f5f9; border: 1px solid #2a332c; border-radius: .6rem; padding: .7rem .75rem; font: inherit; width: 100%; }
+input.code { font-family: ui-monospace, Consolas, monospace; font-size: 1.4rem; letter-spacing: .2em; text-transform: uppercase; }
+button, .button { background: #b8f000; color: #0b0f0c; border: 0; border-radius: .7rem; padding: .85rem 1rem; font: inherit; font-weight: 800; cursor: pointer; text-align: center; text-decoration: none; margin-top: .5rem; }
+button:disabled { opacity: .6; cursor: wait; }
+.plan { align-items: center; text-align: center; }
+.price { font-size: 1.8rem; font-weight: 800; color: #b8f000; margin: .25rem 0; }
+small { color: #94a3b8; }
+.steps { color: #cbd5e1; padding-left: 1.25rem; }
+[role='status'] { min-height: 1.5rem; margin: .25rem 0 0; }
+.ok { color: #b8f000; }
+.error { color: #fca5a5; }
+footer { border-top: 1px solid #1f2a22; padding: 1rem; color: #94a3b8; font-size: .8rem; text-align: center; }
+footer a { color: #b8f000; }

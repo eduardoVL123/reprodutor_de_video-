@@ -21,7 +21,7 @@ const PRIVACY_TEXT_WITH_PAIRING =
 
 // RFC-018: com o serviço de licença no build, "não coletamos" deixa de ser verdade; o texto diz o que vai e o que não vai.
 const LICENSE_TEXT =
-  'O app tem um teste grátis de 7 dias. Para controlar o teste e a ativação, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista. '
+  'O app tem um teste grátis de 7 dias. Para controlar o teste e a ativação, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você enviar a lista pelo site, ela passa cifrada pelo serviço do desenvolvedor, que não consegue lê-la, por até 7 dias, e é apagada quando a TV recebe. Capas e logotipos vêm dos endereços da sua lista. '
 
 function privacyText() {
   if (isLicenseEnabled()) {

@@ -5,6 +5,7 @@ import { setActivePinia, createPinia } from 'pinia'
 
 const getId = vi.fn(async () => ({ identifier: 'android-id-123' }))
 vi.mock('@capacitor/device', () => ({ Device: { getId: () => getId() } }))
+vi.mock('@/services/inboxKeys', () => ({ loadOrCreateInboxKeys: async () => ({ publicKey: 'PUB-DA-TV', open: async () => ({}) }) }))
 
 const memory = new Map()
 vi.mock('@/services/storage', async (importOriginal) => ({
@@ -130,9 +131,33 @@ describe('chamadas ao serviço (G3: só chave, plataforma e domínio)', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('https://licenca.test/v1/access')
     const body = JSON.parse(init.body)
-    expect(Object.keys(body).sort()).toEqual(['deviceKey', 'host', 'platform'])
+    expect(Object.keys(body).sort()).toEqual(['deviceKey', 'host', 'platform', 'pub'])
+    expect(body.pub).toBe('PUB-DA-TV')
     expect(body.host).toBe('parceiro.com')
     expect(init.body).not.toMatch(/S3nh|joao|get\.php/)
+  })
+})
+
+describe('registro na tela de login (RFC-021)', () => {
+  it('sem lista, a TV se registra com domínio vazio e a chave da caixa de entrada, e ganha o código', async () => {
+    const fetchMock = setup({ fetchImpl: async () => reply(200, { access: 'trial', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.announce()
+    expect(license.code).toBe('QDU5NXY7')
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body).toMatchObject({ host: '', pub: 'PUB-DA-TV' })
+  })
+
+  it('registrar na tela de login não apaga o estado salvo da lista (o bloqueio da lista continua valendo)', async () => {
+    let answer = 'blocked'
+    setup({ fetchImpl: async () => reply(200, { access: answer, code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh({ baseUrl: 'http://outra.com' })
+    answer = 'trial'
+    await license.announce()
+    expect(license.shouldBlock({ baseUrl: 'http://outra.com' })).toBe(true)
   })
 })
 

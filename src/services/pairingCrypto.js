@@ -39,7 +39,16 @@ function toListInput(data) {
  *          `open` rejeita com `Error('BAD_DATA')` para qualquer dado que não seja deste par de chaves e desta sessão.
  */
 export async function createPairingKeys() {
-  const pair = await crypto.subtle.generateKey(ECDH, false, ['deriveKey'])
+  return keysFromPair(await crypto.subtle.generateKey(ECDH, false, ['deriveKey']))
+}
+
+/** Novo par ECDH P-256 com a chave privada não extraível (a caixa de entrada do site guarda o par no aparelho). */
+export function generateEcdhPair() {
+  return crypto.subtle.generateKey(ECDH, false, ['deriveKey'])
+}
+
+/** `publicKey` + `open` de um par já existente (mesmo formato e regras do pareamento). */
+export async function keysFromPair(pair) {
   const publicKey = toBase64Url(new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey)))
 
   async function open(box, code) {

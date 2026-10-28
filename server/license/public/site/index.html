@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Enviar lista · Pulse Player</title>
+    <meta name="description" content="Envie sua lista para a TV com o código do aparelho, sem digitar no controle remoto." />
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Pulse<span>Player</span></a>
+      <nav>
+        <a href="/" class="tab active">Enviar lista</a>
+        <a href="/assinar" class="tab">Assinar meu aparelho</a>
+        <a href="/creditos" class="tab">Comprar créditos</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Envie sua lista para a TV</h1>
+      <p class="lead">
+        Abra o Pulse Player na TV e veja o <strong>código do aparelho</strong> na tela de entrada ou em Gerenciar listas.
+        Digite aqui o código e a sua lista: ela chega cifrada na TV, que pergunta se você quer adicionar.
+      </p>
+
+      <form id="send-form" class="card" novalidate>
+        <label for="code">Código do aparelho</label>
+        <input id="code" class="code" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
+
+        <label for="link">Link da lista ou endereço do servidor</label>
+        <textarea id="link" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://exemplo.com:8080 ou o link da lista"></textarea>
+
+        <label for="user">Usuário (se tiver)</label>
+        <input id="user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+        <label for="pass">Senha (se tiver)</label>
+        <input id="pass" type="password" autocomplete="off" />
+        <label for="name">Apelido da lista (opcional)</label>
+        <input id="name" type="text" maxlength="60" autocomplete="off" placeholder="Sala" />
+
+        <button type="submit" id="send-button">Enviar para a TV</button>
+        <p id="send-status" role="status"></p>
+      </form>
+
+      <p class="small">
+        A lista é cifrada no seu navegador e só a sua TV consegue abrir. O Pulse Player guarda apenas o texto cifrado, por
+        até 7 dias, e apaga assim que a TV recebe.
+      </p>
+    </main>
+
+    <footer>
+      <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
+      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+    </footer>
+    <script src="/site/pair-lib.js"></script>
+    <script src="/site/site.js"></script>
+  </body>
+</html>

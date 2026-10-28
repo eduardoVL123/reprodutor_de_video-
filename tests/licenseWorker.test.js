@@ -14,7 +14,8 @@ function mockEnv(extra = {}) {
     ASSETS: {
       fetch: vi.fn(async (req) => {
         let path = new URL(req.url).pathname.replace(/^\//, '')
-        if (path.endsWith('/')) path += 'index.html'
+        if (path.endsWith('/') || path === '') path += 'index.html'
+        else if (!/\.[a-z]+$/.test(path)) path += '.html' // como o Workers: /site/assinar serve assinar.html
         const full = join(PUBLIC_DIR, path)
         return existsSync(full) ? new Response(readFileSync(full), { status: 200 }) : new Response('nada', { status: 404 })
       }),
@@ -88,6 +89,16 @@ describe('Worker da licença', () => {
       env,
     )
     expect(ok.status).toBe(200)
+  })
+
+  it('serve as páginas do site (RFC-021) com a política de segurança', async () => {
+    const env = mockEnv()
+    for (const [path, text] of [['/', 'send-form'], ['/assinar', 'sub-form'], ['/creditos', 'credit-qty']]) {
+      const res = await worker.fetch(new Request(`https://licenca.test${path}`), env)
+      expect(res.status).toBe(200)
+      expect(res.headers.get('Content-Security-Policy')).toContain("script-src 'self'")
+      expect(await res.text()).toContain(text)
+    }
   })
 
   it('a rotina diária (cron) roda a limpeza de 24 meses', async () => {

@@ -5,12 +5,13 @@
  * Do app chegam só deviceKey (hash), platform e o domínio da lista (G3); qualquer outro campo é ignorado.
  * Todos os horários vêm de now() do servidor (G4).
  */
-import { generateCode, createLimiter, readJsonBody, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
+import { generateCode, createLimiter, readJsonBody, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET } from '../pair/pair-core.mjs'
 import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost } from './license-rules.mjs'
-import { findDevice, findDeviceByCode, insertDevice, activationEndsAt, partnerForHost, upsertEntry } from './license-db.mjs'
+import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry } from './license-db.mjs'
 import { createAdminRoutes } from './license-admin.mjs'
 import { createApiRoutes } from './license-api.mjs'
-import { plansPage, PLANS_CSS, NOT_FOUND_PAGE } from './license-pages.mjs'
+import { createInboxRoutes, validPub } from './license-inbox.mjs'
+import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
 export const MAX_BODY_BYTES = 4096
@@ -31,15 +32,12 @@ export function json(status, body, extra = {}) {
 
 const fail = (status, error, extra) => json(status, { error }, extra)
 
-function page(status, body, type = 'text/html; charset=utf-8') {
-  return new Response(body, { status, headers: { 'Content-Type': type, ...SECURITY_HEADERS, 'Content-Security-Policy': PAGE_CSP } })
-}
-
 export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS } = {}) {
   const limiter = createLimiter(now)
   const dailyLimiter = createLimiter(now, DAY_MS)
   const handleAdmin = createAdminRoutes({ db, now, adminToken, json })
   const handleApi = createApiRoutes({ db, now, json, limiter })
+  const handleInbox = createInboxRoutes({ db, now, json, limiter })
 
   /** Aparelho da chave; cria com 7 dias de teste na primeira vez (reinstalar acha o mesmo). */
   async function ensureDevice(deviceKey, platform, ip) {
@@ -61,6 +59,10 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
 
   async function deviceState(body, ip) {
     const device = await ensureDevice(body.deviceKey, PLATFORMS.includes(body.platform) ? body.platform : 'web', ip)
+    // RFC-021: a TV publica a chave da caixa de entrada; o site cifra a lista para ela.
+    if (validPub(body.pub) && body.pub !== device.inbox_pub) {
+      await db.prepare('UPDATE devices SET inbox_pub = ? WHERE device_key = ?').bind(body.pub, device.device_key).run()
+    }
     return { device, activationEnd: await activationEndsAt(db, device.device_key) }
   }
 
@@ -112,11 +114,12 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...LICENSE_CORS } })
     if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url)
     if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url)
-    if (request.method === 'GET' && url.pathname === '/a/plans.css') return page(200, PLANS_CSS, 'text/css; charset=utf-8')
+    if (url.pathname.startsWith('/v1/inbox')) return handleInbox(request, url, ip)
+    // RFC-021: o QR da tela de ativação abre a aba Assinar do site com o código preenchido.
     const plans = request.method === 'GET' && url.pathname.match(PLANS_ROUTE)
-    if (plans) {
-      const device = await findDeviceByCode(db, plans[1])
-      return device ? page(200, plansPage(device.code, contactUrl)) : page(404, NOT_FOUND_PAGE)
+    if (plans) return new Response(null, { status: 302, headers: { ...SECURITY_HEADERS, Location: `/assinar?codigo=${plans[1]}` } })
+    if (request.method === 'GET' && url.pathname === '/v1/site-config') {
+      return json(200, { contactUrl, devicePriceCents: DEVICE_ANNUAL_PRICE, minCredits: MIN_CREDITS, creditTiers: CREDIT_TIERS })
     }
     const route = request.method === 'POST' && routes[url.pathname]
     if (!route) return fail(404, 'Não encontrado.')

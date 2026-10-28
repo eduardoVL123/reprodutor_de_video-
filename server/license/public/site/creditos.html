@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Comprar créditos · Pulse Player</title>
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Pulse<span>Player</span></a>
+      <nav>
+        <a href="/" class="tab">Enviar lista</a>
+        <a href="/assinar" class="tab">Assinar meu aparelho</a>
+        <a href="/creditos" class="tab active">Comprar créditos</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Créditos para revenda</h1>
+      <p class="lead">Cada crédito ativa 1 aparelho por 1 ano. Você recebe um painel para ativar os seus clientes e criar revendas.</p>
+
+      <table class="card">
+        <thead><tr><th>Quantidade</th><th>Preço por crédito</th></tr></thead>
+        <tbody id="tier-rows"></tbody>
+      </table>
+
+      <form id="credit-form" class="card" novalidate>
+        <label for="credit-qty">Quantos créditos?</label>
+        <input id="credit-qty" type="number" min="10" step="1" value="10" />
+        <p id="credit-total" class="price"></p>
+        <label for="credit-name">Seu nome</label>
+        <input id="credit-name" type="text" maxlength="100" autocomplete="name" />
+        <button type="submit">Comprar pelo WhatsApp</button>
+        <a id="credit-whatsapp" class="button" href="#" hidden rel="noopener noreferrer">Abrir o WhatsApp</a>
+        <p id="credit-status" role="status"></p>
+      </form>
+    </main>
+
+    <footer>
+      <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
+      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+    </footer>
+    <script src="/site/site.js"></script>
+  </body>
+</html>

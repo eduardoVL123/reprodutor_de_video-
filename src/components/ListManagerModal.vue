@@ -3,6 +3,7 @@ import { ref, nextTick, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '@/stores/authStore'
 import { registerBackHandler, pushFocusScope, focusFirstIn } from '@/utils/spatialNavigation'
 import PairPanel from '@/components/PairPanel.vue'
+import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
 import { useLicenseStore } from '@/stores/licenseStore'
 
@@ -466,9 +467,13 @@ defineExpose({ open, close })
       </div>
 
       <!-- RFC-018: o código do aparelho serve para pagar a ativação e para o suporte -->
-      <p v-if="license.code" id="device-code" class="px-10 pb-6 text-tv-xs text-neutral-500">
+      <p v-if="license.code" id="device-code" class="px-10 pb-2 text-tv-xs text-neutral-500">
         Código do aparelho: <span class="font-mono tracking-widest text-neutral-300">{{ license.code }}</span>
       </p>
+      <!-- RFC-021: lista enviada pelo site chega aqui também (a TV confirma antes) -->
+      <div class="px-10 pb-6">
+        <SiteInboxPrompt @done="onPairDone" />
+      </div>
     </div>
   </div>
 </template>

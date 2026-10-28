@@ -17,7 +17,7 @@ export const STORAGE_KEYS = Object.freeze({
 })
 
 /** Sobe quando o Aviso Legal / Privacidade muda: quem aceitou uma versão anterior vê o aviso de novo. */
-export const FTUE_VERSION = 5 // 3: pareamento (RFC-016); 4: Chromecast; 5: licença e teste de 7 dias (RFC-018)
+export const FTUE_VERSION = 6 // 3: pareamento (RFC-016); 4: Chromecast; 5: licença (RFC-018); 6: lista pelo site (RFC-021)
 
 export const storage = {
   get: (key) => store.getItem(key),

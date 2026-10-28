@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/authStore'
 import BrandMark from '@/components/BrandMark.vue'
 import PairPanel from '@/components/PairPanel.vue'
+import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
 import { URL_SNIPPETS, applySnippet } from '@/utils/urlSnippets'
 import { isPhone } from '@/utils/compat'
@@ -249,6 +250,10 @@ onBeforeUnmount(() => auth.clearError())
 
       <div v-if="pairingBelow" class="px-14 pt-10 pb-12 border-t border-white/10">
         <PairPanel :qr-rem="12" @done="onPairDone" />
+      </div>
+      <!-- RFC-021: enviar a lista pelo site (código do aparelho) -->
+      <div class="px-14 pb-8" :class="pairingOn ? 'col-span-2' : ''">
+        <SiteInboxPrompt @done="onPairDone" />
       </div>
     </div>
   </section>

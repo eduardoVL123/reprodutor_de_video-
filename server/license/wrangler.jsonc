@@ -17,6 +17,8 @@
       "database_id": "e2ec8854-04d9-45f8-b138-39b3bcbfb4b0"
     }
   ],
+  // Atendimento e vendas pelo WhatsApp no site (RFC-021) e na página do QR da TV.
+  "vars": { "LICENSE_CONTACT_URL": "https://wa.me/5516992791692" },
   // Limpeza diária da guarda de 24 meses (PRIVACY.md), às 06:00 UTC.
   "triggers": { "crons": ["0 6 * * *"] },
   "observability": { "enabled": false }

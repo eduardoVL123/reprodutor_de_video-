@@ -54,6 +54,13 @@ async function post(path, body) {
 }
 
 /** @returns {Promise<{access: 'trial'|'partner'|'activated'|'blocked', code: string, trialEndsAt: number, activationEndsAt: number|null}>} */
-export const checkAccess = ({ deviceKey, platform, host }) => post('/v1/access', { deviceKey, platform, host })
+// pub: chave pública da caixa de entrada (RFC-021); sem cifra no aparelho vai sem ela.
+export const checkAccess = ({ deviceKey, platform, host, pub }) => post('/v1/access', { deviceKey, platform, host, pub })
 
 export const sendEntry = ({ deviceKey, platform, host }) => post('/v1/entry', { deviceKey, platform, host })
+
+/** RFC-021: listas enviadas pelo site para este aparelho (só texto cifrado). @returns {Promise<Array<{id: number, box: string}>>} */
+export const pullInbox = ({ deviceKey }) => post('/v1/inbox/pull', { deviceKey })
+
+/** Apaga do servidor as listas já confirmadas ou descartadas. */
+export const ackInbox = ({ deviceKey, ids }) => post('/v1/inbox/ack', { deviceKey, ids })

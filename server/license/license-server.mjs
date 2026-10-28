@@ -20,6 +20,13 @@ const ADMIN_FILES = {
   '/admin/': { file: 'admin/index.html', type: 'text/html; charset=utf-8' },
   '/admin/admin.js': { file: 'admin/admin.js', type: 'text/javascript; charset=utf-8' },
   '/admin/admin.css': { file: 'admin/admin.css', type: 'text/css; charset=utf-8' },
+  // Site (RFC-021)
+  '/': { file: 'site/index.html', type: 'text/html; charset=utf-8' },
+  '/assinar': { file: 'site/assinar.html', type: 'text/html; charset=utf-8' },
+  '/creditos': { file: 'site/creditos.html', type: 'text/html; charset=utf-8' },
+  '/site/site.js': { file: 'site/site.js', type: 'text/javascript; charset=utf-8' },
+  '/site/site.css': { file: 'site/site.css', type: 'text/css; charset=utf-8' },
+  '/site/pair-lib.js': { file: 'site/pair-lib.js', type: 'text/javascript; charset=utf-8' },
 }
 
 function toWebRequest(req) {

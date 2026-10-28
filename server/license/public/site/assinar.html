@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Assinar meu aparelho · Pulse Player</title>
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="/">Pulse<span>Player</span></a>
+      <nav>
+        <a href="/" class="tab">Enviar lista</a>
+        <a href="/assinar" class="tab active">Assinar meu aparelho</a>
+        <a href="/creditos" class="tab">Comprar créditos</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>Assine seu aparelho</h1>
+      <div class="card plan">
+        <strong>Anual</strong>
+        <span id="device-price" class="price">R$ 25,00</span>
+        <small>1 aparelho, qualquer lista, por 1 ano</small>
+      </div>
+
+      <form id="sub-form" class="card" novalidate>
+        <label for="sub-code">Código do aparelho</label>
+        <input id="sub-code" class="code" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
+        <button type="submit">Assinar pelo WhatsApp</button>
+        <a id="sub-whatsapp" class="button" href="#" hidden rel="noopener noreferrer">Abrir o WhatsApp</a>
+        <p id="sub-status" role="status"></p>
+      </form>
+
+      <ol class="steps">
+        <li>Digite o código que aparece na tela da TV.</li>
+        <li>Fale com a gente pelo WhatsApp e faça o pagamento.</li>
+        <li>Quando liberarmos, toque em "Já paguei, verificar" na TV.</li>
+      </ol>
+    </main>
+
+    <footer>
+      <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
+      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+    </footer>
+    <script src="/site/site.js"></script>
+  </body>
+</html>
