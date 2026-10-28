@@ -28,3 +28,4 @@ dist-ssr
 
 build/
 .wrangler/
+server/license/.data/

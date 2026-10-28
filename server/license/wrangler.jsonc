@@ -1,0 +1,23 @@
+// Serviço de licença (RFC-018) no Cloudflare Workers + D1. Segredo: `wrangler secret put LICENSE_ADMIN_TOKEN`.
+// Publicar: `npm run license:deploy` (na pasta reprodutor_de_video).
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "pulse-license",
+  "main": "worker.mjs",
+  "compatibility_date": "2026-10-25",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "pulse-license",
+      "database_id": "e2ec8854-04d9-45f8-b138-39b3bcbfb4b0"
+    }
+  ],
+  // Limpeza diária da guarda de 24 meses (PRIVACY.md), às 06:00 UTC.
+  "triggers": { "crons": ["0 6 * * *"] },
+  "observability": { "enabled": false }
+}

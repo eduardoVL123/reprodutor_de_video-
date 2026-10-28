@@ -52,14 +52,14 @@ function toBase64Url(bytes) {
     .replace(/=+$/, '')
 }
 
-/** Sorteio de código de 6 letras sem viés de módulo (rejeita bytes >= 248 para 31 caracteres: 31 * 8 = 248). */
-export function generateCode(taken) {
+/** Sorteio de código (6 letras por padrão) sem viés de módulo (rejeita bytes >= 248 para 31 caracteres: 31 * 8 = 248). */
+export function generateCode(taken, length = CODE_LENGTH) {
   const buf = new Uint8Array(16)
   for (;;) {
     let code = ''
-    while (code.length < CODE_LENGTH) {
+    while (code.length < length) {
       crypto.getRandomValues(buf)
-      for (let i = 0; i < buf.length && code.length < CODE_LENGTH; i++) {
+      for (let i = 0; i < buf.length && code.length < length; i++) {
         if (buf[i] < 248) {
           code += CODE_ALPHABET[buf[i] % 31]
         }
@@ -165,13 +165,13 @@ export async function readJsonBody(request, maxBytes = MAX_BODY_BYTES) {
 const isOpaqueText = (value, max) =>
   typeof value === 'string' && value.length > 0 && value.length <= max && BASE64URL.test(value)
 
-/** Limitador de taxa em janela deslizante/fixa de 1 minuto por IP. */
-function createLimiter(now) {
+/** Limitador de taxa em janela fixa por IP (1 minuto por padrão). */
+export function createLimiter(now, windowMs = WINDOW_MS) {
   const windows = new Map() // `${bucket}|${ip}` -> { start, count }
   const current = (bucket, ip) => {
     const key = `${bucket}|${ip}`
     let w = windows.get(key)
-    if (!w || now() - w.start >= WINDOW_MS) {
+    if (!w || now() - w.start >= windowMs) {
       w = { start: now(), count: 0 }
       windows.set(key, w)
     }
@@ -180,14 +180,14 @@ function createLimiter(now) {
   return {
     retryAfter(bucket, ip, limit) {
       const w = current(bucket, ip)
-      return w.count >= limit ? Math.max(1, Math.ceil((w.start + WINDOW_MS - now()) / 1000)) : 0
+      return w.count >= limit ? Math.max(1, Math.ceil((w.start + windowMs - now()) / 1000)) : 0
     },
     add(bucket, ip) {
       current(bucket, ip).count++
     },
     sweep() {
       for (const [key, w] of windows) {
-        if (now() - w.start >= WINDOW_MS) windows.delete(key)
+        if (now() - w.start >= windowMs) windows.delete(key)
       }
     },
   }

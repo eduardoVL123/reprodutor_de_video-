@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Painel · Pulse Player</title>
+    <link rel="stylesheet" href="/admin/admin.css" />
+  </head>
+  <body>
+    <header>
+      <h1>Pulse Player · Painel</h1>
+      <nav>
+        <button type="button" data-tab="partners" class="tab active">Parceiros</button>
+        <button type="button" data-tab="report" class="tab">Relatório</button>
+        <button type="button" data-tab="devices" class="tab">Aparelhos</button>
+        <button type="button" id="logout" class="link">Sair</button>
+      </nav>
+    </header>
+
+    <main>
+      <section id="login" hidden>
+        <h2>Entrar</h2>
+        <form id="login-form">
+          <label>Token do painel <input id="token" type="password" autocomplete="current-password" required /></label>
+          <button type="submit">Entrar</button>
+        </form>
+      </section>
+
+      <section id="partners" class="panel">
+        <h2>Parceiros</h2>
+        <table>
+          <thead><tr><th>Nome</th><th>Desde</th><th>Domínios</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="partner-rows"></tbody>
+        </table>
+        <form id="partner-form">
+          <h3 id="partner-form-title">Novo parceiro</h3>
+          <input id="partner-id" type="hidden" />
+          <label>Nome <input id="partner-name" required maxlength="100" /></label>
+          <label>Data da parceria <input id="partner-started" type="date" required /></label>
+          <label>Domínios (um por linha) <textarea id="partner-hosts" rows="3" required></textarea></label>
+          <label class="inline"><input id="partner-active" type="checkbox" checked /> Parceria ativa</label>
+          <div class="actions">
+            <button type="submit">Salvar</button>
+            <button type="button" id="partner-cancel" class="link">Cancelar edição</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="report" class="panel" hidden>
+        <h2>Relatório de ativos</h2>
+        <label>Parceiro <select id="report-partner"></select></label>
+        <table>
+          <thead><tr><th>Ciclo</th><th>De</th><th>Até</th><th>Ativos</th><th></th></tr></thead>
+          <tbody id="cycle-rows"></tbody>
+        </table>
+        <div id="cycle-detail" hidden>
+          <h3 id="cycle-title"></h3>
+          <a id="cycle-csv" class="button" href="#">Baixar CSV</a>
+          <table>
+            <thead><tr><th>Código</th><th>Primeira entrada</th><th>Última entrada</th><th>Ativo</th></tr></thead>
+            <tbody id="device-rows"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="devices" class="panel" hidden>
+        <h2>Aparelhos</h2>
+        <form id="device-form">
+          <label>Código do aparelho <input id="device-code" required maxlength="16" autocapitalize="characters" /></label>
+          <button type="submit">Buscar</button>
+        </form>
+        <div id="device-detail" hidden>
+          <dl id="device-info"></dl>
+          <label>Observação (ex.: comprovante do Pix) <input id="activation-note" maxlength="200" /></label>
+          <div class="actions">
+            <button type="button" id="device-activate">Liberar 1 ano</button>
+            <button type="button" id="device-revoke" class="danger">Revogar ativação</button>
+          </div>
+          <h3>Histórico de ativações</h3>
+          <ul id="activation-list"></ul>
+        </div>
+      </section>
+
+      <p id="message" role="status"></p>
+    </main>
+    <script src="/admin/admin.js"></script>
+  </body>
+</html>
