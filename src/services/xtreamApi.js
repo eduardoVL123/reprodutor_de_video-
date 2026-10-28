@@ -21,6 +21,7 @@
 
 import { canUseDevProxy, devProxyUrl, maskSecrets } from '@/services/netEnv'
 import { durationLabel } from '@/utils/formatTime'
+import { createJsonArrayReader } from '@/utils/jsonArrayReader'
 
 export const GENERIC_CONNECTION_ERROR =
   'Falha ao conectar. Verifique seus dados ou a conexão com a internet.'
@@ -241,9 +242,13 @@ export async function smartFetch(url, { timeoutMs = DEFAULT_TIMEOUT_MS, accept }
 /**
  * Lê o corpo como texto. Falha se ficar `idleMs` sem chegar nenhum byte (servidor que mandou os cabeçalhos e parou):
  * `res.text()` sozinho esperaria para sempre. Um download lento que continua chegando não é cortado.
+ * Com `onPiece`, cada pedaço vai para ele e nada é acumulado (listas grandes, ver jsonArrayReader).
  */
-async function readText(res, idleMs, where) {
-  if (!res.body || typeof res.body.getReader !== 'function') return res.text()
+async function readText(res, idleMs, where, onPiece) {
+  if (!res.body || typeof res.body.getReader !== 'function') {
+    const all = await res.text()
+    return onPiece ? onPiece(all) : all
+  }
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
   let text = ''
@@ -267,8 +272,10 @@ async function readText(res, idleMs, where) {
     } finally {
       clearTimeout(timer)
     }
-    if (chunk.done) return text + decoder.decode()
-    text += decoder.decode(chunk.value, { stream: true })
+    const piece = chunk.done ? decoder.decode() : decoder.decode(chunk.value, { stream: true })
+    if (onPiece) onPiece(piece)
+    else text += piece
+    if (chunk.done) return text
   }
 }
 
@@ -283,17 +290,18 @@ async function readJson(res, url, idleMs) {
       raw: `HTTP ${res.status} ${res.statusText || ''}`.trim(),
     })
   }
-  let text = ''
+  // Converte item a item enquanto chega: a lista inteira em texto + em objetos não cabe em TV com pouca RAM.
+  const reader = createJsonArrayReader()
   try {
-    text = await readText(res, idleMs, where)
+    await readText(res, idleMs, where, reader.push)
   } catch (err) {
     if (err instanceof XtreamError) throw err
     throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, { ...where, raw: `Corpo interrompido: ${err && err.message}` })
   }
   try {
-    return JSON.parse(text)
+    return reader.finish()
   } catch (_) {
-    const snippet = text.replace(/\s+/g, ' ').trim().slice(0, 80)
+    const snippet = reader.head().replace(/\s+/g, ' ').trim().slice(0, 80)
     throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, {
       ...where,
       raw: `Resposta não é JSON. Início: "${snippet || '(vazio)'}"`,

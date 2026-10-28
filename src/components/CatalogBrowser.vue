@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
             :id="`cat-${index}`"
             :key="cat.category_id"
             type="button"
-            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs font-medium transition-all"
+            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs font-medium transition-colors"
             :class="[
               activeCategory === cat.category_id
                 ? 'bg-tv-accent text-tv-on-accent font-bold shadow-md scale-[1.02]'
@@ -391,7 +391,7 @@ onBeforeUnmount(() => {
       </svg>
       <p class="text-tv-base text-neutral-300 font-medium">{{ state.step || 'Carregando catálogo...' }}</p>
       <div v-if="progressPct > 0" class="w-[30rem] max-w-[80vw] h-2 rounded-full bg-white/10 overflow-hidden">
-        <div class="h-full bg-tv-accent transition-all" :style="{ width: progressPct + '%' }" />
+        <div class="h-full bg-tv-accent" :style="{ width: progressPct + '%' }" />
       </div>
     </div>
 
@@ -613,7 +613,7 @@ onBeforeUnmount(() => {
                 :id="`item-${row.category_id}-${itemIdx}`"
                 :key="item.stream_id || itemIdx"
                 type="button"
-                class="tv-focusable shrink-0 snap-start w-72 phone:w-64 rounded-xl overflow-hidden bg-[#141418] border border-white/[0.08] transition-all duration-300 hover:scale-[1.03] hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent text-left group cursor-pointer"
+                class="tv-focusable shrink-0 snap-start w-72 phone:w-64 rounded-xl overflow-hidden bg-[#141418] border border-white/[0.08] transition-transform duration-300 hover:scale-[1.03] hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent text-left group cursor-pointer"
                 :data-rail-index="itemIdx"
                 @click="handleSelectItem(item, itemIdx, row.category_id)"
               >
@@ -658,7 +658,7 @@ onBeforeUnmount(() => {
                 :id="`item-${row.category_id}-${itemIdx}`"
                 :key="item.stream_id || item.series_id || itemIdx"
                 type="button"
-                class="tv-focusable shrink-0 snap-start w-44 phone:w-40 h-[16.5rem] phone:h-60 rounded-xl overflow-hidden bg-[#141418] relative transition-all duration-300 hover:scale-105 hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent group text-left cursor-pointer border border-white/5"
+                class="tv-focusable shrink-0 snap-start w-44 phone:w-40 h-[16.5rem] phone:h-60 rounded-xl overflow-hidden bg-[#141418] relative transition-transform duration-300 hover:scale-105 hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent group text-left cursor-pointer border border-white/5"
                 :data-rail-index="itemIdx"
                 @click="handleSelectItem(item, itemIdx, row.category_id)"
               >

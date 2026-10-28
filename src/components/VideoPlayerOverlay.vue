@@ -885,7 +885,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="w-[28rem] h-1.5 rounded-full bg-white/10 overflow-hidden shadow-inner">
             <div
-              class="h-full bg-tv-accent transition-all duration-200 ease-out rounded-full"
+              class="h-full bg-tv-accent rounded-full"
               :style="{ width: loadingProgress + '%' }"
             />
           </div>

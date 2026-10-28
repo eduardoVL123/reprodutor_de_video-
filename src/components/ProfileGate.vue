@@ -116,7 +116,7 @@ onBeforeUnmount(release)
         @click="select(p.id)"
       >
         <div
-          class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-transparent group-focus:border-white transition-all shadow-2xl relative overflow-hidden"
+          class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-transparent group-focus:border-white transition-colors shadow-2xl relative overflow-hidden"
           :style="{ backgroundColor: p.color, color: avatarTextColor(p.color) }"
         >
           <span class="text-5xl font-black select-none">
@@ -136,7 +136,7 @@ onBeforeUnmount(release)
         class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none"
         @click="openAdd"
       >
-        <div class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-dashed border-white/20 group-focus:border-white transition-all bg-white/[0.03]">
+        <div class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-dashed border-white/20 group-focus:border-white transition-colors bg-white/[0.03]">
           <svg class="w-12 h-12 text-neutral-400 group-focus:text-white transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
