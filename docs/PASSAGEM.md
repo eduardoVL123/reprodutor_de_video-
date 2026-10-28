@@ -5,6 +5,8 @@
 > sem pedir. Antes de dizer que terminou: `npm run lint`, `npx vitest run --maxWorkers=2`, `npm run build`
 > (a máquina tem 7,4 GB de RAM; **não** rode `python` no Bash — abre a Loja do Windows e trava; use `node -e`).
 > Nunca digite token, senha ou chave do Mercado Pago em lugar nenhum: o dono grava os segredos no terminal dele.
+> **O projeto mora em `C:\dev\reprodutor_de_video`** (desde 2026-10-28). Fora do OneDrive de propósito: o OneDrive
+> passou do limite de 5 GB e o `node_modules` travava a sincronização e o Explorer. Não volte a pô-lo no OneDrive.
 
 ## O produto
 Pulse Player: reprodutor de listas Xtream/M3U em Vue 3 + Vite + Capacitor 8, para TVs Samsung (Tizen), LG (webOS),
