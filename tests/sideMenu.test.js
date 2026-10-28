@@ -23,6 +23,16 @@ describe('SideMenu — menu inferior só no celular', () => {
     expect(source).toContain('phone:flex-row')
   })
 
+  it('o catálogo também decide pelo is-phone: celular deitado (914 px) não pode herdar a margem de segurança de TV', async () => {
+    const { readFileSync } = await import('node:fs')
+    const source = readFileSync('src/components/CatalogBrowser.vue', 'utf8')
+    expect(source).not.toMatch(/(^|[\s"'])(max-)?(sm|md|lg|xl):/m)
+    const section = source.match(/<section class="([^"]*)"/)[1]
+    expect(section).toMatch(/(^|\s)pr-24(\s|$)/)
+    expect(section).toContain('phone:pr-4')
+    expect(section).toContain('phone:py-4')
+  })
+
   it('o espaço do conteúdo para o menu segue a mesma regra (senão o menu lateral cobre o conteúdo no PC estreito)', async () => {
     const { readFileSync } = await import('node:fs')
     const main = readFileSync('src/views/Dashboard.vue', 'utf8').match(/<main class="([^"]*)"/)[1]

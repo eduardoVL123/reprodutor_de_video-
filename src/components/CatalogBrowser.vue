@@ -324,14 +324,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="flex flex-col h-full pl-0 md:pl-10 pr-4 md:pr-24 py-4 md:py-14 overflow-hidden relative">
+  <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 overflow-hidden relative">
     <!-- Topo Fixo com Categorias Arredondadas -->
     <!-- z-20: abaixo do menu lateral (z-30), senão o título passa por cima do menu aberto -->
-    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-4 md:px-6 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
-      <div class="flex items-center gap-4 md:gap-8 min-w-0 flex-1">
+    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
+      <div class="flex items-center gap-8 phone:gap-4 min-w-0 flex-1">
         <!-- Margem no próprio logo (não gap): escondido na TV, ele não deixa espaço sobrando nas TVs sem flex-gap -->
-        <h1 class="shrink-0 text-xl md:text-2xl font-black tracking-tight text-white flex items-center">
-          <BrandMark :size="1.4" class="text-tv-accent md:hidden mr-2" />
+        <h1 class="shrink-0 text-2xl phone:text-xl font-black tracking-tight text-white flex items-center">
+          <BrandMark :size="1.4" class="text-tv-accent hidden phone:inline mr-2" />
           <span>{{ sectionTitle }}</span>
         </h1>
 
@@ -347,7 +347,7 @@ onBeforeUnmount(() => {
             :id="`cat-${index}`"
             :key="cat.category_id"
             type="button"
-            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-xs md:text-sm font-medium transition-all"
+            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs font-medium transition-all"
             :class="[
               activeCategory === cat.category_id
                 ? 'bg-tv-accent text-tv-on-accent font-bold shadow-md scale-[1.02]'
@@ -367,7 +367,7 @@ onBeforeUnmount(() => {
         v-if="state.state === 'ready'"
         id="catalog-refresh"
         type="button"
-        class="tv-focusable shrink-0 flex items-center gap-2 px-3 md:px-4 py-2 rounded-lg bg-white/[0.06] hover:bg-white/15 border border-white/10 text-neutral-300 hover:text-white text-xs md:text-sm font-medium transition-colors"
+        class="tv-focusable shrink-0 flex items-center gap-2 px-4 phone:px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/15 border border-white/10 text-neutral-300 hover:text-white text-sm phone:text-xs font-medium transition-colors"
         title="Atualizar lista"
         @click="load(true)"
       >
@@ -375,7 +375,7 @@ onBeforeUnmount(() => {
           <polyline points="23 4 23 10 17 10" />
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
-        <span class="hidden sm:inline">Atualizar lista</span>
+        <span class="inline">Atualizar lista</span>
       </button>
     </header>
 
@@ -423,7 +423,7 @@ onBeforeUnmount(() => {
       <!-- Hero Banner Destaque (Apenas para Filmes e Séries) -->
       <section
         v-if="!isLive && featuredRawItem && !showGrid"
-        class="relative w-full min-h-[22rem] md:min-h-[28rem] px-4 md:px-8 pt-6 pb-10 flex flex-col justify-end overflow-hidden mb-4"
+        class="relative w-full min-h-[28rem] phone:min-h-[22rem] px-8 phone:px-4 pt-6 pb-10 flex flex-col justify-end overflow-hidden mb-4"
       >
         <!-- Fundo com Imagem e Vinhetas -->
         <div class="absolute inset-0 pointer-events-none overflow-hidden">
@@ -431,7 +431,7 @@ onBeforeUnmount(() => {
             v-if="featuredArtwork.url"
             :src="featuredArtwork.url"
             alt=""
-            class="absolute right-0 top-0 w-full md:w-[70%] h-full object-cover object-center opacity-45 pointer-events-none"
+            class="absolute right-0 top-0 w-[70%] phone:w-full h-full object-cover object-center opacity-45 pointer-events-none"
             @error="featuredArtworkFailed = true"
           />
           <div
@@ -451,11 +451,11 @@ onBeforeUnmount(() => {
             </span>
           </div>
 
-          <h2 class="text-3xl md:text-5xl font-black uppercase text-white line-clamp-2 leading-tight">
+          <h2 class="text-5xl phone:text-3xl font-black uppercase text-white line-clamp-2 leading-tight">
             {{ featuredTitle }}
           </h2>
 
-          <div class="flex items-center gap-2.5 text-xs md:text-sm text-neutral-300 font-medium flex-wrap">
+          <div class="flex items-center gap-2.5 text-sm phone:text-xs text-neutral-300 font-medium flex-wrap">
             <span v-if="featuredRating" class="text-tv-accent font-bold">{{ featuredRating }}</span>
             <span v-if="featuredRating && featuredYear" class="w-1 h-1 rounded-full bg-neutral-500" />
             <span v-if="featuredYear">{{ featuredYear }}</span>
@@ -465,7 +465,7 @@ onBeforeUnmount(() => {
             <span v-if="featuredGenre" class="truncate max-w-[15rem]">{{ featuredGenre }}</span>
           </div>
 
-          <p class="text-xs md:text-sm text-neutral-300 leading-relaxed line-clamp-3 max-w-xl">
+          <p class="text-sm phone:text-xs text-neutral-300 leading-relaxed line-clamp-3 max-w-xl">
             {{ featuredSynopsis }}
           </p>
 
@@ -517,7 +517,7 @@ onBeforeUnmount(() => {
       </section>
 
       <!-- Categoria escolhida: todos os itens em grade virtualizada -->
-      <div v-if="showGrid && itemCount > 0" class="h-full px-4 md:px-6" data-focus-group="content" data-grid="content">
+      <div v-if="showGrid && itemCount > 0" class="h-full px-6 phone:px-4" data-focus-group="content" data-grid="content">
         <GridView
           :count="itemCount"
           :load-items="loadItems"
@@ -548,7 +548,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Fileiras Deslizantes por Categoria (Estilo Netflix) -->
-      <div v-else class="space-y-8 px-4 md:px-6 pb-24">
+      <div v-else class="space-y-8 px-6 phone:px-4 pb-24">
         <div
           v-for="row in categoryRows"
           :key="row.category_id"
@@ -557,14 +557,14 @@ onBeforeUnmount(() => {
         >
           <!-- Cabeçalho da Fileira -->
           <div class="flex items-center justify-between mb-3 px-1">
-            <h3 class="text-lg md:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+            <h3 class="text-xl phone:text-lg font-bold text-white tracking-tight flex items-center gap-2">
               <span>{{ row.category_name }}</span>
             </h3>
             <button
               v-if="row.category_id !== 'favorites'"
               :id="`see-all-${row.category_id}`"
               type="button"
-              class="tv-focusable rounded px-2 py-1 text-xs md:text-sm text-neutral-400 hover:text-tv-accent transition-colors"
+              class="tv-focusable rounded px-2 py-1 text-sm phone:text-xs text-neutral-400 hover:text-tv-accent transition-colors"
               @click="chooseCategory({ category_id: row.category_id })"
             >
               Ver todos ›
@@ -577,7 +577,7 @@ onBeforeUnmount(() => {
             tabindex="-1"
             aria-label="Rolar para esquerda"
             v-show="railEdges[row.category_id] && !railEdges[row.category_id].start"
-            class="hidden md:flex absolute left-0 top-[55%] -translate-y-1/2 z-20 w-10 h-14 bg-black/80 hover:bg-black text-white items-center justify-center rounded-r-lg opacity-0 group-hover/row:opacity-100 transition-opacity shadow-lg"
+            class="flex phone:hidden absolute left-0 top-[55%] -translate-y-1/2 z-20 w-10 h-14 bg-black/80 hover:bg-black text-white items-center justify-center rounded-r-lg opacity-0 group-hover/row:opacity-100 transition-opacity shadow-lg"
             @click="scrollRail(row.category_id, -1)"
           >
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -590,7 +590,7 @@ onBeforeUnmount(() => {
             tabindex="-1"
             aria-label="Rolar para direita"
             v-show="railEdges[row.category_id] && !railEdges[row.category_id].end"
-            class="hidden md:flex absolute right-0 top-[55%] -translate-y-1/2 z-20 w-10 h-14 bg-black/80 hover:bg-black text-white items-center justify-center rounded-l-lg opacity-0 group-hover/row:opacity-100 transition-opacity shadow-lg"
+            class="flex phone:hidden absolute right-0 top-[55%] -translate-y-1/2 z-20 w-10 h-14 bg-black/80 hover:bg-black text-white items-center justify-center rounded-l-lg opacity-0 group-hover/row:opacity-100 transition-opacity shadow-lg"
             @click="scrollRail(row.category_id, 1)"
           >
             <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -601,7 +601,7 @@ onBeforeUnmount(() => {
           <!-- Trilho Horizontal Deslizante -->
           <div
             :ref="(el) => setRailRef(el, row.category_id)"
-            class="flex gap-3 md:gap-4 overflow-x-auto no-scrollbar scroll-smooth snap-x scroll-px-3 py-3 px-3"
+            class="flex gap-4 phone:gap-3 overflow-x-auto no-scrollbar scroll-smooth snap-x scroll-px-3 py-3 px-3"
             :data-focus-row="`rail-${row.category_id}`"
             data-scroll-x
             @scroll.passive="updateRailEdges(row.category_id)"
@@ -613,12 +613,12 @@ onBeforeUnmount(() => {
                 :id="`item-${row.category_id}-${itemIdx}`"
                 :key="item.stream_id || itemIdx"
                 type="button"
-                class="tv-focusable shrink-0 snap-start w-64 md:w-72 rounded-xl overflow-hidden bg-[#141418] border border-white/[0.08] transition-all duration-300 hover:scale-[1.03] hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent text-left group cursor-pointer"
+                class="tv-focusable shrink-0 snap-start w-72 phone:w-64 rounded-xl overflow-hidden bg-[#141418] border border-white/[0.08] transition-all duration-300 hover:scale-[1.03] hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent text-left group cursor-pointer"
                 :data-rail-index="itemIdx"
                 @click="handleSelectItem(item, itemIdx, row.category_id)"
               >
                 <!-- Thumbnail / Backdrop Superior -->
-                <div class="relative h-36 md:h-[10.125rem] w-full overflow-hidden bg-[#1a1a20]">
+                <div class="relative h-[10.125rem] phone:h-36 w-full overflow-hidden bg-[#1a1a20]">
                   <img
                     v-if="item.stream_icon"
                     :src="item.stream_icon"
@@ -658,7 +658,7 @@ onBeforeUnmount(() => {
                 :id="`item-${row.category_id}-${itemIdx}`"
                 :key="item.stream_id || item.series_id || itemIdx"
                 type="button"
-                class="tv-focusable shrink-0 snap-start w-32 sm:w-40 md:w-44 h-48 sm:h-60 md:h-[16.5rem] rounded-xl overflow-hidden bg-[#141418] relative transition-all duration-300 hover:scale-105 hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent group text-left cursor-pointer border border-white/5"
+                class="tv-focusable shrink-0 snap-start w-44 phone:w-40 h-[16.5rem] phone:h-60 rounded-xl overflow-hidden bg-[#141418] relative transition-all duration-300 hover:scale-105 hover:ring-2 hover:ring-tv-accent focus:ring-2 focus:ring-tv-accent group text-left cursor-pointer border border-white/5"
                 :data-rail-index="itemIdx"
                 @click="handleSelectItem(item, itemIdx, row.category_id)"
               >
@@ -681,7 +681,7 @@ onBeforeUnmount(() => {
 
                 <!-- Faixa Escura Inferior com Título -->
                 <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent p-2.5 pt-6">
-                  <p class="text-xs md:text-sm font-semibold text-white truncate drop-shadow">
+                  <p class="text-sm phone:text-xs font-semibold text-white truncate drop-shadow">
                     {{ item.name }}
                   </p>
                 </div>
