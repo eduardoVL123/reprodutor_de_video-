@@ -68,7 +68,9 @@ export function parseM3u(text) {
 
         // Classificação: se extensão típica de filme ou se group-title indica VOD/Filmes/Séries
         const isVodUrl = /\.(mp4|mkv|avi|mov|wmv|webm)(\?.*)?$/i.test(url)
-        const isVodGroup = /filmes?|movies?|vod|s[eé]ries?/i.test(groupTitle)
+        // O grupo só vale para link que não parece canal ao vivo; "Série A" a "Série D" são campeonatos de futebol.
+        const looksLive = /\.(ts|m3u8)(\?.*)?$/i.test(url)
+        const isVodGroup = !looksLive && /filmes?|movies?|vod|s[eé]ries?/i.test(groupTitle) && !/s[eé]ries?\s*[a-d]\b/i.test(groupTitle)
         const isVod = isVodUrl || isVodGroup
         const section = isVod ? 'vod' : 'live'
 

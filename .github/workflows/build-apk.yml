@@ -41,7 +41,7 @@ jobs:
         run: npm run build
 
   pair-server:
-    name: Servidor de pareamento (Cloudflare Worker)
+    name: Servidores de pareamento e licença (Cloudflare Workers)
     runs-on: ubuntu-latest
 
     steps:
@@ -57,8 +57,11 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
-      - name: Validar bundle e configuração do Worker
+      - name: Validar bundle e configuração do Worker de pareamento
         run: npx wrangler deploy --dry-run --config server/pair/wrangler.jsonc
+
+      - name: Validar bundle e configuração do Worker de licença
+        run: npx wrangler deploy --dry-run --config server/license/wrangler.jsonc
 
   apk:
     name: APK Android

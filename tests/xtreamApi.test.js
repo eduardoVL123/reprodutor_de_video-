@@ -81,3 +81,42 @@ describe('xtreamApi — aviso de conexão sem criptografia', () => {
   })
 })
 
+describe('xtreamApi — corpo da resposta que para de chegar', () => {
+  const streamOf = (chunks, gapMs) =>
+    new Response(
+      new ReadableStream({
+        async start(controller) {
+          for (const chunk of chunks) {
+            await new Promise((resolve) => setTimeout(resolve, gapMs))
+            controller.enqueue(new TextEncoder().encode(chunk))
+          }
+          controller.close()
+        },
+      }),
+    )
+
+  it('apiRequest falha com tempo esgotado se o servidor manda os cabeçalhos e para', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ start() {} }))))
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    await expect(apiRequest('http://srv.test', { username: 'u', password: 'p' }, { timeoutMs: 50 })).rejects.toMatchObject({
+      code: 'TIMEOUT_ERROR',
+    })
+  })
+
+  it('fetchM3uText falha com tempo esgotado se a playlist para no meio', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(new ReadableStream({ start() {} }))))
+    const { fetchM3uText } = await import('@/services/xtreamApi')
+
+    await expect(fetchM3uText('http://srv.test/lista.m3u', { timeoutMs: 50 })).rejects.toMatchObject({ code: 'TIMEOUT_ERROR' })
+  })
+
+  it('não corta um download lento que continua chegando', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => streamOf(['{"user_', 'info":{', '"auth":1}}'], 30)))
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    const { data } = await apiRequest('http://srv.test', { username: 'u', password: 'p' }, { timeoutMs: 50 })
+
+    expect(data.user_info.auth).toBe(1)
+  })
+})

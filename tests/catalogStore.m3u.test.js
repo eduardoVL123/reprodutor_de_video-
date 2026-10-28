@@ -9,9 +9,9 @@ http://srv.test/live/b.m3u8
 http://srv.test/movie/a.mp4
 `
 
-async function setup() {
+async function setup(gate = null) {
   const fetchM3uText = vi.fn(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 5))
+    await (gate || new Promise((resolve) => setTimeout(resolve, 5)))
     return { text: PLAYLIST, finalUrl: 'http://srv.test/lista.m3u' }
   })
   vi.doMock('@/services/xtreamApi', async (importOriginal) => ({
@@ -64,5 +64,23 @@ describe('catalogStore — sessão M3U', () => {
     await catalog.loadSection('live')
 
     expect(fetchM3uText).toHaveBeenCalledTimes(1)
+  })
+
+  it('descarta o download da lista antiga quando a lista é trocada no meio', async () => {
+    let release
+    const gate = new Promise((resolve) => {
+      release = resolve
+    })
+    const { catalog } = await setup(gate)
+    const { getMeta } = await import('@/services/catalogDb')
+
+    const pending = catalog.loadSection('live', { force: true })
+    await catalog.resetCatalogState()
+    release()
+    await pending
+
+    expect(await getMeta('live')).toBeNull()
+    expect(catalog.totals.live).toBe(0)
+    expect(catalog.status.live.state).toBe('idle')
   })
 })

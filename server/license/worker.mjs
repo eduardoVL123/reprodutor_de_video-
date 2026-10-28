@@ -35,7 +35,13 @@ export default {
       return withHeaders(res, TYPES[url.pathname.split('.').pop()] || 'text/html; charset=utf-8')
     }
 
-    if (!ready) ready = migrate(env.DB) // CREATE TABLE IF NOT EXISTS: uma vez por isolate
+    if (!ready) {
+      // CREATE TABLE IF NOT EXISTS: uma vez por isolate; se falhar, a próxima chamada tenta de novo
+      ready = migrate(env.DB).catch((err) => {
+        ready = null
+        throw err
+      })
+    }
     await ready
     if (!handle) {
       handle = createLicenseHandler({ db: env.DB, adminToken: env.LICENSE_ADMIN_TOKEN || '', contactUrl: env.LICENSE_CONTACT_URL || '' })

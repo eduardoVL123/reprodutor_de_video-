@@ -39,6 +39,8 @@ export function devProxyUrl(targetUrl, { hls = false } = {}) {
 /** Mascara a senha em URLs/textos antes de exibir ou registrar. */
 export function maskSecrets(text) {
   return String(text == null ? '' : text)
-    .replace(/(password=)[^&\s]*/gi, '$1***')
+    .replace(/((?:password|pass|pwd|token)=)[^&\s]*/gi, '$1***')
+    .replace(/\/\/[^/\s:@]+:[^/\s@]*@/g, '//***:***@')
     .replace(/\/(live|movie|series)\/([^/]+)\/([^/]+)\//gi, '/$1/$2/***/')
+    .replace(/(https?:\/\/[^/\s]+)\/[^/\s?]+\/[^/\s?]+\/(\d+)(?=[.?\s]|$)/gi, '$1/***/***/$2')
 }

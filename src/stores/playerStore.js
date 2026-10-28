@@ -3,6 +3,7 @@ import { defineStore } from 'pinia'
 import { storage } from '@/services/storage'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
+import { useAuthStore } from '@/stores/authStore'
 import { focusFirstIn } from '@/utils/spatialNavigation'
 
 const CUSTOM_QUEUE_MAX = 100
@@ -11,25 +12,27 @@ const LIVE_HISTORY_MAX = 4 // canais recentes: limite próprio, para zapping nã
 const WINDOW_SIZE = 100 // itens da categoria mantidos em RAM para zapping
 const QUEUE_MAX = 200
 
-function getQueueKey() {
+function activeListId() {
   try {
-    const profile = useProfileStore()
-    const id = profile.activeProfileId || 'default'
-    return `player:customQueue:${id}`
+    const session = useAuthStore().session
+    return (session && session.id) || ''
   } catch (_) {
-    return 'player:customQueue'
+    return ''
   }
 }
 
-function getHistoryKey() {
+/** Chave por perfil e por lista: ids de filmes se repetem entre listas, então histórico e fila não podem ser comuns. */
+function scopedKey(prefix, withList = true) {
+  let key = prefix
   try {
-    const profile = useProfileStore()
-    const id = profile.activeProfileId || 'default'
-    return `player:watchHistory:${id}`
-  } catch (_) {
-    return 'player:watchHistory'
-  }
+    key = `${prefix}:${useProfileStore().activeProfileId || 'default'}`
+  } catch (_) {}
+  const list = withList ? activeListId() : ''
+  return list ? `${key}:${list}` : key
 }
+
+const getQueueKey = (withList) => scopedKey('player:customQueue', withList)
+const getHistoryKey = (withList) => scopedKey('player:watchHistory', withList)
 
 /**
  * Normaliza para um objeto 100% plano (clonável pelo IndexedDB, sem Proxies).
@@ -154,6 +157,13 @@ export const usePlayerStore = defineStore('player', () => {
             return ''
           }
         })()
+        if (activeListId()) {
+          // Dados de antes das listas (só por perfil) passam para a primeira lista que abrir.
+          if (!finalQueue || !finalQueue.length) finalQueue = (await takeLegacy(getQueueKey(false), queueKey)) || finalQueue
+          if (!finalHistory || !finalHistory.length) {
+            finalHistory = (await takeLegacy(getHistoryKey(false), historyKey)) || finalHistory
+          }
+        }
         if (!profileId || profileId === 'p1') {
           if (!finalQueue || !finalQueue.length) finalQueue = (await takeLegacy('player:customQueue', queueKey)) || finalQueue
           if (!finalHistory || !finalHistory.length) {
@@ -489,6 +499,15 @@ export const usePlayerStore = defineStore('player', () => {
     watch(
       () => profile.activeProfileId,
       () => {
+        hydrate(true)
+      },
+    )
+    const auth = useAuthStore()
+    watch(
+      () => auth.session && auth.session.id,
+      () => {
+        watchHistory.value = [] // não mostra o histórico da lista anterior enquanto o da nova carrega
+        customQueue.value = []
         hydrate(true)
       },
     )

@@ -52,6 +52,23 @@ describe('Worker da licença', () => {
     expect((await res.json()).access).toBe('trial')
   })
 
+  it('se a criação das tabelas falhar uma vez, a chamada seguinte tenta de novo', async () => {
+    const env = mockEnv()
+    const realDb = env.DB
+    let broken = true
+    env.DB = {
+      ...realDb,
+      prepare: (sql) => {
+        if (broken) throw new Error('D1 indisponível')
+        return realDb.prepare(sql)
+      },
+    }
+    await expect(post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' })).rejects.toThrow('D1 indisponível')
+
+    broken = false
+    expect((await post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' })).status).toBe(200)
+  })
+
   it('o limite de aparelhos novos usa o IP real do visitante (CF-Connecting-IP)', async () => {
     const env = mockEnv()
     for (let i = 0; i < 20; i++) await post(env, '/v1/access', { deviceKey: `${'b'.repeat(60)}${String(i).padStart(4, '0')}`, host: 'x.com' }, '9.9.9.9')

@@ -39,27 +39,34 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   const inflight = {}
   let m3uImport = null // download + importação da playlist, compartilhado pelas 3 seções
+  let epoch = 0 // sobe a cada reset (troca de lista): carga em andamento da lista antiga não grava na nova
+
+  class StaleLoad extends Error {}
+  const assertCurrent = (my) => {
+    if (my !== epoch) throw new StaleLoad()
+  }
 
   /** Uma playlist M3U serve às três seções: baixa e importa uma única vez, mesmo com cargas simultâneas. */
   function importM3uOnce() {
     if (!m3uImport) {
-      const running = (async () => {
+      const my = epoch
+      const release = () => {
+        if (m3uImport === shared) m3uImport = null
+      }
+      const shared = (async () => {
         const { text } = await fetchM3uText(auth.apiBase || auth.session?.baseUrl)
+        assertCurrent(my)
         await importM3uCatalog(text, {
           onProgress: (p) => {
+            assertCurrent(my)
             status[p.section].progress = p.progress
           },
         })
-      })()
-      m3uImport = running.then(
-        () => {
-          m3uImport = null
-        },
-        (err) => {
-          m3uImport = null
-          throw err
-        },
-      )
+      })().then(release, (err) => {
+        release()
+        throw err
+      })
+      m3uImport = shared
     }
     return m3uImport
   }
@@ -113,6 +120,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   }
 
   async function doLoad(section, force) {
+    const my = epoch
     const st = status[section]
     st.state = 'loading'
     st.error = ''
@@ -120,22 +128,26 @@ export const useCatalogStore = defineStore('catalog', () => {
     st.progress = 0
     try {
       let meta = force ? null : await getMeta(section)
+      assertCurrent(my)
 
       if (!meta) {
         if (auth.session?.type === 'm3u') {
           st.step = 'Baixando e processando a playlist M3U...'
           await importM3uOnce()
+          assertCurrent(my)
           meta = await getMeta(section)
         } else {
           st.step = 'Baixando categorias...'
           let cats = await fetchers[section].categories()
           st.step = 'Baixando a lista (pode levar alguns segundos)...'
           let streams = await fetchers[section].streams()
+          assertCurrent(my)
           st.step = 'Salvando no dispositivo...'
           await saveSection(section, {
             categories: cats,
             streams,
             onProgress: (p) => {
+              assertCurrent(my)
               st.progress = p
             },
           })
@@ -146,10 +158,12 @@ export const useCatalogStore = defineStore('catalog', () => {
         }
       }
 
+      assertCurrent(my)
       st.step = 'Preparando...'
       await publish(section, meta)
       st.state = 'ready'
     } catch (err) {
+      if (err instanceof StaleLoad) return
       console.warn(`[catalog] Falha ao carregar "${section}":`, err && err.code, err && (err.technicalDetail || err.detail || err.message))
       st.state = 'error'
       st.error = err?.userMessage || err?.message || 'Erro ao carregar catálogo'
@@ -160,14 +174,15 @@ export const useCatalogStore = defineStore('catalog', () => {
   /** Carrega do IndexedDB se já houver cache; senão baixa da API e persiste. */
   function loadSection(section, { force = false } = {}) {
     if (inflight[section]) return inflight[section]
-    inflight[section] = (async () => {
+    const running = (async () => {
       try {
         await doLoad(section, force)
       } finally {
-        delete inflight[section]
+        if (inflight[section] === running) delete inflight[section] // após reset já pode haver uma carga nova aqui
       }
     })()
-    return inflight[section]
+    inflight[section] = running
+    return running
   }
 
   const refreshSection = (section) => loadSection(section, { force: true })
@@ -180,6 +195,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   const getItems = (section, categoryId, start, count) => dbGetItems(section, categoryId, start, count)
 
   async function resetCatalogState() {
+    epoch++
     Object.keys(inflight).forEach((k) => {
       delete inflight[k]
     })

@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 async function setup() {
   const { createPinia, setActivePinia } = await import('pinia')
@@ -115,5 +115,37 @@ describe('playerStore — "Continuar assistindo"', () => {
     const series = player.watchHistory.filter((h) => h.section === 'series')
     expect(series.map((h) => h.stream_id)).toEqual([902])
     expect(series[0].seriesId).toBe('S9')
+  })
+})
+
+describe('playerStore — histórico por lista', () => {
+  const entry = (id) => ({ stream_id: id, name: `F${id}`, section: 'vod', currentTime: 60, duration: 3000, progressPct: 2 })
+
+  it('cada lista tem o seu histórico e a troca de lista recarrega', async () => {
+    const { storage, usePlayerStore } = await setup()
+    const { useAuthStore } = await import('@/stores/authStore')
+    await storage.set('player:watchHistory:p1:A', [entry(1)])
+    await storage.set('player:watchHistory:p1:B', [entry(2)])
+    const auth = useAuthStore()
+    auth.session = { id: 'A' }
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    expect(player.watchHistory.map((i) => i.stream_id)).toEqual([1])
+
+    auth.session = { id: 'B' }
+    await vi.waitFor(() => expect(player.watchHistory.map((i) => i.stream_id)).toEqual([2]))
+  })
+
+  it('o histórico antigo (só por perfil) passa para a primeira lista que abrir', async () => {
+    const { storage, usePlayerStore } = await setup()
+    const { useAuthStore } = await import('@/stores/authStore')
+    await storage.set('player:watchHistory:p1', [entry(7)])
+    useAuthStore().session = { id: 'A' }
+    const player = usePlayerStore()
+    await player.hydrate(true)
+
+    expect(player.watchHistory.map((i) => i.stream_id)).toEqual([7])
+    expect(await storage.get('player:watchHistory:p1')).toBeNull()
+    expect(await storage.get('player:watchHistory:p1:A')).toHaveLength(1)
   })
 })

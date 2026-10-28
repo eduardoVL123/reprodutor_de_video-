@@ -238,8 +238,42 @@ export async function smartFetch(url, { timeoutMs = DEFAULT_TIMEOUT_MS, accept }
   }
 }
 
+/**
+ * Lê o corpo como texto. Falha se ficar `idleMs` sem chegar nenhum byte (servidor que mandou os cabeçalhos e parou):
+ * `res.text()` sozinho esperaria para sempre. Um download lento que continua chegando não é cortado.
+ */
+async function readText(res, idleMs, where) {
+  if (!res.body || typeof res.body.getReader !== 'function') return res.text()
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  for (;;) {
+    let timer
+    const idle = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new XtreamError(ERROR_CODES.TIMEOUT_ERROR, {
+            ...where,
+            timeoutSec: Math.round(idleMs / 1000),
+            raw: `Resposta parou de chegar por ${idleMs}ms`,
+          }),
+        )
+        Promise.resolve(reader.cancel()).catch(() => {}) // depois do reject: cancelar encerra o read() e ele ganharia a corrida
+      }, idleMs)
+    })
+    let chunk
+    try {
+      chunk = await Promise.race([reader.read(), idle])
+    } finally {
+      clearTimeout(timer)
+    }
+    if (chunk.done) return text + decoder.decode()
+    text += decoder.decode(chunk.value, { stream: true })
+  }
+}
+
 /** Lê o corpo como JSON validando HTTP e formato. */
-async function readJson(res, url) {
+async function readJson(res, url, idleMs) {
   const where = describeUrl(url)
   if (!res.ok) {
     throw new XtreamError(ERROR_CODES.HTTP_ERROR, {
@@ -251,8 +285,9 @@ async function readJson(res, url) {
   }
   let text = ''
   try {
-    text = await res.text()
+    text = await readText(res, idleMs, where)
   } catch (err) {
+    if (err instanceof XtreamError) throw err
     throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, { ...where, raw: `Corpo interrompido: ${err && err.message}` })
   }
   try {
@@ -299,10 +334,11 @@ function isTransportFailure(err) {
  *          o https falhou e a chamada (com usuário e senha na URL) foi refeita em http.
  */
 export async function apiRequest(baseUrl, credentials, { action, params, timeoutMs } = {}) {
+  const limitMs = timeoutMs || DEFAULT_TIMEOUT_MS
   const execute = async (targetBase) => {
     const url = buildApiUrl(targetBase, { ...(credentials || {}), action, params })
-    const { res, finalUrl } = await smartFetch(url, { timeoutMs: timeoutMs || DEFAULT_TIMEOUT_MS })
-    const data = await readJson(res, url)
+    const { res, finalUrl } = await smartFetch(url, { timeoutMs: limitMs })
+    const data = await readJson(res, url, limitMs)
     return { data, resolvedUrl: baseFromFinalUrl(finalUrl, targetBase) }
   }
 
@@ -504,7 +540,7 @@ export async function fetchM3uText(url, { timeoutMs = PLAYLIST_TIMEOUT_MS } = {}
       raw: `HTTP ${res.status} ao baixar a playlist`,
     })
   }
-  const text = await res.text()
+  const text = await readText(res, timeoutMs, where)
   if (!text || text.replace(/^\uFEFF/, '').trim().indexOf('#EXTM3U') !== 0) {
     const snippet = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 80)
     throw new XtreamError(ERROR_CODES.INVALID_FORMAT_ERROR, {
@@ -603,8 +639,10 @@ export async function resolveShortInput({ dns, username = '', password = '', tim
   // 3b. Lista #EXTM3U pura
   let text = ''
   try {
-    text = await res.text()
-  } catch (_) {}
+    text = await readText(res, Math.max(timeoutMs, PLAYLIST_TIMEOUT_MS), describeUrl(finalUrl))
+  } catch (err) {
+    if (err instanceof XtreamError) throw err
+  }
   if (text && text.replace(/^\uFEFF/, '').trim().indexOf('#EXTM3U') === 0) {
     return {
       mode: 'm3u',

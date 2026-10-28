@@ -110,7 +110,8 @@ Passo a passo, textos da loja, informações para o revisor, checklist da Samsun
 ## Segurança
 
 - A senha das listas é guardada cifrada (AES-GCM, chave não extraível). Sem WebCrypto, o app cai para texto puro
-  (comportamento de último recurso).
+  (comportamento de último recurso). Em lista M3U com usuário e senha dentro dos links dos canais, esses links ficam
+  sem cifra no catálogo, no histórico e na fila (só a URL da lista é cifrada).
 - Pareamento pelo celular: cifra de ponta a ponta (ECDH P-256 + AES-GCM); a chave privada fica só na memória da TV e
   a TV pede confirmação do servidor recebido antes de importar. Sem WebCrypto, a opção não é oferecida.
 - O APK usa validação TLS padrão do Android; um painel com https inválido é tentado em http (ver `xtreamApi.js`).

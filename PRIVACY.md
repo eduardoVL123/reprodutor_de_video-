@@ -15,7 +15,7 @@ responsável por eles.
 
 | Dado | Para quê | Onde fica |
 | --- | --- | --- |
-| Endereço do servidor, usuário e senha informados | Autenticar e reproduzir no servidor que o usuário escolheu | Somente no aparelho (armazenamento do app). A senha é cifrada com AES-GCM; a chave não sai do aparelho. |
+| Endereço do servidor, usuário e senha informados | Autenticar e reproduzir no servidor que o usuário escolheu | Somente no aparelho (armazenamento do app). A senha é cifrada com AES-GCM; a chave não sai do aparelho. Exceção: em lista M3U cujos links dos canais trazem usuário e senha, esses links ficam no catálogo, no histórico e na fila do aparelho sem cifra. |
 | Catálogo (nomes, categorias, capas) baixado da lista do usuário | Mostrar canais, filmes e séries | Somente no aparelho |
 | Perfis, favoritos, histórico de reprodução e buscas recentes | Funções do app por perfil | Somente no aparelho |
 | Aceite do aviso legal (data e versão) | Comprovar o consentimento | Somente no aparelho |
