@@ -133,6 +133,10 @@ Sem `MP_ACCESS_TOKEN` as rotas de checkout respondem 503 "Pagamento indisponíve
     `failed`/`canceled` → pedido `failed`.
   - Cartão: a resposta da criação já traz o resultado (`processed`, `failed` ou `action_required` +
     `pending_challenge` com a URL do desafio, válida por 40 min); vale como a consulta da G15. Recusa → 402.
+  - Erro ambíguo na criação (rede, tempo esgotado, 5xx): o pedido **fica pendente** (pode ter sido cobrado) e o
+    webhook o acha pelo `external_reference` mesmo sem `mp_order_id`; só a recusa 4xx marca `failed` (auditoria
+    ponytail, 2026-10-28). Assinatura no cartão exige `MP_WEBHOOK_SECRET` (sem ele, 503); o painel não apaga aparelho
+    com renovação ativa; "Reprocessar" retoma pedido preso em `delivering` há mais de 5 min.
   - Parcela da assinatura: `GET /authorized_payments/{id}` (endpoint conferido) → `payment.status: "approved"`,
     `preapproval_id` de uma assinatura nossa, `transaction_amount` 25 e `currency_id: "BRL"` → soma 1 ano ao aparelho.
     🔎 Os nomes desses campos não aparecem na busca da documentação: confirmar no teste manual (se diferirem, nada é

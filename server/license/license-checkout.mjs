@@ -7,7 +7,7 @@
  */
 import { readJsonBody } from '../pair/pair-core.mjs'
 import { findDeviceByCode, activationEndsAt } from './license-db.mjs'
-import { hashKey, createReseller } from './license-resellers.mjs'
+import { hashKey, createReseller, toBase64Url } from './license-resellers.mjs'
 import { DAY_MS, extendActivation } from './license-rules.mjs'
 import { DEVICE_ANNUAL_PRICE, creditTotal } from './pricing.mjs'
 import { MpError, toAmount } from './mp-client.mjs'
@@ -20,6 +20,7 @@ export const CARD_TTL_MS = 45 * 60 * 1000
 export const FIRST_CHARGE_TTL_MS = 11 * DAY_MS
 export const CHECKOUT_LIMITS = { checkout: 10, checkoutStatus: 60 }
 const RECHECK_MS = 60 * 1000
+const STUCK_DELIVERY_MS = 5 * 60 * 1000
 const KINDS = ['device_annual', 'credits']
 const METHODS = ['pix', 'card']
 const EMAIL = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/
@@ -62,10 +63,7 @@ class CheckoutError extends Error {
   }
 }
 
-function randomId(bytes) {
-  const raw = crypto.getRandomValues(new Uint8Array(bytes))
-  return btoa(String.fromCharCode(...raw)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
+const randomId = (bytes) => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)))
 
 const text = (value, max) => String(value == null ? '' : value).trim().slice(0, max)
 
@@ -170,10 +168,11 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
 
   /** Falha ao chamar o Mercado Pago na criação: pedido falho; cartão recusado (4xx) vira 402. Devolve o erro a lançar. */
   async function startFailed(orderId, err, method) {
-    await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(orderId).run()
-    if (!(err instanceof MpError)) return err
+    // Só a recusa (4xx) garante que nada foi cobrado. Rede ou 5xx: o pedido fica pendente e o webhook decide.
+    const refused = err instanceof MpError && err.status < 500
+    if (refused) await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(orderId).run()
     console.warn(`[checkout] pedido ${orderId}: ${err.message}`)
-    if (method === 'card' && err.status < 500) return new CheckoutError(402, DECLINED)
+    if (refused && method === 'card') return new CheckoutError(402, DECLINED)
     return new CheckoutError(502, 'Não foi possível iniciar o pagamento agora. Tente de novo em instantes.')
   }
 
@@ -206,6 +205,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     if (!mp) throw new CheckoutError(503, 'Pagamento indisponível no momento. Fale com o suporte pelo WhatsApp.')
     const purchase = await describePurchase(body, resellerId)
     const isSubscription = purchase.method === 'card' && purchase.kind === 'device_annual'
+    // As parcelas da assinatura só chegam pelo webhook: sem o segredo dele, venderíamos sem conseguir entregar.
+    if (isSubscription && !webhookSecret) throw new CheckoutError(503, 'Assinatura no cartão indisponível no momento. Pague com Pix.')
     const at = now()
     const orderId = randomId(16)
     const viewSecret = randomId(32)
@@ -284,7 +285,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
   /** Confere a order vinda da API: paga → entrega uma vez; recusada ou cancelada → pedido falho. */
   async function settle(order) {
     const row = await db.prepare('SELECT * FROM orders WHERE id = ?').bind(String(order.external_reference || '')).first()
-    if (!row || row.mp_order_id !== String(order.id)) return
+    // Sem mp_order_id = a criação deu erro ambíguo (rede/5xx); a referência é nossa (só o nosso token cria orders).
+    if (!row || (row.mp_order_id && row.mp_order_id !== String(order.id))) return
     if (order.status === 'failed' || order.status === 'canceled') {
       await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ? AND status = 'pending'").bind(row.id).run()
       return
@@ -298,8 +300,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     const at = now()
     // Pix pago no limite do prazo pode já estar 'expired' aqui; o Mercado Pago é quem diz se foi pago.
     const claim = await db
-      .prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE id = ? AND status IN ('pending', 'expired')")
-      .bind(at, row.id)
+      .prepare("UPDATE orders SET status = 'paid', paid_at = ?, mp_order_id = COALESCE(mp_order_id, ?) WHERE id = ? AND status IN ('pending', 'expired')")
+      .bind(at, String(order.id), row.id)
       .run()
     if (claim.meta.changes !== 1) return
     const statements = await deliveryStatements(row, at)
@@ -470,12 +472,19 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
       }
       return adminOrder(await find())
     }
-    if (row.status !== 'paid') throw new CheckoutError(409, row.status === 'delivered' ? 'Este pedido já foi entregue.' : 'Este pedido não pode ser reprocessado.')
-    const claim = await db.prepare("UPDATE orders SET status = 'delivering' WHERE id = ? AND status = 'paid'").bind(id).run()
+    if (row.status !== 'paid' && row.status !== 'delivering') {
+      throw new CheckoutError(409, row.status === 'delivered' ? 'Este pedido já foi entregue.' : 'Este pedido não pode ser reprocessado.')
+    }
+    // 'delivering' trava cliques juntos; se o servidor caiu no meio (marca com mais de 5 min), retoma a entrega.
+    const at = now()
+    const claim = await db
+      .prepare("UPDATE orders SET status = 'delivering', checked_at = ? WHERE id = ? AND (status = 'paid' OR (status = 'delivering' AND COALESCE(checked_at, 0) < ?))")
+      .bind(at, id, at - STUCK_DELIVERY_MS)
+      .run()
     if (claim.meta.changes !== 1) throw new CheckoutError(409, 'Este pedido já está sendo entregue.')
     const release = () => db.prepare("UPDATE orders SET status = 'paid' WHERE id = ? AND status = 'delivering'").bind(id).run()
     try {
-      const statements = await deliveryStatements(row, now())
+      const statements = await deliveryStatements(row, at)
       if (!statements) {
         await release()
         throw new CheckoutError(409, 'Pago, mas o aparelho não existe mais. Libere o novo aparelho do cliente na aba Aparelhos.')

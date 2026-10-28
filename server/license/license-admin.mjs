@@ -378,6 +378,9 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
       async (m) => {
         // Pedido de LGPD: some tudo do aparelho; se o app abrir de novo, ele volta como aparelho novo (com teste).
         const { device } = await deviceInfo(db, m[1])
+        // Apagar o aparelho não para o cartão: o Mercado Pago seguiria cobrando todo ano sem nada a entregar.
+        const renewing = await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status != 'cancelled'").bind(device.code).first()
+        if (renewing) throw new AdminError(409, 'Este aparelho tem renovação automática no cartão. Cancele a renovação na aba Pagamentos antes de apagar.')
         await db.batch(
           ['partner_cycle_entries', 'activations', 'device_events', 'devices'].map((table) =>
             db.prepare(`DELETE FROM ${table} WHERE device_key = ?`).bind(device.device_key),

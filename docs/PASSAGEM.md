@@ -84,9 +84,9 @@ Arquivos novos: `server/license/license-checkout.mjs`, `server/license/mp-client
 5. Depois: `/mp-review` (checklist oficial) + formulário de homologação → credenciais de produção → publicar.
 
 ## Estado do Git e da produção
-- Branch `main`. **7 commits locais sem push**: achados da auditoria, RFC-019, 021, 022, RFC-020 (`feat(license):
-  pagamento pelo Mercado Pago…`), tela `/pagar` + novo visual do site, e esta passagem. Confira com
-  `git log origin/main..HEAD --oneline`.
+- Branch `main`, **tudo enviado ao GitHub em 2026-10-28** (RFC-019, 021, 022, RFC-020 etapas 1–6, novo visual do
+  site e as correções da auditoria ponytail). O push dispara o CI do APK. **Nada foi publicado no Worker**: a
+  produção segue na versão da RFC-018 até `npm run license:deploy` (com pedido do dono).
 - Produção: `https://pulse-license.pulseplayer.workers.dev` (painel `/admin/`), ainda a versão da RFC-018. Token do
   painel em `server/license/.data/admin-token.txt` (fora do Git). Publicar: `npm run license:deploy` (wrangler já
   logado). As tabelas novas são criadas sozinhas na primeira chamada (migrações só acrescentam).
@@ -103,7 +103,8 @@ Arquivos novos: `server/license/license-checkout.mjs`, `server/license/mp-client
 3. Problemas de vídeo antigos: E-AC3 sem som (limite da WebView; solução real = player nativo Media3 + ffmpeg, não
    aprovado); falhas de VOD só no celular aguardam a foto do erro com a "linha do tempo".
 4. Guarda de 24 meses (PRIVACY.md) ainda não apaga pedidos antigos (`orders`): decisão do dono (registro fiscal).
-5. Pedido preso em `delivering` (servidor caiu no meio de um reprocessamento) só se resolve no banco; raro.
+5. Auditoria ponytail (2026-10-28) feita e corrigida: erro ambíguo do Mercado Pago não perde pedido pago, assinatura
+   exige o segredo do webhook, aparelho com renovação ativa não pode ser apagado, `delivering` preso é retomado.
 
 ## Regras que o dono já fixou (não reabrir)
 - Celular se reconhece por `html.is-phone` (variante Tailwind `phone:`), **nunca** por largura de janela.

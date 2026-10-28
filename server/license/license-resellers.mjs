@@ -17,7 +17,7 @@ const MAX_NAME = 100
 const MAX_CONTACT = 120
 const MAX_NOTE = 200
 
-function toBase64Url(bytes) {
+export function toBase64Url(bytes) {
   let binary = ''
   for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
   return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')

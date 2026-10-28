@@ -180,7 +180,7 @@ describe('POST /v1/checkout — Pix', () => {
     expect((await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code, email: EMAIL })).status).toBe(503)
   })
 
-  it('erro do Mercado Pago: 502, pedido marcado como falho e nada de token ou e-mail no log (G17)', async () => {
+  it('erro 5xx do Mercado Pago: 502, pedido segue pendente (pode ter cobrado) e nada de token ou e-mail no log (G17)', async () => {
     const code = await tvCode()
     mpReply = () => ({ status: 500, body: { message: 'internal' } })
     const spies = ['log', 'warn', 'error', 'info'].map((m) => vi.spyOn(console, m).mockImplementation(() => {}))
@@ -193,7 +193,7 @@ describe('POST /v1/checkout — Pix', () => {
     expect(logged).not.toContain(TOKEN)
     expect(logged).not.toContain(EMAIL)
     const row = await db.prepare('SELECT status FROM orders').first()
-    expect(row.status).toBe('failed')
+    expect(row.status).toBe('pending')
   })
 
   it('não guarda o e-mail do pagador no banco', async () => {
@@ -702,5 +702,77 @@ describe('painel do dono — pedidos (etapa 6)', () => {
 
   it('sem o token do painel: 401', async () => {
     expect((await handle(new Request('http://license.test/admin/api/orders'), '10.1.1.1')).status).toBe(401)
+  })
+})
+
+describe('auditoria ponytail — nunca cobrar sem entregar', () => {
+  const CARD = { token: 'tok_0123456789abcdef', paymentMethodId: 'master', cpf: '12345678909' }
+  const buyByCard = () =>
+    req('POST', '/v1/checkout', { kind: 'credits', method: 'card', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000', email: EMAIL, card: CARD })
+  const orderRow = () => db.prepare('SELECT * FROM orders').first()
+
+  async function admin(method, path) {
+    const res = await handle(
+      new Request(`http://license.test${path}`, { method, headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json' }, body: method === 'GET' ? undefined : '{}' }),
+      '10.1.1.1',
+    )
+    return { status: res.status, body: await res.json() }
+  }
+
+  it('erro 5xx na criação, mas o Mercado Pago cobrou: o pedido fica pendente e o webhook entrega', async () => {
+    mpReply = (url, init = {}) => {
+      if (init.method !== 'POST') return defaultReply(url, init)
+      const body = JSON.parse(init.body)
+      const id = `ORD-${body.external_reference}`
+      mpOrders.set(id, { id, status: 'processed', status_detail: 'accredited', currency: 'BRL', total_amount: body.total_amount, external_reference: body.external_reference })
+      return { status: 503, body: {} }
+    }
+    expect((await buyByCard()).status).toBe(502)
+    const row = await orderRow()
+    expect(row).toMatchObject({ status: 'pending', mp_order_id: null })
+    await webhook(`ORD-${row.id}`)
+    expect((await orderRow()).status).toBe('delivered')
+    expect((await db.prepare('SELECT credits FROM resellers').first()).credits).toBe(20)
+  })
+
+  it('queda de rede na criação também deixa o pedido pendente (não "falhou")', async () => {
+    mpReply = () => {
+      throw new TypeError('fetch failed')
+    }
+    expect((await buyByCard()).status).toBe(502)
+    expect((await orderRow()).status).toBe('pending')
+  })
+
+  it('sem MP_WEBHOOK_SECRET não vende assinatura no cartão (as parcelas só chegam pelo webhook)', async () => {
+    handle = createLicenseHandler({ db, now: () => clock, adminToken: 'x', mp: createMpClient({ accessToken: TOKEN, fetch: fakeFetch }) })
+    const code = await tvCode()
+    calls = []
+    const res = await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'card', code, email: EMAIL, card: CARD })
+    expect(res.status).toBe(503)
+    expect(calls).toHaveLength(0)
+  })
+
+  it('apagar um aparelho (LGPD) com renovação ativa é recusado até cancelar a assinatura', async () => {
+    mpReply = (url, init = {}) => {
+      if (url.endsWith('/preapproval')) return { status: 201, body: { id: 'pre-1', status: 'authorized' } }
+      if (init.method === 'PUT') return { status: 200, body: { id: 'pre-1', status: 'cancelled' } }
+      return defaultReply(url, init)
+    }
+    const code = await tvCode()
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'card', code, email: EMAIL, card: CARD })).body
+    const blocked = await admin('DELETE', `/admin/api/devices/${code}`)
+    expect(blocked.status).toBe(409)
+    expect(blocked.body.error).toMatch(/renovação/)
+    await admin('POST', `/admin/api/subscriptions/${orderId}/cancel`)
+    expect((await admin('DELETE', `/admin/api/devices/${code}`)).status).toBe(200)
+  })
+
+  it('pedido preso em "entregando" (servidor caiu) é retomado pelo Reprocessar depois de 5 minutos', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'Loja do Zé', contact: 'x', email: EMAIL })).body
+    await db.prepare("UPDATE orders SET status = 'delivering', checked_at = ? WHERE id = ?").bind(clock, orderId).run()
+    expect((await admin('POST', `/admin/api/orders/${orderId}/reprocess`)).status).toBe(409)
+    clock += 6 * MIN
+    const done = await admin('POST', `/admin/api/orders/${orderId}/reprocess`)
+    expect(done.body.status).toBe('delivered')
   })
 })
