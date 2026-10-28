@@ -468,11 +468,15 @@ watch(activeTab, (tab) => {
   })
 })
 
+let unmounted = false
+
 onMounted(async () => {
   await profileStore.hydrate()
   await player.hydrate()
   await auth.hydrate()
   await loadCatalogShowcase()
+  // A tela pode ter saído durante as esperas (logout rápido): não registra "voltar" nem foca numa tela que já não existe.
+  if (unmounted) return
 
   cleanupRootBack = registerBackHandler(() => {
     const action = tabBackAction({
@@ -503,6 +507,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  unmounted = true
   if (cleanupRootBack) cleanupRootBack()
 })
 </script>
