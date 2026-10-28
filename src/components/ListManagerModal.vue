@@ -203,12 +203,15 @@ defineExpose({ open, close })
     aria-modal="true"
     data-focus-group="modal-lists-dialog"
   >
-    <div class="w-full max-w-[70rem] max-h-[44rem] bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl">
+    <!-- No celular deitado o modal inteiro rola (as partes não disputam a altura da tela). -->
+    <div
+      class="w-full max-w-[70rem] max-h-[44rem] bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl phone:p-4 phone:overflow-y-auto"
+    >
       <!-- Topo do modal -->
-      <header class="flex items-center justify-between pb-5 border-b border-white/[0.08]">
-        <div>
-          <h2 class="text-tv-xl font-bold text-white tracking-tight">Gerenciador de Listas</h2>
-          <p class="text-tv-xs text-neutral-400 mt-1">
+      <header class="flex items-center justify-between gap-4 pb-5 border-b border-white/[0.08] phone:pb-3">
+        <div class="min-w-0">
+          <h2 class="text-tv-xl font-bold text-white tracking-tight phone:text-2xl">Gerenciador de Listas</h2>
+          <p class="text-tv-xs text-neutral-400 mt-1 phone:hidden">
             Alterne entre suas listas cadastradas ou adicione um novo servidor ou playlist
           </p>
         </div>
@@ -249,7 +252,7 @@ defineExpose({ open, close })
       </div>
 
       <!-- Conteúdo do modal: 2 colunas -->
-      <div class="grid grid-cols-2 gap-8 flex-1 min-h-0 pt-6">
+      <div class="grid grid-cols-2 gap-8 flex-1 min-h-0 pt-6 phone:flex-none phone:gap-4 phone:pt-3">
         <!-- Coluna 1: listas salvas -->
         <div class="flex flex-col min-h-0">
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-3 uppercase tracking-wider">
@@ -348,7 +351,7 @@ defineExpose({ open, close })
         </div>
 
         <!-- Coluna 2: adicionar nova lista -->
-        <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08]">
+        <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08] phone:pl-4">
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-1 uppercase tracking-wider">
             Adicionar Nova Lista
           </h3>
@@ -358,7 +361,7 @@ defineExpose({ open, close })
           </div>
 
           <template v-else>
-            <p class="text-tv-xs text-neutral-400 mb-3">
+            <p class="text-tv-xs text-neutral-400 mb-3 phone:hidden">
               Navegue com as setas e pressione OK para abrir o teclado
             </p>
 
@@ -369,7 +372,8 @@ defineExpose({ open, close })
               <p class="mb-3 text-center text-tv-xs text-neutral-500">ou digite</p>
             </template>
 
-            <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem]" @submit.prevent="addList">
+            <!-- pb-[20rem]: espaço para o teclado da TV; no celular o teclado do aparelho já empurra a tela -->
+            <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem] phone:pb-2" @submit.prevent="addList">
               <div>
                 <label for="new-list-label" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
                   Nome / Apelido (opcional)
@@ -467,11 +471,11 @@ defineExpose({ open, close })
       </div>
 
       <!-- RFC-018: o código do aparelho serve para pagar a ativação e para o suporte -->
-      <p v-if="license.code" id="device-code" class="px-10 pb-2 text-tv-xs text-neutral-500">
+      <p v-if="license.code" id="device-code" class="px-10 pb-2 text-tv-xs text-neutral-500 phone:px-0 phone:pt-3">
         Código do aparelho: <span class="font-mono tracking-widest text-neutral-300">{{ license.code }}</span>
       </p>
       <!-- RFC-021: lista enviada pelo site chega aqui também (a TV confirma antes) -->
-      <div class="px-10 pb-6">
+      <div class="px-10 pb-6 phone:px-0 phone:pb-0">
         <SiteInboxPrompt @done="onPairDone" />
       </div>
     </div>

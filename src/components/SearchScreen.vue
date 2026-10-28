@@ -307,9 +307,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section ref="rootEl" class="flex w-full h-full gap-10 pl-16 pr-24 py-14 bg-tv-deep text-white" aria-label="Buscar">
-    <!-- Consulta + teclado na tela -->
-    <div class="w-[34rem] shrink-0 flex flex-col" data-focus-group="search-keyboard">
+  <section ref="rootEl" class="flex w-full h-full gap-10 pl-16 pr-24 py-14 bg-tv-deep text-white phone:flex-col phone:gap-3 phone:px-4 phone:py-3" aria-label="Buscar">
+    <!-- Consulta + teclado na tela (no celular só o campo: tocar nele abre o teclado do aparelho) -->
+    <div class="w-[34rem] shrink-0 flex flex-col phone:w-full" data-focus-group="search-keyboard">
       <div data-focus-row="search-input-row">
         <input
           id="search-input"
@@ -323,9 +323,9 @@ onBeforeUnmount(() => {
           placeholder="Buscar filmes, séries e canais"
         />
       </div>
-      <p class="mt-2 text-tv-sm text-neutral-500">Use as letras abaixo ou aperte OK no campo para abrir o teclado do aparelho</p>
+      <p class="mt-2 text-tv-sm text-neutral-500 phone:hidden">Use as letras abaixo ou aperte OK no campo para abrir o teclado do aparelho</p>
 
-      <div class="mt-5 space-y-2.5">
+      <div class="mt-5 space-y-2.5 phone:hidden">
         <div
           v-for="(row, r) in KEYBOARD_ROWS"
           :key="'kb-row-' + r"
@@ -388,7 +388,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Sugestões + resultados -->
-    <div class="flex-1 min-w-0 flex gap-8" data-search-panel="results">
+    <div class="flex-1 min-w-0 flex gap-8 phone:min-h-0" data-search-panel="results">
       <!-- Menos de 3 letras: dica + buscas recentes -->
       <div v-if="!hasMinQuery" class="flex-1 pt-3">
         <p class="text-tv-base text-neutral-400">Digite pelo menos 3 letras para ver sugestões</p>
@@ -415,7 +415,8 @@ onBeforeUnmount(() => {
 
       <template v-else>
         <!-- Sugestões de títulos -->
-        <div class="w-[22rem] shrink-0 pt-1" data-focus-group="search-suggestions">
+        <!-- No celular a grade já mostra os títulos; a coluna só espremia os resultados e vazava sob o menu -->
+        <div class="w-[22rem] shrink-0 pt-1 phone:hidden" data-focus-group="search-suggestions">
           <h3 class="text-tv-sm font-bold text-neutral-300 uppercase tracking-[0.2em] mb-3 px-4">Sugestões</h3>
           <div class="flex flex-col gap-1">
             <button
@@ -462,7 +463,7 @@ onBeforeUnmount(() => {
           <!-- Buscando ou catálogo ainda baixando (sem resultados para mostrar) -->
           <div
             v-if="(isSearching || loadingNotice) && !visibleResults.length"
-            class="grid grid-cols-4 gap-4 mt-5"
+            class="grid grid-cols-4 gap-4 mt-5 phone:grid-cols-5 phone:gap-3"
             aria-hidden="true"
           >
             <div v-for="i in 4" :key="'search-skel-' + i" class="h-[16.5rem] rounded-xl bg-white/[0.05] animate-pulse" />
@@ -477,7 +478,7 @@ onBeforeUnmount(() => {
           <!-- Resultados -->
           <template v-else>
             <div class="flex-1 min-h-0 overflow-y-auto mt-4 px-1 pt-1 pb-6" data-focus-group="search-results">
-              <div class="grid grid-cols-4 gap-4">
+              <div class="grid grid-cols-4 gap-4 phone:grid-cols-5 phone:gap-3">
                 <div
                   v-for="(r, i) in visibleResults"
                   :key="r.section + ':' + r.item.stream_id"
