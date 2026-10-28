@@ -9,7 +9,7 @@ import { isNativeApp } from '@/services/netEnv'
 /** Plugin nativo do APK (android/.../PictureInPicturePlugin.java). */
 const PictureInPicture = registerPlugin('PictureInPicture')
 
-const isWebOS = () => !!window.PalmSystem || /Web0S|webOS/.test(navigator.userAgent || '')
+export const isWebOS = () => !!window.PalmSystem || /Web0S|webOS/.test(navigator.userAgent || '')
 
 /**
  * Encerra o aplicativo. Samsung e LG exigem que a tecla Voltar na tela inicial saia do app,
@@ -95,18 +95,27 @@ export function onPictureInPictureChange(callback) {
  * @returns {() => void} cancela o aviso
  */
 export function onAppBackground(callback) {
+  return onAppStateChange(false, callback)
+}
+
+/** Avisa quando o app volta para a tela (mesmas plataformas de onAppBackground). Usado pela licença (RFC-018 R4). */
+export function onAppForeground(callback) {
+  return onAppStateChange(true, callback)
+}
+
+function onAppStateChange(active, callback) {
   if (isNativeApp()) {
     return cancellable(
       import('@capacitor/app').then(({ App }) =>
         App.addListener('appStateChange', (state) => {
-          if (state && state.isActive === false) callback()
+          if (state && state.isActive === active) callback()
         }),
       ),
     )
   }
   if (window.tizen || window.webOS || isWebOS()) {
     const onVisibility = () => {
-      if (document.hidden) callback()
+      if (document.hidden !== active) callback()
     }
     document.addEventListener('visibilitychange', onVisibility)
     return () => document.removeEventListener('visibilitychange', onVisibility)

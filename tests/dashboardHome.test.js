@@ -5,6 +5,7 @@ async function mountHome(states) {
   vi.doMock('@/services/platform', () => ({
     exitApp: vi.fn(),
     onAppBackground: vi.fn(() => vi.fn()),
+    onAppForeground: vi.fn(() => vi.fn()),
     onPictureInPictureChange: vi.fn(() => vi.fn()),
     setPictureInPictureEnabled: vi.fn(async () => {}),
   }))

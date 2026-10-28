@@ -94,6 +94,8 @@ jobs:
           VITE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
           # Serviço de pareamento pelo celular (RFC-016, https sem barra final). Vazia = o app não oferece o pareamento.
           VITE_PAIR_BASE_URL: ${{ vars.PULSE_PAIR_BASE_URL }}
+          # Serviço de licença (RFC-018, server/license, sem barra final). Vazia = sem teste de 7 dias nem bloqueio.
+          VITE_LICENSE_BASE_URL: ${{ vars.PULSE_LICENSE_BASE_URL }}
 
       - name: Sincronizar Capacitor Android
         run: npx cap sync android

@@ -4,6 +4,7 @@ import { useAuthStore } from '@/stores/authStore'
 import { registerBackHandler, pushFocusScope, focusFirstIn } from '@/utils/spatialNavigation'
 import PairPanel from '@/components/PairPanel.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
+import { useLicenseStore } from '@/stores/licenseStore'
 
 /**
  * Gerenciador de listas (servidores/playlists salvos). O pai abre com `open()` (via ref) e é
@@ -13,6 +14,7 @@ import { isPairingAvailable } from '@/services/pairingApi'
 const emit = defineEmits(['changed', 'logged-out'])
 
 const auth = useAuthStore()
+const license = useLicenseStore()
 
 const emptyForm = () => ({ label: '', dns: '', username: '', password: '' })
 
@@ -462,6 +464,11 @@ defineExpose({ open, close })
           </template>
         </div>
       </div>
+
+      <!-- RFC-018: o código do aparelho serve para pagar a ativação e para o suporte -->
+      <p v-if="license.code" id="device-code" class="px-10 pb-6 text-tv-xs text-neutral-500">
+        Código do aparelho: <span class="font-mono tracking-widest text-neutral-300">{{ license.code }}</span>
+      </p>
     </div>
   </div>
 </template>

@@ -102,6 +102,20 @@ describe('pacote Samsung Tizen', () => {
     expect(pngSize(readFileSync(join(outDir, 'icon.png'))).width).toBe(117)
   })
 
+  it('carrega a API da Samsung e declara o privilégio público productinfo (ID da TV para a licença, RFC-018)', async () => {
+    const { prepareTvPackage } = await import('../scripts/package-tv.mjs')
+    const distDir = fakeDist()
+    writeFileSync(join(distDir, 'index.html'), '<!doctype html><html><head><title>x</title><script type="module" src="/a.js"></script></head><body></body></html>')
+    const outDir = mkdtempSync(join(tmpdir(), 'pulse-tizen-'))
+
+    prepareTvPackage({ platform: 'tizen', distDir, outDir, version: '2.3.4', env: { PULSE_TIZEN_PACKAGE_ID: 'AbCdEf1234' } })
+
+    const html = readFileSync(join(outDir, 'index.html'), 'utf8')
+    expect(html).toMatch(/<script src="\$WEBAPIS\/webapis\/webapis\.js"><\/script>\s*<\/head>/)
+    expect(readFileSync(join(distDir, 'index.html'), 'utf8')).not.toContain('webapis') // o build web não muda
+    expect(readFileSync(join(outDir, 'config.xml'), 'utf8')).toContain('http://developer.samsung.com/privilege/productinfo')
+  })
+
   it('exige um id de pacote de 10 caracteres alfanuméricos', async () => {
     const { prepareTvPackage } = await import('../scripts/package-tv.mjs')
     const call = () =>

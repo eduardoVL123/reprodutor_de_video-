@@ -13,9 +13,17 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const DEV_TIZEN_PACKAGE_ID = 'PulsePlay1' // só para testes locais; publique com o id do seu certificado
 
+// Tizen: webapis.js (API da Samsung, servida pela própria TV) dá o DUID usado pela licença (RFC-018).
 const PLATFORMS = {
-  tizen: { manifest: 'config.xml', files: ['icon.png'] },
-  webos: { manifest: 'appinfo.json', files: ['icon.png', 'largeIcon.png'] },
+  tizen: { manifest: 'config.xml', files: ['icon.png'], headScripts: ['$WEBAPIS/webapis/webapis.js'] },
+  webos: { manifest: 'appinfo.json', files: ['icon.png', 'largeIcon.png'], headScripts: [] },
+}
+
+function addHeadScripts(indexPath, scripts) {
+  if (!scripts.length) return
+  const tags = scripts.map((src) => `<script src="${src}"></script>`).join('')
+  const html = readFileSync(indexPath, 'utf8')
+  writeFileSync(indexPath, /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${tags}</head>`) : tags + html)
 }
 
 function resolveValues(platform, version, env) {
@@ -44,6 +52,7 @@ export function prepareTvPackage({ platform, distDir, outDir, version, env = pro
   for (const [marker, value] of Object.entries(values)) manifest = manifest.split(marker).join(value)
   writeFileSync(join(outDir, spec.manifest), manifest)
   for (const file of spec.files) cpSync(join(platformDir, file), join(outDir, file))
+  addHeadScripts(join(outDir, 'index.html'), spec.headScripts)
   return outDir
 }
 

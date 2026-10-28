@@ -20,12 +20,24 @@ import { pickArtwork } from '@/utils/artwork'
 import { normalizeVodInfo, fetchVodInfo, fetchSeriesInfo } from '@/services/xtreamApi'
 import { tabBackAction } from '@/utils/tabBack'
 import { playHistoryItem } from '@/utils/seriesPlaylist'
+import { useLicenseWatch } from '@/composables/useLicenseWatch'
+import { useLicenseStore } from '@/stores/licenseStore'
+import ActivationRequired from '@/views/ActivationRequired.vue'
 
 const router = useRouter()
 const auth = useAuthStore()
+const license = useLicenseStore()
 const player = usePlayerStore()
 const catalog = useCatalogStore()
 const profileStore = useProfileStore()
+useLicenseWatch(
+  () => auth.session,
+  () => ['live', 'vod', 'series'].some((s) => catalog.status[s].state === 'ready'),
+)
+// RFC-018: nunca interrompe um vídeo que já está tocando, nem a escolha de perfil (o foco iria para trás dela).
+const showActivation = computed(
+  () => !player.isOpen && !profileStore.isProfileGateOpen && license.shouldBlock(auth.session),
+)
 
 // Abas de Navegação ('home' | 'live' | 'vod' | 'series' | 'favorites' | 'search')
 const activeTab = ref('home')
@@ -513,8 +525,8 @@ onBeforeUnmount(() => {
       @switch-profile="openProfileGate"
     />
 
-    <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem no desktop, e rodapé no mobile) -->
-    <main class="flex-1 min-w-0 h-full pl-0 md:pl-[7rem] pb-16 md:pb-0 flex flex-col overflow-hidden relative">
+    <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
+    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 flex flex-col overflow-hidden relative">
       <!-- Aba TV ao Vivo -->
       <div v-if="activeTab === 'live'" class="w-full h-full">
         <CatalogBrowser section="live" />
@@ -1008,6 +1020,7 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- Gerenciador de listas -->
+    <ActivationRequired v-if="showActivation" :code="license.code" @retry="license.refresh(auth.session)" @manage-lists="openListModal" />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->

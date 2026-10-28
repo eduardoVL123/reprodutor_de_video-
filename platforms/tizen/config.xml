@@ -11,9 +11,11 @@
   <feature name="http://tizen.org/feature/screen.size.all"/>
   <icon src="icon.png"/>
   <name>Pulse Player</name>
-  <!-- internet: falar com os servidores do usuário. tv.inputdevice: teclas de mídia e canal do controle. -->
+  <!-- internet: falar com os servidores do usuário. tv.inputdevice: teclas de mídia e canal do controle.
+       productinfo (nível público): DUID da TV, usado como código do aparelho na licença (RFC-018). -->
   <tizen:privilege name="http://tizen.org/privilege/internet"/>
   <tizen:privilege name="http://tizen.org/privilege/tv.inputdevice"/>
+  <tizen:privilege name="http://developer.samsung.com/privilege/productinfo"/>
   <tizen:profile name="tv-samsung"/>
   <tizen:setting screen-orientation="landscape" context-menu="disable" background-support="disable"
                  encryption="disable" install-location="auto" hwkey-event="enable"/>
