@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0f0c" />
+    <title>Pagamento · Pulse Player</title>
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Pulse Player, página inicial"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 947 256" aria-hidden="true" focusable="false"><path fill="#B8F000" d="M56.00 122.00 L56.00 64.25 A14 14 0 0 1 77.00 52.12 L198.03 122.00 L146.58 122.00 L137.34 138.00 L107.32 86.00 L86.54 122.00 Z"/><path fill="#B8F000" d="M56.00 134.00 L93.46 134.00 L107.32 110.00 L137.34 162.00 L153.50 134.00 L198.03 134.00 L77.00 203.88 A14 14 0 0 1 56.00 191.75 Z"/><g transform="translate(252 93.50) scale(1.15)"><g fill="none" stroke="#F4F7EE" stroke-linejoin="miter" stroke-miterlimit="2"><path transform="translate(0.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(52.00 0)" stroke-width="6" d="M0 0V42A18 18 0 0 0 36 42V0"/><path transform="translate(106.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(156.00 0)" stroke-width="6" d="M35 12C34 5 27 0 18 0C8 0 1 6 1 14C1 24 9 27 18 30C28 33 36 36 36 46C36 55 28 60 18 60C8 60 1 55 0 47"/><path transform="translate(210.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(292.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(344.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(394.00 0)" stroke-width="6" d="M0 60L20 0L40 60M8 40H32"/><path transform="translate(452.00 0)" stroke-width="6" d="M0 0L20 34.64M40 0L20 34.64M20 30V60"/><path transform="translate(510.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(560.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0M19 31L35.74 60"/></g></g></svg></a>
+      <nav class="site-nav" aria-label="Seções do site">
+        <a href="/" class="tab">Enviar lista</a>
+        <a href="/assinar" class="tab">Assinar meu aparelho</a>
+        <a href="/creditos" class="tab">Comprar créditos</a>
+      </nav>
+    </header>
+
+    <main class="page">
+      <h1 id="pay-title">Pagamento</h1>
+      <div class="panel summary checkout-total">
+        <span id="pay-what" class="summary-what"></span>
+        <strong id="pay-total" class="price"></strong>
+      </div>
+
+      <div id="checkout-init-error" class="alert" role="alert" aria-live="assertive" hidden></div>
+
+      <form id="form-checkout" class="form" novalidate data-mp-public-key-source="runtime-endpoint" data-mp-payer-email-source="form" data-mp-payer-identification-source="form" data-mp-identification-type="CPF">
+        <div id="fields-device" class="field" hidden>
+          <label for="pay-code">Código que aparece na TV</label>
+          <input id="pay-code" class="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
+        </div>
+        <div id="fields-buyer" class="field-pair" hidden>
+          <div class="field">
+            <label for="pay-name">Seu nome</label>
+            <input id="pay-name" type="text" maxlength="100" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="pay-contact">WhatsApp ou telefone</label>
+            <input id="pay-contact" type="text" maxlength="120" autocomplete="tel" inputmode="tel" />
+          </div>
+        </div>
+        <div class="field" data-mp-field="cardholderEmail">
+          <label for="form-checkout__cardholderEmail">Seu e-mail</label>
+          <input id="form-checkout__cardholderEmail" type="email" autocomplete="email" inputmode="email" required />
+        </div>
+
+        <div class="field">
+          <span class="label" id="method-label">Como você quer pagar?</span>
+          <div class="segmented" role="group" aria-labelledby="method-label">
+            <button type="button" id="method-pix" aria-pressed="true">Pix</button>
+            <button type="button" id="method-card" aria-pressed="false">Cartão de crédito</button>
+          </div>
+        </div>
+
+        <section id="pix-section" class="form">
+          <button type="button" id="pix-generate">Gerar Pix</button>
+        </section>
+
+        <section id="card-section" class="form" hidden>
+          <p id="card-note" class="small"></p>
+          <div class="checkout-field" data-mp-field="cardNumber" role="group" aria-labelledby="card-number-label">
+            <span id="card-number-label" class="label">Número do cartão</span>
+            <div id="form-checkout__cardNumber" data-mp-secure-field="cardNumber" class="secure-input" aria-labelledby="card-number-label"></div>
+          </div>
+          <div class="checkout-row">
+            <div class="checkout-field" data-mp-field="expirationDate" role="group" aria-labelledby="expiration-label">
+              <span id="expiration-label" class="label">Validade (MM/AA)</span>
+              <div id="form-checkout__expirationDate" data-mp-secure-field="expirationDate" class="secure-input" aria-labelledby="expiration-label"></div>
+            </div>
+            <div class="checkout-field" data-mp-field="securityCode" role="group" aria-labelledby="security-code-label">
+              <span id="security-code-label" class="label">Código de segurança (CVV)</span>
+              <div id="form-checkout__securityCode" data-mp-secure-field="securityCode" class="secure-input" aria-labelledby="security-code-label"></div>
+            </div>
+          </div>
+          <div class="checkout-field" data-mp-field="cardholderName">
+            <label for="form-checkout__cardholderName">Nome impresso no cartão</label>
+            <input id="form-checkout__cardholderName" type="text" autocomplete="cc-name" />
+          </div>
+          <div class="checkout-field" data-mp-field="identificationNumber">
+            <label for="form-checkout__identificationNumber">CPF do titular do cartão</label>
+            <input id="form-checkout__identificationNumber" type="text" inputmode="numeric" autocomplete="off" />
+          </div>
+          <!-- Campos que o SDK do Mercado Pago exige no formulário; ficam ocultos (1 parcela e CPF são decididos aqui). -->
+          <select id="form-checkout__issuer" data-mp-sdk-required-field="issuer" hidden aria-hidden="true" tabindex="-1"></select>
+          <select id="form-checkout__installments" data-mp-sdk-required-field="installments" hidden aria-hidden="true" tabindex="-1"></select>
+          <select id="form-checkout__identificationType" data-mp-sdk-required-field="identificationType" hidden aria-hidden="true" tabindex="-1"></select>
+          <button type="submit" id="form-checkout__submit">Pagar com cartão</button>
+        </section>
+      </form>
+
+      <section id="pix-result" class="pix" hidden>
+        <img id="pix-qr" class="pix-qr" alt="QR Code do Pix" width="240" height="240" />
+        <label for="pix-code">Pix copia e cola</label>
+        <textarea id="pix-code" rows="3" readonly></textarea>
+        <button type="button" id="pix-copy">Copiar código</button>
+      </section>
+
+      <iframe id="challenge" class="challenge" title="Confirmação da compra no seu banco" hidden></iframe>
+      <p id="result" role="status" aria-live="polite"></p>
+
+      <section id="pay-done" class="panel done" hidden>
+        <h2>Pagamento aprovado</h2>
+        <p id="done-text"></p>
+        <p id="done-key" class="key" hidden></p>
+        <a id="done-panel" class="button" href="/revenda/" hidden>Abrir o painel da revenda</a>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
+      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+    </footer>
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+    <script src="/site/pagar.js"></script>
+  </body>
+</html>

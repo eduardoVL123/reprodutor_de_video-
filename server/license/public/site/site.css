@@ -1,29 +1,220 @@
-* { box-sizing: border-box; }
-body { margin: 0; background: #0b0f0c; color: #f1f5f9; font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; line-height: 1.5; }
-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; padding: 1rem; border-bottom: 1px solid #1f2a22; }
-.brand { color: #f1f5f9; font-weight: 800; font-size: 1.25rem; text-decoration: none; }
-.brand span { color: #b8f000; margin-left: .25rem; }
-nav { display: flex; flex-wrap: wrap; gap: .5rem; }
-.tab { color: #cbd5e1; text-decoration: none; border: 1px solid #2a332c; border-radius: 999px; padding: .4rem .9rem; font-size: .95rem; }
-.tab.active { background: #b8f000; color: #0b0f0c; border-color: #b8f000; font-weight: 700; }
-main { max-width: 34rem; margin: 0 auto; padding: 1.5rem 1rem 2rem; }
-h1 { font-size: 1.6rem; margin: .5rem 0 1rem; }
-.lead { color: #cbd5e1; }
-.small { color: #94a3b8; font-size: .85rem; }
-.card { display: flex; flex-direction: column; gap: .5rem; background: #121915; border: 1px solid #2a332c; border-radius: 1rem; padding: 1rem; margin: 1rem 0; width: 100%; }
-table.card { display: table; border-collapse: collapse; }
-th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid #1f2a22; }
-label { color: #cbd5e1; font-size: .95rem; margin-top: .25rem; }
-input, textarea { background: #0b0f0c; color: #f1f5f9; border: 1px solid #2a332c; border-radius: .6rem; padding: .7rem .75rem; font: inherit; width: 100%; }
-input.code { font-family: ui-monospace, Consolas, monospace; font-size: 1.4rem; letter-spacing: .2em; text-transform: uppercase; }
-button, .button { background: #b8f000; color: #0b0f0c; border: 0; border-radius: .7rem; padding: .85rem 1rem; font: inherit; font-weight: 800; cursor: pointer; text-align: center; text-decoration: none; margin-top: .5rem; }
-button:disabled { opacity: .6; cursor: wait; }
-.plan { align-items: center; text-align: center; }
-.price { font-size: 1.8rem; font-weight: 800; color: #b8f000; margin: .25rem 0; }
-small { color: #94a3b8; }
-.steps { color: #cbd5e1; padding-left: 1.25rem; }
-[role='status'] { min-height: 1.5rem; margin: .25rem 0 0; }
-.ok { color: #b8f000; }
-.error { color: #fca5a5; }
-footer { border-top: 1px solid #1f2a22; padding: 1rem; color: #94a3b8; font-size: .8rem; text-align: center; }
-footer a { color: #b8f000; }
+/* Site do Pulse Player (RFC-021/020). Cores da marca (logo/kit/GUIA-DE-USO.md): limão sobre grafite; texto sobre
+   limão sempre em grafite. Fontes do sistema: a CSP não carrega fontes externas e o site abre no celular. */
+:root {
+  --graphite: #0b0f0c;
+  --raised: #141a15;
+  --line: #263027;
+  --ink: #f4f7ee;
+  --mist: #a3ae9f;
+  --lime: #b8f000;
+  --alert: #ff9b8a;
+  --radius: 0.75rem;
+  --sans: 'Segoe UI Variable Text', 'Segoe UI', Roboto, 'Helvetica Neue', system-ui, sans-serif;
+  --mono: ui-monospace, 'Cascadia Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+  color-scheme: dark;
+}
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--graphite);
+  color: var(--ink);
+  font: 400 1rem/1.55 var(--sans);
+  -webkit-text-size-adjust: 100%;
+}
+
+a { color: var(--lime); }
+:focus-visible { outline: 2px solid var(--lime); outline-offset: 3px; }
+
+/* Cabeçalho: logo oficial (SVG) e as três seções */
+.site-header {
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 0;
+}
+.brand { display: inline-block; line-height: 0; border-radius: 0.25rem; }
+.brand svg { width: 10.25rem; height: auto; }
+.site-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 1.25rem; }
+.tab {
+  color: var(--mist);
+  text-decoration: none;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  padding: 0.5rem 0.95rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.tab:hover { color: var(--ink); border-color: var(--mist); }
+.tab[aria-current='page'] { background: var(--lime); border-color: var(--lime); color: var(--graphite); }
+
+/* Página */
+.page {
+  flex: 1;
+  width: 100%;
+  max-width: 40rem;
+  margin: 0 auto;
+  padding: 2.25rem 1rem 3rem;
+}
+h1 {
+  margin: 0 0 0.75rem;
+  font-size: clamp(2.1rem, 8.5vw, 2.9rem);
+  line-height: 1.04;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  max-width: 14ch;
+}
+h2 { margin: 2.5rem 0 0.75rem; font-size: 1.3rem; line-height: 1.25; letter-spacing: -0.01em; }
+.lead { margin: 0 0 2rem; max-width: 34rem; color: var(--mist); font-size: 1.0625rem; }
+.lead strong { color: var(--ink); font-weight: 600; }
+.note { max-width: 34rem; margin: 2rem 0 0; color: var(--mist); font-size: 0.875rem; }
+
+/* Formulários: soltos na página, sem caixa em volta */
+.form { display: flex; flex-direction: column; gap: 1.25rem; max-width: 30rem; }
+.field { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+.field-pair { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+.field-pair > .field { flex: 1 1 12rem; }
+label, .label { font-size: 0.9375rem; font-weight: 600; color: var(--ink); }
+.hint { margin: -0.15rem 0 0; color: var(--mist); font-size: 0.875rem; }
+
+input,
+textarea,
+select {
+  width: 100%;
+  background: var(--raised);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.8rem 0.9rem;
+  font: inherit;
+}
+input::placeholder,
+textarea::placeholder { color: #6f7a6c; }
+input:focus-visible,
+textarea:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; border-color: transparent; }
+textarea { resize: vertical; }
+
+/* O elemento marcante: o código da TV em 8 casas, igual ao que aparece na tela */
+/* Cada letra avança 1ch + o espaçamento; as 8 casas são desenhadas num degradê só (sem 9ª casa) e o campo é um
+   pouco mais largo que elas, porque o espaçamento também entra depois da última letra (senão o texto rola). */
+input.code {
+  --gap: 0.4rem;
+  --cell: calc(1ch + 0.5rem + var(--gap));
+  width: calc(8 * var(--cell) + 0.25rem + 2px);
+  max-width: 100%;
+  padding: 0.55rem 0 0.55rem 0.25rem;
+  font: 600 clamp(1.45rem, 6.4vw, 1.9rem) / 1.2 var(--mono);
+  letter-spacing: calc(0.5rem + var(--gap));
+  text-transform: uppercase;
+  border: 0;
+  border-radius: 0.25rem;
+  background: repeating-linear-gradient(90deg, var(--raised) 0 calc(var(--cell) - var(--gap)), transparent 0 var(--cell)) 0 0 / calc(8 * var(--cell)) 100% no-repeat;
+}
+input.code:focus-visible { outline-offset: 4px; }
+input.code::placeholder { color: #3d4a3c; }
+
+/* Botões e links de ação: uma cor de ação só, o limão */
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 3.25rem;
+  padding: 0.85rem 1.25rem;
+  background: var(--lime);
+  color: var(--graphite);
+  border: 0;
+  border-radius: var(--radius);
+  font: 800 1rem/1.2 var(--sans);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:hover,
+.button:hover { filter: brightness(1.08); }
+button:disabled { opacity: 0.55; cursor: wait; }
+.form > button,
+.form > .button { width: 100%; }
+button:focus-visible,
+.button:focus-visible { outline-color: var(--ink); }
+
+/* Mensagens */
+[role='status'] { min-height: 1.5rem; margin: 0; }
+.ok { color: var(--lime); }
+.error { color: var(--alert); }
+
+/* Linha de pulso da marca: repousa apagada e "bate" uma vez quando a lista chega na TV */
+.pulse { display: block; width: 100%; max-width: 30rem; height: auto; }
+.pulse path { fill: none; stroke: var(--line); stroke-width: 2.5; stroke-linejoin: miter; }
+.pulse.beat path { stroke: var(--lime); stroke-dasharray: 100; animation: beat 1.2s cubic-bezier(0.3, 0.7, 0.2, 1) both; }
+@keyframes beat {
+  from { stroke-dashoffset: 100; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Assinar: o preço é o fato principal */
+.price-block { margin: 0 0 2.25rem; }
+.price { margin: 0; font-size: clamp(2.6rem, 11vw, 3.4rem); line-height: 1; font-weight: 800; letter-spacing: -0.03em; color: var(--lime); font-variant-numeric: tabular-nums; }
+.price-note { margin: 0.5rem 0 0; color: var(--mist); }
+.total { margin: 0; font-size: 1.125rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+/* Sequência real: os 3 passos da assinatura */
+.steps { margin: 2.5rem 0 0; padding: 0; list-style: none; counter-reset: step; max-width: 30rem; }
+.steps li { counter-increment: step; display: flex; gap: 0.85rem; padding: 0.85rem 0; border-top: 1px solid var(--line); color: var(--mist); }
+.steps li::before { content: counter(step); flex: none; width: 1.75rem; height: 1.75rem; display: grid; place-items: center; border-radius: 50%; background: var(--raised); color: var(--lime); font-weight: 800; font-size: 0.875rem; }
+
+/* Créditos: a faixa da quantidade digitada fica marcada */
+.tiers { width: 100%; max-width: 30rem; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.tiers caption { text-align: left; font-weight: 600; padding-bottom: 0.5rem; }
+.tiers th { text-align: left; font-size: 0.875rem; font-weight: 600; color: var(--mist); padding: 0.5rem 0.75rem; }
+.tiers td { padding: 0.65rem 0.75rem; border-top: 1px solid var(--line); }
+.tiers td:last-child,
+.tiers th:last-child { text-align: right; }
+.tiers tr.is-current td { background: var(--lime); color: var(--graphite); font-weight: 700; }
+.tiers tr.is-current td:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.tiers tr.is-current td:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+
+/* Pagamento (/pagar): o resumo é o único painel com fundo próprio */
+.panel { background: var(--raised); border: 1px solid var(--line); border-radius: 1rem; padding: 1.25rem; }
+.summary { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0.25rem 1rem; margin: 0 0 2rem; max-width: 30rem; }
+.summary .price { font-size: 2.25rem; }
+.summary-what { color: var(--mist); }
+.alert { max-width: 30rem; margin: 0 0 1.5rem; padding: 1rem 1.1rem; border: 1px solid var(--alert); border-radius: var(--radius); color: var(--alert); }
+
+.segmented { display: flex; gap: 0.25rem; padding: 0.25rem; background: var(--raised); border: 1px solid var(--line); border-radius: calc(var(--radius) + 0.25rem); }
+.segmented button { flex: 1; min-height: 2.75rem; background: transparent; color: var(--mist); font-weight: 700; }
+.segmented button[aria-pressed='true'] { background: var(--lime); color: var(--graphite); }
+.segmented button:hover { filter: none; color: var(--ink); }
+.segmented button[aria-pressed='true']:hover { color: var(--graphite); }
+
+.checkout-field { display: flex; flex-direction: column; gap: 0.45rem; min-width: 0; }
+/* Rótulos de tamanhos diferentes (validade e CVV) não desalinham as caixas: elas se alinham pela base. */
+.checkout-row { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 1.25rem; }
+.checkout-row > .checkout-field { flex: 1 1 9rem; }
+/* Campos do Mercado Pago (iframes brancos): moldura própria, sem nada por cima */
+.secure-input { position: relative; height: 3.1rem; background: #fff; border-radius: var(--radius); overflow: hidden; }
+.secure-input iframe { display: block; width: 100%; height: 100%; border: 0; }
+.small { margin: 0; color: var(--mist); font-size: 0.875rem; }
+
+.pix { display: flex; flex-direction: column; gap: 0.75rem; max-width: 30rem; margin-top: 2rem; }
+.pix-qr { display: block; width: 15rem; height: 15rem; max-width: 100%; padding: 0.75rem; background: #fff; border-radius: 1rem; }
+.pix textarea { font: 0.8rem/1.4 var(--mono); word-break: break-all; resize: none; }
+.challenge { display: block; width: 100%; max-width: 30rem; height: 34rem; margin: 1.5rem 0; border: 0; border-radius: 1rem; background: #fff; }
+.done { max-width: 30rem; margin-top: 2rem; }
+.done h2 { margin-top: 0; color: var(--lime); }
+.key { font-family: var(--mono); word-break: break-all; color: var(--ink); }
+
+/* Rodapé: o aviso legal das lojas */
+.site-footer { width: 100%; max-width: 40rem; margin: 0 auto; padding: 1.5rem 1rem 2rem; border-top: 1px solid var(--line); color: var(--mist); font-size: 0.8125rem; }
+.site-footer p { margin: 0 0 0.5rem; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pulse.beat path { animation: none; stroke-dashoffset: 0; }
+}

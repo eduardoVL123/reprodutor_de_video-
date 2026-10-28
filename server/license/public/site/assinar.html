@@ -3,43 +3,44 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b0f0c" />
     <title>Assinar meu aparelho · Pulse Player</title>
     <link rel="stylesheet" href="/site/site.css" />
   </head>
   <body>
-    <header>
-      <a class="brand" href="/">Pulse<span>Player</span></a>
-      <nav>
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Pulse Player, página inicial"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 947 256" aria-hidden="true" focusable="false"><path fill="#B8F000" d="M56.00 122.00 L56.00 64.25 A14 14 0 0 1 77.00 52.12 L198.03 122.00 L146.58 122.00 L137.34 138.00 L107.32 86.00 L86.54 122.00 Z"/><path fill="#B8F000" d="M56.00 134.00 L93.46 134.00 L107.32 110.00 L137.34 162.00 L153.50 134.00 L198.03 134.00 L77.00 203.88 A14 14 0 0 1 56.00 191.75 Z"/><g transform="translate(252 93.50) scale(1.15)"><g fill="none" stroke="#F4F7EE" stroke-linejoin="miter" stroke-miterlimit="2"><path transform="translate(0.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(52.00 0)" stroke-width="6" d="M0 0V42A18 18 0 0 0 36 42V0"/><path transform="translate(106.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(156.00 0)" stroke-width="6" d="M35 12C34 5 27 0 18 0C8 0 1 6 1 14C1 24 9 27 18 30C28 33 36 36 36 46C36 55 28 60 18 60C8 60 1 55 0 47"/><path transform="translate(210.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(292.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(344.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(394.00 0)" stroke-width="6" d="M0 60L20 0L40 60M8 40H32"/><path transform="translate(452.00 0)" stroke-width="6" d="M0 0L20 34.64M40 0L20 34.64M20 30V60"/><path transform="translate(510.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(560.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0M19 31L35.74 60"/></g></g></svg></a>
+      <nav class="site-nav" aria-label="Seções do site">
         <a href="/" class="tab">Enviar lista</a>
-        <a href="/assinar" class="tab active">Assinar meu aparelho</a>
+        <a href="/assinar" class="tab" aria-current="page">Assinar meu aparelho</a>
         <a href="/creditos" class="tab">Comprar créditos</a>
       </nav>
     </header>
 
-    <main>
-      <h1>Assine seu aparelho</h1>
-      <div class="card plan">
-        <strong>Anual</strong>
-        <span id="device-price" class="price">R$ 25,00</span>
-        <small>1 aparelho, qualquer lista, por 1 ano</small>
+    <main class="page">
+      <h1>Assine o seu aparelho</h1>
+      <div class="price-block">
+        <p class="price"><span id="device-price">R$ 25,00</span></p>
+        <p class="price-note">por ano, para 1 aparelho, com qualquer lista</p>
       </div>
 
-      <form id="sub-form" class="card" novalidate>
-        <label for="sub-code">Código do aparelho</label>
-        <input id="sub-code" class="code" type="text" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
-        <button type="submit">Assinar pelo WhatsApp</button>
-        <a id="sub-whatsapp" class="button" href="#" hidden rel="noopener noreferrer">Abrir o WhatsApp</a>
+      <form id="sub-form" class="form" novalidate>
+        <div class="field">
+          <label for="sub-code">Código que aparece na TV</label>
+          <input id="sub-code" class="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
+        </div>
+        <a id="sub-pay" class="button" href="/pagar?tipo=aparelho" data-mp-checkout-cta="checkout-api">Pagar com Pix ou cartão</a>
         <p id="sub-status" role="status"></p>
       </form>
 
       <ol class="steps">
         <li>Digite o código que aparece na tela da TV.</li>
-        <li>Fale com a gente pelo WhatsApp e faça o pagamento.</li>
-        <li>Quando liberarmos, toque em "Já paguei, verificar" na TV.</li>
+        <li>Pague com Pix ou cartão (no cartão, renova sozinho todo ano).</li>
+        <li>Depois do pagamento, toque em "Já paguei, verificar" na TV.</li>
       </ol>
     </main>
 
-    <footer>
+    <footer class="site-footer">
       <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
       <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
     </footer>

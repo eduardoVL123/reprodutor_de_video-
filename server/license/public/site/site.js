@@ -1,4 +1,4 @@
-/* Site do Pulse Player (RFC-021): enviar lista cifrada para a TV, assinar o aparelho e comprar créditos. */
+/* Site do Pulse Player (RFC-021): enviar lista cifrada para a TV, assinar o aparelho e comprar créditos (pagamento em /pagar). */
 ;(function () {
   const $ = (id) => document.getElementById(id)
   const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // igual ao serviço de licença (sem 0/O/1/I/L)
@@ -34,6 +34,22 @@
     }
   }
 
+  /** O código digitado vira o da TV na hora (maiúsculas, só o alfabeto do serviço), para caber nas 8 casas. */
+  function keepCodeClean(input) {
+    input.addEventListener('input', () => {
+      const clean = normalizeCode(input.value)
+      if (clean !== input.value) input.value = clean
+    })
+  }
+
+  /** A linha de pulso da marca bate uma vez quando a lista chega (o CSS respeita "reduzir movimento"). */
+  function beat() {
+    const pulse = $('send-pulse')
+    pulse.classList.remove('beat')
+    pulse.getBoundingClientRect() // reinicia a animação num segundo envio
+    pulse.classList.add('beat')
+  }
+
   // Enviar lista
   async function sendList(e) {
     e.preventDefault()
@@ -58,6 +74,7 @@
       if (!res.ok) return status('send-status', (await readJson(res)).error || 'Não foi possível enviar agora. Tente de novo.')
       $('pass').value = ''
       status('send-status', 'Enviado! Na TV, confirme "Adicionar esta lista?". Ela aparece na tela de entrada ou em Gerenciar listas.', true)
+      beat()
     } catch (err) {
       status('send-status', err && err.message === 'too_long' ? 'A lista é grande demais para enviar por aqui.' : 'Não foi possível enviar agora. Tente de novo.')
     } finally {
@@ -65,43 +82,50 @@
     }
   }
 
-  // Assinar
-  function subscribe(e) {
-    e.preventDefault()
+  // Assinar: o botão leva o código para a tela de pagamento (/pagar, RFC-020)
+  function updateSubLink() {
     const code = normalizeCode($('sub-code').value)
-    if (code.length !== CODE_LENGTH) return status('sub-status', 'Digite os 8 caracteres do código que aparece na TV.')
-    const link = whatsapp(`Quero assinar o Pulse Player no aparelho ${code} (anual, ${brl(config.devicePriceCents)}).`)
-    if (!link) return status('sub-status', 'Atendimento indisponível no momento.')
-    $('sub-whatsapp').href = link
-    $('sub-whatsapp').hidden = false
-    status('sub-status', 'Toque em "Abrir o WhatsApp" para falar com a gente.', true)
+    $('sub-pay').href = code ? `/pagar?tipo=aparelho&codigo=${code}` : '/pagar?tipo=aparelho'
+  }
+
+  function checkSubCode(e) {
+    if (normalizeCode($('sub-code').value).length === CODE_LENGTH) return
+    e.preventDefault()
+    status('sub-status', 'Digite os 8 caracteres do código que aparece na TV.')
   }
 
   // Créditos
   const unitPrice = (qty) => (config.creditTiers.find(([min]) => qty >= min) || [])[1]
 
+  /** Marca na tabela a faixa de preço da quantidade digitada (nenhuma, se a quantidade não vale). */
+  function markTier(qty) {
+    const tier = qty ? config.creditTiers.find(([min]) => qty >= min) : null
+    for (const tr of $('tier-rows').children) {
+      const current = !!tier && Number(tr.dataset.min) === tier[0]
+      tr.classList.toggle('is-current', current)
+      if (current) tr.setAttribute('aria-current', 'true')
+      else tr.removeAttribute('aria-current')
+    }
+  }
+
   function updateTotal() {
     const qty = Number($('credit-qty').value)
     if (!Number.isInteger(qty) || qty < config.minCredits) {
       $('credit-total').textContent = `Compre no mínimo de ${config.minCredits} créditos.`
+      markTier(null)
       return null
     }
+    markTier(qty)
     const unit = unitPrice(qty)
     $('credit-total').textContent = `Total: ${brl(unit * qty)} (${qty} × ${brl(unit)})`
+    $('credit-pay').href = `/pagar?tipo=creditos&qtd=${qty}`
     return { qty, total: unit * qty }
   }
 
-  function buyCredits(e) {
+  function checkCredits(e) {
+    if (updateTotal()) return
     e.preventDefault()
-    const order = updateTotal()
-    if (!order) return
-    const name = $('credit-name').value.trim()
-    if (!name) return status('credit-status', 'Digite o seu nome.')
-    const link = whatsapp(`Quero comprar ${order.qty} créditos do Pulse Player (total ${brl(order.total)}). Nome: ${name}.`)
-    if (!link) return status('credit-status', 'Atendimento indisponível no momento.')
-    $('credit-whatsapp').href = link
-    $('credit-whatsapp').hidden = false
-    status('credit-status', 'Toque em "Abrir o WhatsApp" para falar com a gente.', true)
+    status('credit-status', `Compre no mínimo ${config.minCredits} créditos.`)
   }
 
   function renderTiers() {
@@ -110,6 +134,7 @@
     rows.forEach(([min, cents], i) => {
       const next = rows[i + 1]
       const tr = document.createElement('tr')
+      tr.dataset.min = min
       const range = next ? `${min} a ${next[0] - 1}` : `${min} ou mais`
       for (const text of [range, brl(cents)]) {
         const td = document.createElement('td')
@@ -130,17 +155,29 @@
       $('support-link').href = whatsapp('Olá! Preciso de ajuda com o Pulse Player.')
       $('support-link').hidden = false
     }
+    for (const id of ['code', 'sub-code']) if ($(id)) keepCodeClean($(id))
     if ($('send-form')) $('send-form').addEventListener('submit', sendList)
     if ($('sub-form') && config) {
       $('device-price').textContent = brl(config.devicePriceCents)
       $('sub-code').value = normalizeCode(new URLSearchParams(location.search).get('codigo'))
-      $('sub-form').addEventListener('submit', subscribe)
+      updateSubLink()
+      $('sub-code').addEventListener('input', updateSubLink)
+      $('sub-pay').addEventListener('click', checkSubCode)
+      // Enter no campo do código segue para o pagamento, como o botão.
+      $('sub-form').addEventListener('submit', (e) => {
+        e.preventDefault()
+        $('sub-pay').click()
+      })
     }
     if ($('credit-form') && config) {
       renderTiers()
       updateTotal()
       $('credit-qty').addEventListener('input', updateTotal)
-      $('credit-form').addEventListener('submit', buyCredits)
+      $('credit-pay').addEventListener('click', checkCredits)
+      $('credit-form').addEventListener('submit', (e) => {
+        e.preventDefault()
+        $('credit-pay').click()
+      })
     }
   }
 

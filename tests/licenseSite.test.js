@@ -4,11 +4,13 @@ import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
 import { createLicenseServer } from '../server/license/license-server.mjs'
+import { PAGE_CSP } from '../server/pair/pair-core.mjs'
+import { PAY_CSP } from '../server/license/license-checkout.mjs'
 
 /** RFC-021: site do Pulse Player (enviar lista, assinar, comprar créditos), servido pelo serviço de licença. */
 
 const SITE = 'server/license/public/site/'
-const PAGES = ['index.html', 'assinar.html', 'creditos.html']
+const PAGES = ['index.html', 'assinar.html', 'creditos.html', 'pagar.html']
 
 describe('núcleo — rotas do site', () => {
   let handle
@@ -24,13 +26,27 @@ describe('núcleo — rotas do site', () => {
     expect(res.headers.get('Location')).toBe('/assinar?codigo=ABCD2345')
   })
 
+  it('/v1/mp-config entrega a chave pública do cartão sem cache; sem chave, 503 com o motivo', async () => {
+    const missing = await handle(new Request('http://site.test/v1/mp-config'), '1.1.1.1')
+    expect(missing.status).toBe(503)
+    expect((await missing.json()).error).toMatch(/MP_PUBLIC_KEY/)
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const withKey = createLicenseHandler({ db, mpPublicKey: 'APP_USR-chave-publica' })
+    const res = await withKey(new Request('http://site.test/v1/mp-config'), '1.1.1.1')
+    expect(res.headers.get('Cache-Control')).toBe('no-store, max-age=0')
+    expect(await res.json()).toEqual({ publicKey: 'APP_USR-chave-publica' })
+  })
+
   it('código fora do alfabeto não redireciona', async () => {
     expect((await handle(new Request('http://site.test/a/abc%3Cb%3E'), '1.1.1.1')).status).toBe(404)
   })
 
   it('/v1/site-config entrega preços da tabela e o contato (uma regra só, pricing.mjs)', async () => {
     const res = await handle(new Request('http://site.test/v1/site-config'), '1.1.1.1')
+    expect(res.headers.get('Cache-Control')).toBe('no-store')
     expect(await res.json()).toEqual({
+      payments: false,
       contactUrl: 'https://wa.me/5516992791692',
       devicePriceCents: 2500,
       minCredits: 10,
@@ -60,9 +76,21 @@ describe('servidor local — páginas do site', () => {
     for (const path of ['/', '/assinar', '/creditos']) {
       const res = await fetch(base + path)
       expect(res.status).toBe(200)
-      expect(res.headers.get('Content-Security-Policy')).toContain("script-src 'self'")
+      expect(res.headers.get('Content-Security-Policy')).toBe(PAGE_CSP)
     }
-    for (const path of ['/site/site.js', '/site/site.css', '/site/pair-lib.js']) expect((await fetch(base + path)).status).toBe(200)
+    for (const path of ['/site/site.js', '/site/site.css', '/site/pair-lib.js', '/site/pagar.js']) expect((await fetch(base + path)).status).toBe(200)
+  })
+
+  it('serve /pagar com a política própria do pagamento (SDK e QR do Mercado Pago), sem afrouxar as outras', async () => {
+    server = createLicenseServer({ dbPath: ':memory:', adminToken: 'x' })
+    await new Promise((r) => server.listen(0, '127.0.0.1', r))
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/pagar`)
+    expect(res.status).toBe(200)
+    expect(await res.text()).toContain('form-checkout')
+    expect(res.headers.get('Content-Security-Policy')).toBe(PAY_CSP)
+    // Script embutido só na /pagar (identificação do aparelho do SDK); as outras páginas seguem fechadas.
+    expect(PAY_CSP).toMatch(/script-src [^;]*'unsafe-inline'/)
+    expect(PAGE_CSP).not.toContain('unsafe-inline')
   })
 })
 
@@ -127,6 +155,15 @@ describe('site.js no navegador', () => {
     expect(sent.box).not.toContain('S3nh@')
     expect(await tv.open(sent.box, 'ABCD2345')).toEqual({ dns: 'http://servidor.test:8080', username: 'joao', password: 'S3nh@', label: 'Sala' })
     await vi.waitFor(() => expect(document.getElementById('send-status').textContent).toMatch(/Enviado/))
+    expect(document.getElementById('send-pulse').classList.contains('beat')).toBe(true) // a linha de pulso bate uma vez
+  })
+
+  it('o código da TV vira maiúsculas e só caracteres válidos enquanto se digita (cabe nas 8 casas)', async () => {
+    await open('index.html', async () => jsonReply(CONFIG))
+    const code = document.getElementById('code')
+    code.value = 'ab-cd 2o'
+    code.dispatchEvent(new Event('input'))
+    expect(code.value).toBe('ABCD2')
   })
 
   it('Enviar lista: TV que nunca abriu o app recebe a instrução do servidor', async () => {
@@ -139,25 +176,49 @@ describe('site.js no navegador', () => {
     await vi.waitFor(() => expect(document.getElementById('send-status').textContent).toMatch(/Abra o Pulse Player/))
   })
 
-  it('Assinar: código vindo do QR já preenchido; botão do WhatsApp leva o código e o preço', async () => {
+  const payLink = () => new URL(document.querySelector('[data-mp-checkout-cta="checkout-api"]').href, 'http://site.test')
+
+  it('Assinar: código vindo do QR já preenchido; o botão leva para /pagar com o código', async () => {
     await open('assinar.html', async () => jsonReply(CONFIG), '?codigo=ABCD2345')
     await vi.waitFor(() => expect(document.getElementById('device-price').textContent).toContain('25'))
     expect(document.getElementById('sub-code').value).toBe('ABCD2345')
-    document.getElementById('sub-form').dispatchEvent(new Event('submit', { cancelable: true }))
-    const link = decodeURIComponent(document.getElementById('sub-whatsapp').href)
-    expect(link).toContain('https://wa.me/5516992791692?text=')
-    expect(link).toContain('ABCD2345')
+    expect(payLink().pathname + payLink().search).toBe('/pagar?tipo=aparelho&codigo=ABCD2345')
+
+    const code = document.getElementById('sub-code')
+    code.value = 'zz'
+    code.dispatchEvent(new Event('input'))
+    const click = new MouseEvent('click', { cancelable: true })
+    document.getElementById('sub-pay').dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+    expect(document.getElementById('sub-status').textContent).toMatch(/8 caracteres/)
   })
 
-  it('Comprar créditos: total pela tabela (20 = R$ 180) e mínimo de 10', async () => {
+  it('Comprar créditos: total pela tabela (20 = R$ 180), mínimo de 10 e o botão leva a quantidade para /pagar', async () => {
     await open('creditos.html', async () => jsonReply(CONFIG))
     await vi.waitFor(() => expect(document.getElementById('tier-rows').textContent).toContain('1000'))
     const qty = document.getElementById('credit-qty')
     qty.value = '20'
     qty.dispatchEvent(new Event('input'))
     expect(document.getElementById('credit-total').textContent).toMatch(/180,00/)
+    expect(payLink().pathname + payLink().search).toBe('/pagar?tipo=creditos&qtd=20')
+    const current = [...document.querySelectorAll('#tier-rows tr.is-current')]
+    expect(current.map((tr) => tr.textContent)).toEqual([expect.stringMatching(/^20 a 50/)])
+    expect(current[0].getAttribute('aria-current')).toBe('true')
     qty.value = '5'
     qty.dispatchEvent(new Event('input'))
     expect(document.getElementById('credit-total').textContent).toMatch(/mínimo de 10/)
+    expect(document.querySelectorAll('#tier-rows tr.is-current')).toHaveLength(0)
+    const click = new MouseEvent('click', { cancelable: true })
+    document.getElementById('credit-pay').dispatchEvent(click)
+    expect(click.defaultPrevented).toBe(true)
+  })
+
+  it('cada página de compra tem um único botão de checkout, apontando para /pagar', () => {
+    for (const file of [`${SITE}assinar.html`, `${SITE}creditos.html`, 'server/license/public/revenda/index.html']) {
+      const html = readFileSync(file, 'utf8')
+      expect(html.match(/data-mp-checkout-cta="checkout-api"/g)).toHaveLength(1)
+      expect(html).toMatch(/<a [^>]*href="\/pagar\?tipo=[a-z]+[^"]*"[^>]*data-mp-checkout-cta="checkout-api"/)
+      expect(html).not.toMatch(/pelo WhatsApp<\/button>/)
+    }
   })
 })
