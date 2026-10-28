@@ -11,6 +11,7 @@ import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry
 import { createAdminRoutes } from './license-admin.mjs'
 import { createApiRoutes } from './license-api.mjs'
 import { createInboxRoutes, validPub } from './license-inbox.mjs'
+import { createCheckoutRoutes, WEBHOOK_PATH } from './license-checkout.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
@@ -32,11 +33,17 @@ export function json(status, body, extra = {}) {
 
 const fail = (status, error, extra) => json(status, { error }, extra)
 
-export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS } = {}) {
+/**
+ * `mp`: cliente do Mercado Pago (mp-client.mjs); null = pagamento desligado (sem MP_ACCESS_TOKEN).
+ * `mpWebhookSecret`: assinatura secreta do webhook (MP_WEBHOOK_SECRET); vazio = webhook desligado.
+ * `mpPublicKey`: chave pública do Mercado Pago (MP_PUBLIC_KEY), entregue à tela /pagar em /v1/mp-config.
+ */
+export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '' } = {}) {
   const limiter = createLimiter(now)
   const dailyLimiter = createLimiter(now, DAY_MS)
-  const handleAdmin = createAdminRoutes({ db, now, adminToken, json })
-  const handleApi = createApiRoutes({ db, now, json, limiter })
+  const handleCheckout = createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret: mpWebhookSecret })
+  const handleAdmin = createAdminRoutes({ db, now, adminToken, json, checkout: handleCheckout })
+  const handleApi = createApiRoutes({ db, now, json, limiter, checkout: handleCheckout })
   const handleInbox = createInboxRoutes({ db, now, json, limiter })
 
   /** Aparelho da chave; cria com 7 dias de teste na primeira vez (reinstalar acha o mesmo). */
@@ -115,11 +122,20 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url)
     if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url)
     if (url.pathname.startsWith('/v1/inbox')) return handleInbox(request, url, ip)
+    if (url.pathname === '/v1/checkout' || url.pathname.startsWith('/v1/checkout/') || url.pathname === WEBHOOK_PATH) {
+      return handleCheckout(request, url, ip)
+    }
     // RFC-021: o QR da tela de ativação abre a aba Assinar do site com o código preenchido.
     const plans = request.method === 'GET' && url.pathname.match(PLANS_ROUTE)
     if (plans) return new Response(null, { status: 302, headers: { ...SECURITY_HEADERS, Location: `/assinar?codigo=${plans[1]}` } })
     if (request.method === 'GET' && url.pathname === '/v1/site-config') {
-      return json(200, { contactUrl, devicePriceCents: DEVICE_ANNUAL_PRICE, minCredits: MIN_CREDITS, creditTiers: CREDIT_TIERS })
+      return json(200, { payments: !!mp, contactUrl, devicePriceCents: DEVICE_ANNUAL_PRICE, minCredits: MIN_CREDITS, creditTiers: CREDIT_TIERS })
+    }
+    // RFC-020: chave pública do cartão só para a tela /pagar; sem ela o cartão fica indisponível (o Pix continua).
+    if (request.method === 'GET' && url.pathname === '/v1/mp-config') {
+      const noStore = { 'Cache-Control': 'no-store, max-age=0' }
+      if (!mpPublicKey) return json(503, { error: 'Pagamento com cartão indisponível: defina MP_PUBLIC_KEY no servidor.' }, noStore)
+      return json(200, { publicKey: mpPublicKey }, noStore)
     }
     const route = request.method === 'POST' && routes[url.pathname]
     if (!route) return fail(404, 'Não encontrado.')

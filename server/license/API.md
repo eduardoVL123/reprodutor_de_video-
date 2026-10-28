@@ -33,6 +33,7 @@ a mesma resposta **sem gastar de novo** — use isso para refazer a chamada quan
 | `POST /api/v1/sub-resellers/{id}/credits` `{ "amount": 10 }` | Passa créditos do seu saldo para a revenda | `{ toId, amount, credits }` |
 | `POST /api/v1/sub-resellers/{id}/key` | Troca a chave da revenda | `{ key }` |
 | `POST /api/v1/me/key` | Troca a sua chave (a atual para na hora) | `{ key }` |
+| `POST /api/v1/credits/checkout` `{ "method": "pix", "quantity": 10, "email": "..." }` | Compra créditos pelo Mercado Pago (mínimo 10, preço pela tabela). Cartão: `"method": "card"` e `"card": { "token", "paymentMethodId", "cpf" }` (token do SDK JS do Mercado Pago) | `{ orderId, viewSecret, status, amountCents, expiresAt, pix? , challengeUrl? }`; acompanhe em `GET /v1/checkout/{orderId}?s={viewSecret}` |
 
 Datas em milissegundos desde 1970 (UTC). Valores em centavos. `kind` do extrato: `purchase` (compra), `grant`
 (cortesia), `refund` (estorno), `activation`, `transfer_in`, `transfer_out`.
@@ -42,7 +43,7 @@ Datas em milissegundos desde 1970 (UTC). Valores em centavos. `kind` do extrato:
 |---|---|
 | 400 | Dados inválidos ou falta `Idempotency-Key` |
 | 401 | Chave inválida ou trocada |
-| 402 | Saldo de créditos insuficiente |
+| 402 | Saldo de créditos insuficiente, ou cartão recusado na compra de créditos |
 | 403 | Revenda bloqueada |
 | 404 | Código de aparelho inexistente (a TV precisa abrir o Pulse Player uma vez) ou revenda que não é sua |
 | 409 | Aparelho suspenso pelo Pulse Player |

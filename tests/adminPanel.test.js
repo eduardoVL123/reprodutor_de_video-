@@ -140,3 +140,74 @@ describe('painel — revendedores (RFC-019)', () => {
     expect(posted(fetchMock)[0]).toEqual(['/admin/api/resellers/3/credits', expect.objectContaining({ amount: 20, kind: 'purchase' })])
   })
 })
+
+/** RFC-020 etapa 6: pedidos do Mercado Pago e assinaturas no cartão no painel do dono. */
+describe('painel — pagamentos (RFC-020)', () => {
+  const ORDERS = [
+    { id: 'o'.repeat(22), kind: 'credits', method: 'pix', status: 'paid', amountCents: 18000, quantity: 20, deviceCode: null, buyerName: 'Loja do Zé', buyerContact: '16 9999', createdAt: 1, paidAt: 2, delivery: null },
+    { id: 'p'.repeat(22), kind: 'device_annual', method: 'card', status: 'delivered', amountCents: 2500, quantity: 1, deviceCode: 'ABCD2345', buyerName: null, buyerContact: null, createdAt: 1, paidAt: 2, delivery: { activationEndsAt: 3 } },
+  ]
+  const SUBS = [
+    { id: 's'.repeat(22), deviceCode: 'ABCD2345', status: 'authorized', mpPreapprovalId: 'pre-1', createdAt: 1, cancelledAt: null },
+    { id: 't'.repeat(22), deviceCode: 'WXYZ6789', status: 'cancelled', mpPreapprovalId: 'pre-2', createdAt: 1, cancelledAt: 2 },
+  ]
+
+  async function openPayments(fetchMock) {
+    openPanel(fetchMock)
+    document.querySelector('[data-tab="payments"]').click()
+    await vi.waitFor(() => expect(document.getElementById('order-rows').children).toHaveLength(2))
+    await vi.waitFor(() => expect(document.getElementById('subscription-rows').children).toHaveLength(2))
+  }
+
+  const mock = () =>
+    vi.fn(async (url, init = {}) => {
+      if (init.method === 'POST') return reply({ status: String(url).includes('cancel') ? 'cancelled' : 'delivered' })
+      if (String(url).includes('/subscriptions')) return reply(SUBS)
+      return reply(ORDERS)
+    })
+
+  it('lista pedidos e assinaturas com o que foi comprado, o meio, o valor e a situação', async () => {
+    await openPayments(mock())
+    const orders = document.getElementById('order-rows').textContent
+    expect(orders).toContain('20 créditos — Loja do Zé (16 9999)')
+    expect(orders).toContain('Aparelho ABCD2345')
+    expect(orders).toMatch(/Pix.*R\$\s?180,00.*Pago, sem entrega/)
+    expect(orders).toMatch(/Cartão.*Entregue/)
+    const subs = document.getElementById('subscription-rows').textContent
+    expect(subs).toMatch(/ABCD2345.*Ativa/)
+    expect(subs).toMatch(/WXYZ6789.*Cancelada/)
+  })
+
+  it('reprocessar só aparece onde faz sentido e chama a API do pedido', async () => {
+    const fetchMock = mock()
+    await openPayments(fetchMock)
+    const buttons = [...document.getElementById('order-rows').querySelectorAll('button')]
+    expect(buttons.map((b) => b.textContent)).toEqual(['Reprocessar'])
+    buttons[0].click()
+    await vi.waitFor(() => expect(posted(fetchMock)).toHaveLength(1))
+    expect(posted(fetchMock)[0][0]).toBe(`/admin/api/orders/${'o'.repeat(22)}/reprocess`)
+  })
+
+  it('o filtro de situação vai para a API', async () => {
+    const fetchMock = mock()
+    await openPayments(fetchMock)
+    const filter = document.getElementById('order-filter')
+    filter.value = 'paid'
+    filter.dispatchEvent(new Event('change'))
+    await vi.waitFor(() => expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/admin/api/orders?status=paid'))).toBe(true))
+  })
+
+  it('cancelar a renovação pede confirmação; sem confirmar, nada é enviado', async () => {
+    const fetchMock = mock()
+    await openPayments(fetchMock)
+    const cancel = [...document.getElementById('subscription-rows').querySelectorAll('button')]
+    expect(cancel.map((b) => b.textContent)).toEqual(['Cancelar renovação'])
+    window.confirm.mockReturnValue(false)
+    cancel[0].click()
+    expect(posted(fetchMock)).toHaveLength(0)
+    window.confirm.mockReturnValue(true)
+    cancel[0].click()
+    await vi.waitFor(() => expect(posted(fetchMock)).toHaveLength(1))
+    expect(posted(fetchMock)[0][0]).toBe(`/admin/api/subscriptions/${'s'.repeat(22)}/cancel`)
+  })
+})

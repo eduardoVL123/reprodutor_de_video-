@@ -40,7 +40,8 @@ async function resellerActivations(db, resellerId, cursor) {
   return rows.results.map((a) => ({ id: a.id, code: a.code, startsAt: a.starts_at, endsAt: a.ends_at, revokedAt: a.revoked_at ?? null }))
 }
 
-export function createApiRoutes({ db, now, json, limiter, limitPerMinute = 120 }) {
+/** `checkout`: rotas de pagamento (license-checkout.mjs), para a compra de créditos pelo painel (RFC-020). */
+export function createApiRoutes({ db, now, json, limiter, checkout, limitPerMinute = 120 }) {
   const routes = [
     ['GET', /^\/api\/v1\/me$/, async ({ reseller }) => json(200, publicReseller(reseller))],
     [
@@ -64,6 +65,7 @@ export function createApiRoutes({ db, now, json, limiter, limitPerMinute = 120 }
     ['GET', /^\/api\/v1\/activations$/, async ({ reseller, url }) => json(200, await resellerActivations(db, reseller.id, before(url)))],
     ['GET', /^\/api\/v1\/movements$/, async ({ reseller, url }) => json(200, await movements(db, reseller.id, { before: before(url) }))],
     ['POST', /^\/api\/v1\/me\/key$/, async ({ reseller }) => json(200, { key: await rotateKey(db, reseller.id) })],
+    ['POST', /^\/api\/v1\/credits\/checkout$/, async ({ reseller, body }) => json(201, await checkout.startForReseller(reseller, body))],
     [
       'GET',
       /^\/api\/v1\/sub-resellers$/,

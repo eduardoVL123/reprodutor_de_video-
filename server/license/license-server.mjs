@@ -1,7 +1,8 @@
 /**
  * Servidor de licença local (RFC-018): node:http + node:sqlite. Converte a requisição para Web Standards e
  * delega ao núcleo license-core.mjs; serve as páginas do painel em /admin/.
- * Variáveis: LICENSE_PORT (8789), LICENSE_HOST (127.0.0.1), LICENSE_DB_PATH, LICENSE_ADMIN_TOKEN, LICENSE_CONTACT_URL.
+ * Variáveis: LICENSE_PORT (8789), LICENSE_HOST (127.0.0.1), LICENSE_DB_PATH, LICENSE_ADMIN_TOKEN, LICENSE_CONTACT_URL,
+ * MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (RFC-020; vazios = pagamento/webhook desligados), MP_PUBLIC_KEY (cartão em /pagar).
  */
 import http from 'node:http'
 import { Readable } from 'node:stream'
@@ -12,6 +13,8 @@ import { SECURITY_HEADERS, PAGE_CSP } from '../pair/pair-core.mjs'
 import { openSqlite } from './sqlite-d1.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
 import { createLicenseHandler } from './license-core.mjs'
+import { createMpClient } from './mp-client.mjs'
+import { PAY_CSP } from './license-checkout.mjs'
 
 const HERE = dirname(fileURLToPath(import.meta.url))
 const PUBLIC_DIR = join(HERE, 'public')
@@ -31,6 +34,9 @@ const ADMIN_FILES = {
   '/site/site.js': { file: 'site/site.js', type: 'text/javascript; charset=utf-8' },
   '/site/site.css': { file: 'site/site.css', type: 'text/css; charset=utf-8' },
   '/site/pair-lib.js': { file: 'site/pair-lib.js', type: 'text/javascript; charset=utf-8' },
+  // Pagamento (RFC-020), com a CSP própria
+  '/pagar': { file: 'site/pagar.html', type: 'text/html; charset=utf-8', csp: PAY_CSP },
+  '/site/pagar.js': { file: 'site/pagar.js', type: 'text/javascript; charset=utf-8' },
 }
 
 function toWebRequest(req) {
@@ -53,12 +59,12 @@ async function sendWeb(res, webRes) {
   res.end(webRes.body ? Buffer.from(await webRes.arrayBuffer()) : undefined)
 }
 
-export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', now = Date.now, publicDir = PUBLIC_DIR } = {}) {
+export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '' } = {}) {
   const db = openSqlite(dbPath)
   const purge = () => purgeExpired(db, now()).catch((err) => console.warn('[license] Limpeza falhou:', err && err.message))
   const ready = migrate(db).then(purge)
   setInterval(purge, PURGE_EVERY_MS).unref()
-  const handle = createLicenseHandler({ db, now, adminToken, contactUrl })
+  const handle = createLicenseHandler({ db, now, adminToken, contactUrl, mp, mpWebhookSecret, mpPublicKey })
   setInterval(handle.sweep, 60 * 1000).unref()
 
   async function route(req, res) {
@@ -71,7 +77,7 @@ export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', 
     const page = req.method === 'GET' && ADMIN_FILES[path === '/admin' || path === '/revenda' ? `${path}/` : path]
     if (page) {
       const content = readFileSync(join(publicDir, page.file)) // antes do writeHead: arquivo faltando vira 500, não resposta pendurada
-      res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': page.type, 'Content-Security-Policy': PAGE_CSP })
+      res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': page.type, 'Content-Security-Policy': page.csp || PAGE_CSP })
       return res.end(content)
     }
     return sendWeb(res, await handle(toWebRequest(req), (req.socket && req.socket.remoteAddress) || 'unknown'))
@@ -92,7 +98,10 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const port = Number(process.env.LICENSE_PORT) || 8789
   const host = process.env.LICENSE_HOST || '127.0.0.1'
   const adminToken = process.env.LICENSE_ADMIN_TOKEN || ''
-  createLicenseServer({ dbPath, adminToken, contactUrl: process.env.LICENSE_CONTACT_URL || '' }).listen(port, host, () => {
+  const mp = process.env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: process.env.MP_ACCESS_TOKEN }) : null
+  const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET || ''
+  const mpPublicKey = process.env.MP_PUBLIC_KEY || ''
+  createLicenseServer({ dbPath, adminToken, contactUrl: process.env.LICENSE_CONTACT_URL || '', mp, mpWebhookSecret, mpPublicKey }).listen(port, host, () => {
     console.log(`[license] http://${host}:${port} · banco ${dbPath}`)
     if (!adminToken) console.warn('[license] LICENSE_ADMIN_TOKEN vazio: o painel /admin/ fica fechado.')
   })

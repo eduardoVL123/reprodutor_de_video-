@@ -14,6 +14,7 @@
         <button type="button" data-tab="report" class="tab">Relatório</button>
         <button type="button" data-tab="devices" class="tab">Aparelhos</button>
         <button type="button" data-tab="resellers" class="tab">Revendedores</button>
+        <button type="button" data-tab="payments" class="tab">Pagamentos</button>
         <button type="button" id="logout" class="link">Sair</button>
       </nav>
     </header>
@@ -171,6 +172,29 @@
             <tbody id="movement-rows"></tbody>
           </table>
         </div>
+      </section>
+
+      <section id="payments" class="panel" hidden>
+        <h2>Pagamentos (Mercado Pago)</h2>
+        <label>Situação
+          <select id="order-filter">
+            <option value="">Todos</option>
+            <option value="pending">Aguardando pagamento</option>
+            <option value="paid">Pago, sem entrega</option>
+            <option value="delivered">Entregue</option>
+            <option value="expired">Expirado</option>
+            <option value="failed">Recusado ou falhou</option>
+          </select>
+        </label>
+        <table>
+          <thead><tr><th>Quando</th><th>Compra</th><th>Meio</th><th>Valor</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="order-rows"></tbody>
+        </table>
+        <h3>Assinaturas no cartão (renovação anual)</h3>
+        <table>
+          <thead><tr><th>Desde</th><th>Aparelho</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="subscription-rows"></tbody>
+        </table>
       </section>
 
       <p id="message" role="status"></p>

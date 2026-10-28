@@ -101,6 +101,18 @@ describe('Worker da licença', () => {
     }
   })
 
+  it('serve /pagar (RFC-020) com a política própria do pagamento e entrega a chave pública no site-config', async () => {
+    const { PAY_CSP } = await import('../server/license/license-checkout.mjs')
+    const env = mockEnv({ MP_ACCESS_TOKEN: 'APP_USR-teste', MP_PUBLIC_KEY: 'APP_USR-chave-publica' })
+    const page = await worker.fetch(new Request('https://licenca.test/pagar'), env)
+    expect(page.status).toBe(200)
+    expect(page.headers.get('Content-Security-Policy')).toBe(PAY_CSP)
+    expect(await page.text()).toContain('form-checkout')
+    expect((await worker.fetch(new Request('https://licenca.test/site/pagar.js'), env)).status).toBe(200)
+    expect(await (await worker.fetch(new Request('https://licenca.test/v1/site-config'), env)).json()).toMatchObject({ payments: true })
+    expect(await (await worker.fetch(new Request('https://licenca.test/v1/mp-config'), env)).json()).toEqual({ publicKey: 'APP_USR-chave-publica' })
+  })
+
   it('serve o painel do revendedor (RFC-022) em /revenda/', async () => {
     const env = mockEnv()
     const res = await worker.fetch(new Request('https://licenca.test/revenda/'), env)

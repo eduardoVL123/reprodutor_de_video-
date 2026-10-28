@@ -90,6 +90,39 @@ MIGRATIONS.push(
     expires_at INTEGER NOT NULL
   )`,
   `CREATE INDEX IF NOT EXISTS inbox_device ON inbox (device_key, id)`,
+  // RFC-020: pedidos pagos pelo Mercado Pago. E-mail e CPF do pagador vão direto ao Mercado Pago, nunca para cá.
+  `CREATE TABLE IF NOT EXISTS orders (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    method TEXT NOT NULL,
+    device_code TEXT,
+    reseller_id INTEGER,
+    buyer_name TEXT,
+    buyer_contact TEXT,
+    quantity INTEGER NOT NULL,
+    amount_cents INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    mp_order_id TEXT UNIQUE,
+    view_secret_hash TEXT NOT NULL,
+    delivery TEXT,
+    created_at INTEGER NOT NULL,
+    paid_at INTEGER,
+    expires_at INTEGER NOT NULL
+  )`,
+  // RFC-020 etapa 4: assinatura anual no cartão (id = id do pedido de adesão) e trava de entrega única das parcelas.
+  `CREATE TABLE IF NOT EXISTS subscriptions (
+    id TEXT PRIMARY KEY,
+    device_code TEXT NOT NULL,
+    mp_preapproval_id TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    cancelled_at INTEGER
+  )`,
+  `CREATE TABLE IF NOT EXISTS mp_deliveries (
+    mp_ref TEXT PRIMARY KEY,
+    subscription_id TEXT NOT NULL,
+    delivered_at INTEGER NOT NULL
+  )`,
 )
 
 /** Colunas novas em tabelas existentes: ALTER TABLE não tem IF NOT EXISTS, então "já existe" é ignorado. */
@@ -98,6 +131,8 @@ export const COLUMN_MIGRATIONS = [
   'ALTER TABLE devices ADD COLUMN note TEXT',
   'ALTER TABLE activations ADD COLUMN reseller_id INTEGER',
   'ALTER TABLE devices ADD COLUMN inbox_pub TEXT',
+  // RFC-020: última vez que a consulta da tela perguntou ao Mercado Pago (cobre webhook perdido).
+  'ALTER TABLE orders ADD COLUMN checked_at INTEGER',
 ]
 
 export async function migrate(db) {

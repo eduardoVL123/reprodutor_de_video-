@@ -199,9 +199,16 @@ function creditEntry(body) {
   return { amount, kind: body.kind, amountCents, note: body.note }
 }
 
-/** Devolve `handleAdmin(request, url) -> Response`, usando `json(status, body)` do núcleo. */
-export function createAdminRoutes({ db, now, adminToken, json }) {
+/**
+ * Devolve `handleAdmin(request, url) -> Response`, usando `json(status, body)` do núcleo.
+ * `checkout`: rotas de pagamento (license-checkout.mjs), para as assinaturas no cartão (RFC-020).
+ */
+export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
   const routes = [
+    ['GET', /^\/admin\/api\/subscriptions$/, async () => json(200, await checkout.listSubscriptions())],
+    ['POST', /^\/admin\/api\/subscriptions\/([A-Za-z0-9_-]{1,64})\/cancel$/, async (m) => json(200, await checkout.cancelSubscription(m[1]))],
+    ['GET', /^\/admin\/api\/orders$/, async (_m, _b, url) => json(200, await checkout.listOrders(url.searchParams.get('status')))],
+    ['POST', /^\/admin\/api\/orders\/([A-Za-z0-9_-]{22})\/reprocess$/, async (m) => json(200, await checkout.reprocessOrder(m[1]))],
     [
       'GET',
       /^\/admin\/api\/resellers$/,

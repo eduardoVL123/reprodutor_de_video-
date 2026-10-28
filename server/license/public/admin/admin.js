@@ -67,6 +67,7 @@
     if (name === 'report') loadReportPartners()
     if (name === 'devices') loadDeviceList(true)
     if (name === 'resellers') loadResellers()
+    if (name === 'payments') loadPayments()
   }
 
   // Parceiros
@@ -405,6 +406,73 @@
       say(err.message, true)
     }
   })
+
+  // Pagamentos pelo Mercado Pago (RFC-020): pedidos e assinaturas no cartão
+  const ORDER_STATUS = {
+    pending: 'Aguardando pagamento',
+    paid: 'Pago, sem entrega',
+    delivering: 'Entregando',
+    delivered: 'Entregue',
+    expired: 'Expirado',
+    failed: 'Recusado ou falhou',
+  }
+  const SUBSCRIPTION_STATUS = { pending: 'Aguardando 1ª cobrança', authorized: 'Ativa', paused: 'Pausada', cancelled: 'Cancelada' }
+  const PAY_METHOD = { pix: 'Pix', card: 'Cartão' }
+  // Pago sem entrega: entrega agora; pendente/expirado: pergunta ao Mercado Pago (webhook perdido).
+  const REPROCESSABLE = ['paid', 'pending', 'expired']
+
+  function orderWhat(o) {
+    if (o.kind === 'device_annual') return `Aparelho ${o.deviceCode}`
+    return `${o.quantity} créditos — ${o.buyerName ? `${o.buyerName} (${o.buyerContact})` : `revenda #${o.resellerId}`}`
+  }
+
+  async function loadPayments() {
+    const filter = $('order-filter').value
+    let orders
+    let subscriptions
+    try {
+      ;[orders, subscriptions] = await Promise.all([api('GET', `orders${filter ? `?status=${filter}` : ''}`), api('GET', 'subscriptions')])
+    } catch (err) {
+      return say(err.message, true)
+    }
+    $('order-rows').textContent = ''
+    for (const o of orders) {
+      const action = REPROCESSABLE.includes(o.status) ? button('Reprocessar', (e) => reprocess(e.currentTarget, o)) : ''
+      $('order-rows').appendChild(row([fmtDate(o.createdAt), orderWhat(o), PAY_METHOD[o.method] || o.method, fmtMoney(o.amountCents), ORDER_STATUS[o.status] || o.status, action]))
+    }
+    $('subscription-rows').textContent = ''
+    for (const s of subscriptions) {
+      const action = s.status === 'cancelled' ? '' : button('Cancelar renovação', (e) => cancelRenewal(e.currentTarget, s))
+      $('subscription-rows').appendChild(row([fmtDate(s.createdAt), s.deviceCode, SUBSCRIPTION_STATUS[s.status] || s.status, action]))
+    }
+  }
+
+  async function reprocess(btn, o) {
+    btn.disabled = true
+    try {
+      const fresh = await api('POST', `orders/${o.id}/reprocess`, {})
+      say(fresh.status === 'delivered' ? 'Pedido entregue.' : `Situação no Mercado Pago: ${ORDER_STATUS[fresh.status] || fresh.status}.`)
+      loadPayments()
+    } catch (err) {
+      say(err.message, true)
+      btn.disabled = false
+    }
+  }
+
+  async function cancelRenewal(btn, s) {
+    if (!confirm(`Cancelar a renovação automática do aparelho ${s.deviceCode}? O que já foi pago continua valendo.`)) return
+    btn.disabled = true
+    try {
+      await api('POST', `subscriptions/${s.id}/cancel`, {})
+      say('Renovação cancelada no Mercado Pago.')
+      loadPayments()
+    } catch (err) {
+      say(err.message, true)
+      btn.disabled = false
+    }
+  }
+
+  $('order-filter').addEventListener('change', loadPayments)
 
   // Entrada e abas
   $('login-form').addEventListener('submit', (e) => {

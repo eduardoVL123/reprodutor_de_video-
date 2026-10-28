@@ -116,12 +116,14 @@ describe('painel do revendedor', () => {
     await vi.waitFor(() => expect($('movement-rows').textContent).toContain('Cortesia'))
   })
 
-  it('comprar créditos mostra a tabela e o WhatsApp com a quantidade (Pix ainda não)', async () => {
+  it('comprar créditos mostra a tabela, o total e leva a quantidade para a tela de pagamento (/pagar)', async () => {
     openPanel(reseller.key)
     await vi.waitFor(() => expect($('tier-rows').textContent).toContain('1000'))
     $('buy-qty').value = '20'
-    submit('buy-form')
-    expect(decodeURIComponent($('buy-whatsapp').href)).toMatch(/20 créditos.*R\$\s?180,00/)
+    $('buy-qty').dispatchEvent(new Event('input'))
+    expect($('buy-total').textContent).toMatch(/R\$\s?180,00/)
+    const link = new URL($('buy-pay').href, 'http://painel.test')
+    expect(link.pathname + link.search).toBe('/pagar?tipo=revenda&qtd=20')
   })
 
   it('trocar a própria chave mostra a nova e a antiga para de valer', async () => {

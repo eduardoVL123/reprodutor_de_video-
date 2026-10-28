@@ -242,7 +242,7 @@
     }
   }
 
-  // Comprar créditos (pelo WhatsApp até o Pix da RFC-020)
+  // Comprar créditos: o botão leva a quantidade para a tela de pagamento (/pagar, RFC-020), que usa a chave desta aba
   function updateTotal() {
     if (!config) return null
     const qty = Number($('buy-qty').value)
@@ -252,17 +252,12 @@
     }
     const unit = config.creditTiers.find(([min]) => qty >= min)[1]
     $('buy-total').textContent = `Total: ${brl(unit * qty)} (${qty} × ${brl(unit)})`
+    $('buy-pay').href = `/pagar?tipo=revenda&qtd=${qty}`
     return { qty, total: unit * qty }
   }
 
-  function buy(e) {
-    e.preventDefault()
-    const order = updateTotal()
-    if (!order) return
-    const link = whatsapp(`Quero comprar ${order.qty} créditos do Pulse Player (total ${brl(order.total)}). Revenda: ${me ? me.name : ''} (#${me ? me.id : ''}).`)
-    if (!link) return say('message', 'Atendimento indisponível no momento.')
-    $('buy-whatsapp').href = link
-    $('buy-whatsapp').hidden = false
+  function checkBuy(e) {
+    if (!updateTotal()) e.preventDefault()
   }
 
   // Minha chave
@@ -293,7 +288,11 @@
   $('transfer-form').addEventListener('submit', transfer)
   $('sub-form').addEventListener('submit', createSub)
   $('buy-qty').addEventListener('input', updateTotal)
-  $('buy-form').addEventListener('submit', buy)
+  $('buy-pay').addEventListener('click', checkBuy)
+  $('buy-form').addEventListener('submit', (e) => {
+    e.preventDefault()
+    $('buy-pay').click()
+  })
   $('rotate-key').addEventListener('click', rotateMine)
 
   loadConfig()
