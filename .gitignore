@@ -28,4 +28,5 @@ dist-ssr
 
 build/
 .wrangler/
+.mp-integrate-progress.md
 server/license/.data/
