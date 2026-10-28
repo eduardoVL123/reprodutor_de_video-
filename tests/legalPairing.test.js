@@ -62,12 +62,12 @@ describe('aviso legal (FTUE)', () => {
 
   it('o texto mudou, então quem aceitou a versão 3 vê o aviso de novo', async () => {
     const { FTUE_VERSION, storage, STORAGE_KEYS, hasAcceptedFtue } = await import('@/services/storage')
-    expect(FTUE_VERSION).toBe(4)
+    expect(FTUE_VERSION).toBeGreaterThan(3) // 5 desde a licença (RFC-018, tests/legalLicense.test.js)
 
     await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-26T00:00:00.000Z', version: 3 })
     expect(await hasAcceptedFtue()).toBe(false)
 
-    await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-27T00:00:00.000Z', version: 4 })
+    await storage.set(STORAGE_KEYS.FTUE_ACCEPTED, { accepted: true, acceptedAt: '2026-10-27T00:00:00.000Z', version: FTUE_VERSION })
     expect(await hasAcceptedFtue()).toBe(true)
   })
 })

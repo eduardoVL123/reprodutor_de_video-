@@ -5,6 +5,7 @@ import { acceptFtue } from '@/services/storage'
 import { exitApp } from '@/services/platform'
 import { markFtueAccepted } from '@/router'
 import { isPairingConfigured } from '@/services/pairingApi'
+import { isLicenseEnabled } from '@/services/licenseApi'
 
 // Texto jurídico OBRIGATÓRIO (literal exigido pelas lojas Samsung/LG).
 const LEGAL_NOTICE =
@@ -17,6 +18,20 @@ const PRIVACY_TEXT =
   'Não coletamos nem enviamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista. ' + CAST_TEXT
 const PRIVACY_TEXT_WITH_PAIRING =
   'Não coletamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você adicionar a lista pelo celular, ela passa cifrada, por alguns minutos, pelo serviço de pareamento do desenvolvedor, que não consegue ler esse conteúdo e o apaga em seguida. Capas e logotipos vêm dos endereços da sua lista. ' + CAST_TEXT
+
+// RFC-018: com o serviço de licença no build, "não coletamos" deixa de ser verdade; o texto diz o que vai e o que não vai.
+const LICENSE_TEXT =
+  'O app tem um teste grátis de 7 dias. Para controlar o teste e a ativação, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista. '
+
+function privacyText() {
+  if (isLicenseEnabled()) {
+    const pairing = isPairingConfigured()
+      ? 'Se você adicionar a lista pelo celular, ela passa cifrada, por alguns minutos, pelo serviço de pareamento do desenvolvedor, que não consegue ler esse conteúdo e o apaga em seguida. '
+      : ''
+    return LICENSE_TEXT + pairing + CAST_TEXT
+  }
+  return isPairingConfigured() ? PRIVACY_TEXT_WITH_PAIRING : PRIVACY_TEXT
+}
 
 const terms = [
   {
@@ -33,7 +48,7 @@ const terms = [
   },
   {
     title: 'Privacidade',
-    text: isPairingConfigured() ? PRIVACY_TEXT_WITH_PAIRING : PRIVACY_TEXT,
+    text: privacyText(),
   },
 ]
 

@@ -21,13 +21,15 @@ responsável por eles.
 | Aceite do aviso legal (data e versão) | Comprovar o consentimento | Somente no aparelho |
 | **Opcional, só se o usuário escolher "adicionar pelo celular":** a lista que ele cola no celular (endereço, usuário, senha e apelido), cifrada | Levar a lista do celular para a TV sem digitar no controle | Cifrada de ponta a ponta no celular; o serviço de pareamento guarda **só o texto cifrado**, na memória, por até 10 minutos (60 segundos depois que o celular envia) e o apaga assim que a TV o lê. Nunca em disco. |
 | **Opcional, mesmo caso:** endereço de rede (IP) de quem usa o serviço de pareamento | Limitar abuso (muitas tentativas seguidas) | Contador na memória do serviço, por até 1 minuto; não é gravado em arquivo pelo serviço |
+| **Licença (teste grátis de 7 dias e ativação anual), quando o serviço está ligado no build:** identificador do aparelho (hash SHA-256 do ID do sistema ou da TV, ou um código aleatório criado pelo app), o código curto do aparelho, a plataforma (Android, Samsung, LG ou navegador), o **domínio** da lista em uso (só o nome do servidor; nunca usuário, senha nem o endereço completo) e as datas de uso | Controlar o teste de 7 dias e a ativação anual do aparelho e contar os aparelhos ativos por servidor parceiro, para a cobrança desse parceiro. Base legal (LGPD): execução do contrato de uso do app e legítimo interesse do desenvolvedor | No serviço de licença do desenvolvedor, por até **24 meses** (prazo de cobrança e contestação); depois é apagado. O endereço de rede (IP) é usado só em memória, por até 1 minuto, para limitar abuso. |
 | **Opcional, só no celular, se o usuário tocar em "Transmitir":** endereço do vídeo (inclui usuário e senha da lista) e o título | Tocar o vídeo na TV escolhida (Chromecast / Google Cast) | Enviado pela rede local para o aparelho Google Cast escolhido, que busca o vídeo direto no servidor do usuário. O aplicativo não guarda nem envia isso a mais ninguém. |
 
 ## O que o aplicativo não faz
 
 - Não envia dados pessoais, de uso ou de diagnóstico para o desenvolvedor ou para terceiros, **exceto** o que o
   próprio usuário escolher enviar pelo celular (item opcional da tabela acima), que viaja cifrado e só a TV dele
-  consegue abrir.
+  consegue abrir, e os dados da licença descritos na tabela (identificador do aparelho, domínio da lista e datas de
+  uso), que servem só ao teste, à ativação e à cobrança de servidores parceiros e nunca são vendidos.
 - Não usa publicidade, rastreadores, análise de uso (analytics) nem cookies de terceiros.
 - Não acessa contatos, localização, câmera ou microfone. (O celular só **lê** o QR code com o aplicativo de câmera
   do próprio aparelho; o Pulse Player não pede acesso à câmera.)
