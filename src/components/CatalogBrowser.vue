@@ -11,6 +11,7 @@ import { ALL_CATEGORIES } from '@/services/catalogDb'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
 import { pickArtwork } from '@/utils/artwork'
 import { focusFirstIn, registerKeyHandler } from '@/utils/spatialNavigation'
+import { useFormFactor } from '@/composables/useFormFactor'
 
 /**
  * Catálogo moderno 2.0:
@@ -27,6 +28,7 @@ const props = defineProps({
 const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
+const { isPhonePortrait } = useFormFactor()
 
 const activeCategory = ref(ALL_CATEGORIES)
 const detailsTarget = ref(null)
@@ -151,14 +153,22 @@ function isRecent(item) {
 }
 
 // Categoria escolhida ("Ver todos"): grade virtualizada com todos os itens, não só a primeira fileira.
-const showGrid = computed(() => activeCategory.value !== ALL_CATEGORIES)
+// No celular em pé a aba já abre na grade (mockup da RFC-023): fileiras laterais não cabem numa tela estreita.
+const showGrid = computed(() => activeCategory.value !== ALL_CATEGORIES || isPhonePortrait.value)
 const itemCount = computed(() => catalog.countFor(props.section, activeCategory.value))
 const gridKey = computed(() => `${auth.currentListId}:${props.section}:${activeCategory.value}`)
-const layout = computed(() =>
-  isLive.value
+const layout = computed(() => {
+  if (isPhonePortrait.value) {
+    // Em pé: canais em lista de uma coluna; capas em 3 colunas no celular e 5 no tablet (600px ou mais).
+    const tablet = window.innerWidth >= 600
+    return isLive.value
+      ? { columns: 1, rowHeight: 4.4, gap: 0.5, maxDomItems: 24, variant: 'channel' }
+      : { columns: tablet ? 5 : 3, rowHeight: tablet ? 12 : 10, gap: 0.6, maxDomItems: tablet ? 40 : 27, variant: 'poster' }
+  }
+  return isLive.value
     ? { columns: 3, rowHeight: 10, gap: 1.25, maxDomItems: 12, variant: 'channel' }
-    : { columns: 5, rowHeight: 24, gap: 1.25, maxDomItems: 15, variant: 'poster' },
-)
+    : { columns: 5, rowHeight: 24, gap: 1.25, maxDomItems: 15, variant: 'poster' }
+})
 const loadItems = (start, count) => catalog.getItems(props.section, activeCategory.value, start, count)
 
 async function loadCategoryRows() {
@@ -324,11 +334,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 overflow-hidden relative">
+  <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 phone-portrait:pr-0 phone-portrait:pt-2 phone-portrait:pb-0 overflow-hidden relative">
     <!-- Topo Fixo com Categorias Arredondadas -->
     <!-- z-20: abaixo do menu lateral (z-30), senão o título passa por cima do menu aberto -->
-    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
-      <div class="flex items-center gap-8 phone:gap-4 min-w-0 flex-1">
+    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 phone-portrait:items-start phone-portrait:pb-1 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
+      <div class="flex items-center gap-8 phone:gap-4 phone-portrait:flex-wrap phone-portrait:gap-y-1 min-w-0 flex-1">
         <!-- Margem no próprio logo (não gap): escondido na TV, ele não deixa espaço sobrando nas TVs sem flex-gap -->
         <h1 class="shrink-0 text-2xl phone:text-xl font-black tracking-tight text-white flex items-center">
           <BrandMark :size="1.4" class="text-tv-accent hidden phone:inline mr-2" />
@@ -340,14 +350,14 @@ onBeforeUnmount(() => {
           v-if="categoryList.length > 0"
           data-focus-row="categories"
           data-scroll-x
-          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2"
+          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 phone-portrait:basis-full phone-portrait:px-0"
         >
           <button
             v-for="(cat, index) in categoryList"
             :id="`cat-${index}`"
             :key="cat.category_id"
             type="button"
-            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs font-medium transition-colors"
+            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs phone-portrait:text-[0.85rem] font-medium transition-colors"
             :class="[
               activeCategory === cat.category_id
                 ? 'bg-tv-accent text-tv-on-accent font-bold shadow-md scale-[1.02]'
@@ -375,7 +385,7 @@ onBeforeUnmount(() => {
           <polyline points="23 4 23 10 17 10" />
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
-        <span class="inline">Atualizar lista</span>
+        <span class="inline phone-portrait:hidden">Atualizar lista</span>
       </button>
     </header>
 
@@ -517,7 +527,7 @@ onBeforeUnmount(() => {
       </section>
 
       <!-- Categoria escolhida: todos os itens em grade virtualizada -->
-      <div v-if="showGrid && itemCount > 0" class="h-full px-6 phone:px-4" data-focus-group="content" data-grid="content">
+      <div v-if="showGrid && itemCount > 0" class="h-full px-6 phone:px-4 phone-portrait:px-3" data-focus-group="content" data-grid="content">
         <GridView
           :count="itemCount"
           :load-items="loadItems"

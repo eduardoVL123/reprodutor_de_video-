@@ -104,3 +104,18 @@ describe('CatalogBrowser — fileiras por categoria', () => {
     expect(wrapper.find('[data-grid-root]').attributes('data-grid-total')).toBe('500')
   })
 })
+
+describe('CatalogBrowser — celular em pé (RFC-023)', () => {
+  afterEach(() => vi.doUnmock('@/composables/useFormFactor'))
+
+  it.each([
+    ['em pé: abre direto na grade, sem fileiras', true, 1, 0],
+    ['TV/deitado: "Todos" continua em fileiras', false, 0, 1],
+  ])('%s', async (_name, portrait, grids, rails) => {
+    const { computed } = await import('vue')
+    vi.doMock('@/composables/useFormFactor', () => ({ useFormFactor: () => ({ isPhonePortrait: computed(() => portrait) }) }))
+    wrapper = await setupRows({ section: 'vod', items: [{ stream_id: 1, name: 'Filme' }] })
+    expect(document.querySelectorAll('[data-grid-root]')).toHaveLength(grids)
+    expect(document.querySelectorAll('[data-focus-row^="rail-"]').length > 0 ? 1 : 0).toBe(rails)
+  })
+})
