@@ -15,7 +15,8 @@ import {
 } from '@/services/catalogSearch'
 import GridItem from '@/components/GridItem.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
-import { registerBackHandler, registerKeyHandler, isEditingTextField, focusFirstIn } from '@/utils/spatialNavigation'
+import { registerBackHandler, registerKeyHandler, isEditingTextField, focusFirstIn, enterInputEditMode } from '@/utils/spatialNavigation'
+import { useFormFactor } from '@/composables/useFormFactor'
 
 /**
  * Busca para TV (RFC-013): teclado na tela operado pelo D-Pad, sugestões e
@@ -41,6 +42,7 @@ const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
 const profileStore = useProfileStore()
+const { isPhonePortrait } = useFormFactor()
 
 const rootEl = ref(null)
 const query = ref('')
@@ -294,7 +296,8 @@ onMounted(() => {
   cleanupBack = registerBackHandler(onSearchBack)
   cleanupKey = registerKeyHandler(onSearchKey)
   window.addEventListener('keydown', onTypingKey)
-  nextTick(focusLastKey)
+  // Celular em pé: abrir a aba já sobe o teclado do aparelho (não há teclado na tela).
+  nextTick(() => (isPhonePortrait.value ? enterInputEditMode(document.getElementById('search-input')) : focusLastKey()))
 })
 
 onBeforeUnmount(() => {
@@ -319,7 +322,7 @@ onBeforeUnmount(() => {
           data-tv-editing="false"
           autocomplete="off"
           :maxlength="MAX_QUERY_LENGTH"
-          class="tv-input !h-[4rem] !text-tv-lg"
+          class="tv-input !h-[4rem] !text-tv-lg phone-portrait:!h-12 phone-portrait:!text-[1rem] phone-portrait:!rounded-xl"
           placeholder="Buscar filmes, séries e canais"
         />
       </div>
@@ -391,16 +394,16 @@ onBeforeUnmount(() => {
     <div class="flex-1 min-w-0 flex gap-8 phone:min-h-0" data-search-panel="results">
       <!-- Menos de 3 letras: dica + buscas recentes -->
       <div v-if="!hasMinQuery" class="flex-1 pt-3">
-        <p class="text-tv-base text-neutral-400">Digite pelo menos 3 letras para ver sugestões</p>
+        <p class="text-tv-base text-neutral-400 phone-portrait:text-[0.9rem]">Digite pelo menos 3 letras para ver sugestões</p>
         <div v-if="recentSearches.length" class="mt-10" data-focus-group="search-recent">
-          <h3 class="text-tv-sm font-bold text-neutral-300 uppercase tracking-[0.2em] mb-4">Buscas recentes</h3>
+          <h3 class="text-tv-sm font-bold text-neutral-300 uppercase tracking-[0.2em] mb-4 phone-portrait:text-[0.8rem] phone-portrait:tracking-[0.1em]">Buscas recentes</h3>
           <div class="flex flex-col items-start gap-3">
             <button
               v-for="(term, i) in recentSearches"
               :id="'search-recent-' + i"
               :key="term"
               type="button"
-              class="tv-focusable h-[3.25rem] px-5 rounded-lg bg-white/[0.06] border border-white/10 text-tv-sm text-neutral-200 flex items-center gap-3"
+              class="tv-focusable h-[3.25rem] px-5 rounded-lg bg-white/[0.06] border border-white/10 text-tv-sm text-neutral-200 flex items-center gap-3 phone-portrait:h-11 phone-portrait:px-4 phone-portrait:text-[0.9rem]"
               @click="useRecent(term)"
             >
               <svg class="w-5 h-5 shrink-0 text-neutral-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
@@ -440,13 +443,13 @@ onBeforeUnmount(() => {
 
         <!-- Filtros + grade de resultados -->
         <div class="flex-1 min-w-0 flex flex-col">
-          <div v-if="filters.length" data-focus-row="search-filters" class="flex items-center gap-3 shrink-0">
+          <div v-if="filters.length" data-focus-row="search-filters" class="flex items-center gap-3 shrink-0 phone-portrait:gap-2 phone-portrait:overflow-x-auto phone-portrait:no-scrollbar">
             <button
               v-for="f in filters"
               :id="'search-filter-' + f.id"
               :key="f.id"
               type="button"
-              class="tv-focusable h-[3.25rem] px-5 rounded-lg border text-tv-sm font-semibold"
+              class="tv-focusable h-[3.25rem] px-5 rounded-lg border text-tv-sm font-semibold phone-portrait:h-9 phone-portrait:px-3.5 phone-portrait:rounded-full phone-portrait:text-[0.85rem] phone-portrait:shrink-0"
               :class="
                 effectiveFilter === f.id
                   ? 'bg-tv-accent border-tv-accent text-tv-on-accent'
@@ -458,31 +461,32 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <p v-if="loadingNotice" class="mt-3 text-tv-sm text-neutral-500">Atualizando catálogo de {{ loadingNotice }}…</p>
+          <p v-if="loadingNotice" class="mt-3 text-tv-sm text-neutral-500 phone-portrait:text-[0.8rem]">Atualizando catálogo de {{ loadingNotice }}…</p>
 
           <!-- Buscando ou catálogo ainda baixando (sem resultados para mostrar) -->
           <div
             v-if="(isSearching || loadingNotice) && !visibleResults.length"
-            class="grid grid-cols-4 gap-4 mt-5 phone:grid-cols-5 phone:gap-3"
+            class="grid grid-cols-4 gap-4 mt-5 phone:grid-cols-5 phone:gap-3 phone-portrait:grid-cols-3 phone-portrait:gap-2.5"
             aria-hidden="true"
           >
-            <div v-for="i in 4" :key="'search-skel-' + i" class="h-[16.5rem] rounded-xl bg-white/[0.05] animate-pulse" />
+            <div v-for="i in 4" :key="'search-skel-' + i" class="h-[16.5rem] phone-portrait:h-[10rem] rounded-xl bg-white/[0.05] animate-pulse" />
           </div>
 
           <!-- Nenhum resultado -->
           <div v-else-if="!visibleResults.length" class="mt-12 text-center">
-            <p class="text-tv-lg text-white font-semibold">Nenhum resultado para "{{ query.trim() }}"</p>
-            <p class="text-tv-base text-neutral-400 mt-2">Confira a ortografia ou tente outro nome.</p>
+            <p class="text-tv-lg text-white font-semibold phone-portrait:text-[1.05rem]">Nenhum resultado para "{{ query.trim() }}"</p>
+            <p class="text-tv-base text-neutral-400 mt-2 phone-portrait:text-[0.9rem]">Confira a ortografia ou tente outro nome.</p>
           </div>
 
           <!-- Resultados -->
           <template v-else>
             <div class="flex-1 min-h-0 overflow-y-auto mt-4 px-1 pt-1 pb-6" data-focus-group="search-results">
-              <div class="grid grid-cols-4 gap-4 phone:grid-cols-5 phone:gap-3">
+              <div class="grid grid-cols-4 gap-4 phone:grid-cols-5 phone:gap-3 phone-portrait:grid-cols-3 phone-portrait:gap-2.5">
                 <div
                   v-for="(r, i) in visibleResults"
                   :key="r.section + ':' + r.item.stream_id"
                   class="relative h-[16.5rem]"
+                  :class="r.section === 'live' ? 'phone-portrait:col-span-3 phone-portrait:h-[4.4rem]' : 'phone-portrait:h-[10rem]'"
                   @focusin="onResultFocus"
                 >
                   <GridItem
@@ -495,7 +499,7 @@ onBeforeUnmount(() => {
                   <!-- O card de canal já traz "AO VIVO" no próprio layout -->
                   <span
                     v-if="r.section !== 'live'"
-                    class="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 rounded text-tv-xs font-bold tracking-wider pointer-events-none bg-black/70 border border-white/20 text-white"
+                    class="absolute top-2.5 right-2.5 z-20 px-2 py-0.5 rounded text-tv-xs font-bold tracking-wider pointer-events-none bg-black/70 border border-white/20 text-white phone-portrait:top-1.5 phone-portrait:right-1.5 phone-portrait:px-1.5 phone-portrait:text-[0.62rem]"
                   >
                     {{ SECTION_BADGES[r.section] }}
                   </span>
