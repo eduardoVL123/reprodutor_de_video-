@@ -10,16 +10,19 @@ import { pushFocusScope } from '@/utils/spatialNavigation'
  * QR e endereço levam à página de planos com o código; na versão das lojas (D4) não há QR nem preço.
  * Fica abaixo dos diálogos (z-40): Gerenciar listas e "Sair do app?" abrem por cima.
  */
-// suspended: o dono bloqueou o aparelho (RFC-019); não há o que comprar, só falar com o suporte.
-const props = defineProps({ code: { type: String, required: true }, suspended: { type: Boolean, default: false } })
+// reason (licenseStore.blockReason): 'blocked' = teste acabou; 'suspended' = o dono bloqueou o aparelho (RFC-019),
+// só falar com o suporte; 'offline' = a licença não foi confirmada há mais de 7 dias (ou nunca), precisa de conexão.
+const props = defineProps({ code: { type: String, default: '' }, reason: { type: String, default: 'blocked' } })
 defineEmits(['retry', 'manage-lists'])
 
 const rootEl = ref(null)
 const storeBuild = isStoreBuild()
+const suspended = computed(() => props.reason === 'suspended')
+const offline = computed(() => props.reason === 'offline')
 const pageUrl = computed(() => plansPageUrl(props.code))
 const displayUrl = computed(() => pageUrl.value.replace(/^https?:\/\//i, ''))
 const qr = computed(() => {
-  if (storeBuild || props.suspended) return null
+  if (storeBuild || suspended.value || offline.value || !props.code) return null
   try {
     return qrSvgData(pageUrl.value)
   } catch (_) {
@@ -67,7 +70,13 @@ onBeforeUnmount(() => {
 
       <div class="min-w-0 max-w-[48rem]">
         <BrandMark :size="2.5" class="block mb-5 text-tv-accent" />
-        <template v-if="suspended">
+        <template v-if="offline">
+          <h1 id="activation-title" class="text-tv-xl font-bold text-white">Verifique a conexão</h1>
+          <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
+            Não foi possível confirmar a licença deste aparelho. Confira se a TV está conectada à internet e tente de novo.
+          </p>
+        </template>
+        <template v-else-if="suspended">
           <h1 id="activation-title" class="text-tv-xl font-bold text-white">Aparelho suspenso</h1>
           <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
             O acesso deste aparelho foi suspenso. Fale com o suporte e informe o código abaixo.
@@ -86,12 +95,14 @@ onBeforeUnmount(() => {
           </p>
         </template>
 
-        <p class="mt-6 text-tv-xs uppercase tracking-[0.25em] text-neutral-500 font-bold">Código do aparelho</p>
-        <p id="activation-code" class="mt-1 font-mono text-tv-2xl font-black tracking-[0.2em] text-tv-accent">{{ code }}</p>
+        <template v-if="code">
+          <p class="mt-6 text-tv-xs uppercase tracking-[0.25em] text-neutral-500 font-bold">Código do aparelho</p>
+          <p id="activation-code" class="mt-1 font-mono text-tv-2xl font-black tracking-[0.2em] text-tv-accent">{{ code }}</p>
+        </template>
 
         <div class="mt-8 flex flex-wrap gap-4">
           <button id="activation-retry" type="button" class="tv-btn tv-btn-primary min-w-[16rem]" @click="$emit('retry')">
-            Já paguei, verificar
+            {{ offline ? 'Tentar de novo' : 'Já paguei, verificar' }}
           </button>
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">
             Usar outra lista

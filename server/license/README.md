@@ -14,7 +14,8 @@ No app, `VITE_LICENSE_BASE_URL=http://127.0.0.1:8789` no `.env.local`.
 
 | Variável | Padrão | Para quê |
 | --- | --- | --- |
-| `LICENSE_ADMIN_TOKEN` | vazio | Senha do painel. Vazio = painel fechado (503). |
+| `LICENSE_ADMIN_TOKEN` | vazio | Senha do painel. Vazio = painel fechado (503). Use 32+ caracteres aleatórios; 10 erros travam a rede por 15 min. Antes de publicar, ponha o Cloudflare Access na frente de `/admin*`. |
+| `LICENSE_SIGNING_KEY` | vazio | Chave privada (JWK) que assina `/v1/access`; o app confere com `VITE_LICENSE_PUBLIC_KEY`. Par novo: `node scripts/make-license-keys.mjs`. No Worker: `wrangler secret put`. |
 | `LICENSE_CONTACT_URL` | vazio | Link para pagar a ativação (ex.: WhatsApp), na página de planos. |
 | `LICENSE_PORT` / `LICENSE_HOST` | `8789` / `127.0.0.1` | Onde o servidor escuta. |
 | `LICENSE_DB_PATH` | `server/license/.data/license.db` | Arquivo SQLite (fora do Git). |

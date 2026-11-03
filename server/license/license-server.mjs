@@ -59,12 +59,12 @@ async function sendWeb(res, webRes) {
   res.end(webRes.body ? Buffer.from(await webRes.arrayBuffer()) : undefined)
 }
 
-export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '' } = {}) {
+export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
   const db = openSqlite(dbPath)
   const purge = () => purgeExpired(db, now()).catch((err) => console.warn('[license] Limpeza falhou:', err && err.message))
   const ready = migrate(db).then(purge)
   setInterval(purge, PURGE_EVERY_MS).unref()
-  const handle = createLicenseHandler({ db, now, adminToken, contactUrl, mp, mpWebhookSecret, mpPublicKey })
+  const handle = createLicenseHandler({ db, now, adminToken, contactUrl, mp, mpWebhookSecret, mpPublicKey, signingKey })
   setInterval(handle.sweep, 60 * 1000).unref()
 
   async function route(req, res) {
@@ -101,7 +101,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const mp = process.env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: process.env.MP_ACCESS_TOKEN }) : null
   const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET || ''
   const mpPublicKey = process.env.MP_PUBLIC_KEY || ''
-  createLicenseServer({ dbPath, adminToken, contactUrl: process.env.LICENSE_CONTACT_URL || '', mp, mpWebhookSecret, mpPublicKey }).listen(port, host, () => {
+  const signingKey = process.env.LICENSE_SIGNING_KEY || ''
+  createLicenseServer({ dbPath, adminToken, contactUrl: process.env.LICENSE_CONTACT_URL || '', mp, mpWebhookSecret, mpPublicKey, signingKey }).listen(port, host, () => {
     console.log(`[license] http://${host}:${port} · banco ${dbPath}`)
     if (!adminToken) console.warn('[license] LICENSE_ADMIN_TOKEN vazio: o painel /admin/ fica fechado.')
   })

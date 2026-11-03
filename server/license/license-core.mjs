@@ -5,9 +5,10 @@
  * Do app chegam só deviceKey (hash), platform e o domínio da lista (G3); qualquer outro campo é ignorado.
  * Todos os horários vêm de now() do servidor (G4).
  */
-import { generateCode, createLimiter, readJsonBody, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET } from '../pair/pair-core.mjs'
-import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost } from './license-rules.mjs'
-import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry } from './license-db.mjs'
+import { generateCode, createLimiter, readJsonBody, networkKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET } from '../pair/pair-core.mjs'
+import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText } from './license-rules.mjs'
+import { createSigner } from './license-sign.mjs'
+import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry, hitLimit } from './license-db.mjs'
 import { createAdminRoutes } from './license-admin.mjs'
 import { createApiRoutes } from './license-api.mjs'
 import { createInboxRoutes, validPub } from './license-inbox.mjs'
@@ -37,10 +38,11 @@ const fail = (status, error, extra) => json(status, { error }, extra)
  * `mp`: cliente do Mercado Pago (mp-client.mjs); null = pagamento desligado (sem MP_ACCESS_TOKEN).
  * `mpWebhookSecret`: assinatura secreta do webhook (MP_WEBHOOK_SECRET); vazio = webhook desligado.
  * `mpPublicKey`: chave pública do Mercado Pago (MP_PUBLIC_KEY), entregue à tela /pagar em /v1/mp-config.
+ * `signingKey`: chave privada (JWK) que assina /v1/access (LICENSE_SIGNING_KEY); vazio = respostas sem assinatura.
  */
-export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '' } = {}) {
+export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
   const limiter = createLimiter(now)
-  const dailyLimiter = createLimiter(now, DAY_MS)
+  const sign = createSigner(signingKey)
   const handleCheckout = createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret: mpWebhookSecret })
   const handleAdmin = createAdminRoutes({ db, now, adminToken, json, checkout: handleCheckout })
   const handleApi = createApiRoutes({ db, now, json, limiter, checkout: handleCheckout })
@@ -51,11 +53,9 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     for (let attempt = 0; attempt < 5; attempt++) {
       const found = await findDevice(db, deviceKey)
       if (found) return found
-      if (attempt === 0) {
-        if (dailyLimiter.retryAfter('device', ip, limits.newDevicesPerDay)) {
-          throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
-        }
-        dailyLimiter.add('device', ip)
+      // No banco (não na memória do isolate): o limite vale para o serviço todo e sobrevive a reinícios.
+      if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: limits.newDevicesPerDay, windowMs: DAY_MS, now: now() }))) {
+        throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
       }
       const at = now()
       const code = generateCode(null, DEVICE_CODE_LENGTH)
@@ -101,7 +101,10 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     },
     '/v1/access': async (body, ip) => {
       const result = await access(body, ip)
-      return json(200, { access: result.access, ...publicState(result, result.at) })
+      const reply = { access: result.access, ...publicState(result, result.at) }
+      if (!sign) return json(200, reply)
+      const sig = await sign(licenseSignedText({ ...reply, deviceKey: body.deviceKey, host: normalizeHost(body.host) || '' }))
+      return json(200, { ...reply, sig })
     },
     '/v1/entry': async (body, ip) => {
       const result = await access(body, ip)
@@ -116,10 +119,11 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     },
   }
 
-  async function handle(request, ip = '') {
+  async function handle(request, rawIp = '') {
+    const ip = networkKey(rawIp)
     const url = new URL(request.url)
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...LICENSE_CORS } })
-    if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url)
+    if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url, ip)
     if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url)
     if (url.pathname.startsWith('/v1/inbox')) return handleInbox(request, url, ip)
     if (url.pathname === '/v1/checkout' || url.pathname.startsWith('/v1/checkout/') || url.pathname === WEBHOOK_PATH) {
@@ -162,7 +166,6 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
   // O servidor chama de tempos em tempos (como o pareamento): sem isso os contadores por IP só crescem.
   handle.sweep = () => {
     limiter.sweep()
-    dailyLimiter.sweep()
   }
   return handle
 }

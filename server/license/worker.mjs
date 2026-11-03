@@ -1,10 +1,10 @@
 /**
  * Serviço de licença no Cloudflare Workers (RFC-018): o mesmo núcleo do servidor Node, com o banco D1 (binding DB)
- * no lugar do node:sqlite. Segredos (`wrangler secret put`): LICENSE_ADMIN_TOKEN, MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET
- * (RFC-020; vazios = pagamento/webhook desligados). Variáveis: LICENSE_CONTACT_URL e MP_PUBLIC_KEY (cartão em /pagar).
+ * no lugar do node:sqlite. Segredos (`wrangler secret put`): LICENSE_ADMIN_TOKEN, LICENSE_SIGNING_KEY (assina o
+ * acesso), MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (RFC-020; vazios = pagamento/webhook desligados). Variáveis: LICENSE_CONTACT_URL e MP_PUBLIC_KEY (cartão em /pagar).
  * O cron diário apaga o que passou dos 24 meses (PRIVACY.md).
- * shortcut: os limites por IP ficam na memória de cada isolate do Worker (um atacante espalhado por vários isolates
- * passa um pouco do limite); mover para um Durable Object, como o pareamento, se aparecer abuso no painel.
+ * Limites: os que protegem dinheiro e o painel (novos aparelhos, checkout, token errado) ficam no D1 (rate_limits);
+ * os de volume por minuto ficam na memória de cada isolate (um atacante espalhado por vários isolates passa um pouco).
  */
 import { SECURITY_HEADERS, PAGE_CSP } from '../pair/pair-core.mjs'
 import { createLicenseHandler } from './license-core.mjs'
@@ -54,6 +54,9 @@ export default {
     await ready
     if (!handle) {
       const mp = env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: env.MP_ACCESS_TOKEN }) : null
+      if (env.LICENSE_ADMIN_TOKEN && env.LICENSE_ADMIN_TOKEN.length < 32) {
+        console.warn('[licença] LICENSE_ADMIN_TOKEN curto: use 32+ caracteres aleatórios (README, "Painel do dono").')
+      }
       handle = createLicenseHandler({
         db: env.DB,
         adminToken: env.LICENSE_ADMIN_TOKEN || '',
@@ -61,6 +64,7 @@ export default {
         mp,
         mpWebhookSecret: env.MP_WEBHOOK_SECRET || '',
         mpPublicKey: env.MP_PUBLIC_KEY || '',
+        signingKey: env.LICENSE_SIGNING_KEY || '',
       })
     }
     if (Date.now() - lastSweep > SWEEP_EVERY_MS) {

@@ -415,6 +415,7 @@
     delivered: 'Entregue',
     expired: 'Expirado',
     failed: 'Recusado ou falhou',
+    refunded: 'Estornado (entrega desfeita)',
   }
   const SUBSCRIPTION_STATUS = { pending: 'Aguardando 1ª cobrança', authorized: 'Ativa', paused: 'Pausada', cancelled: 'Cancelada' }
   const PAY_METHOD = { pix: 'Pix', card: 'Cartão' }

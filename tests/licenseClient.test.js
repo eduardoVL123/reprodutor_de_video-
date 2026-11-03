@@ -189,17 +189,75 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.shouldBlock({ baseUrl: 'http://parceiro.com' })).toBe(false)
   })
 
-  it('servidor fora do ar e nada salvo: libera', async () => {
+  it('antes da primeira resposta nada bloqueia (a tela não pisca enquanto consulta)', async () => {
+    setup({ fetchImpl: () => new Promise(() => {}) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    license.refresh(LIST)
+    expect(license.shouldBlock(LIST)).toBe(false)
+  })
+
+  it('servidor fora do ar e esta lista nunca confirmada: bloqueia pedindo conexão (antes liberava para sempre)', async () => {
     setup({ fetchImpl: async () => { throw new TypeError('Failed to fetch') } })
     const { useLicenseStore } = await import('@/stores/licenseStore')
     const license = useLicenseStore()
     await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('offline')
+  })
+
+  it('carência: ativado e sem serviço, libera por 7 dias; depois pede conexão; voltar o serviço libera de novo', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.UTC(2026, 9, 1)
+    vi.setSystemTime(start)
+    let up = true
+    setup({
+      fetchImpl: async () => {
+        if (!up) throw new TypeError('Failed to fetch')
+        return reply(200, { access: 'activated', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: start + 300 * DAY, serverTime: start })
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    up = false
+    vi.setSystemTime(start + 6 * DAY)
+    await license.refresh(LIST)
+    expect(license.shouldBlock(LIST)).toBe(false)
+    vi.setSystemTime(start + 8 * DAY)
+    await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('offline')
+    up = true
+    await license.refresh(LIST)
     expect(license.shouldBlock(LIST)).toBe(false)
   })
 
-  it('servidor fora do ar: bloqueio salvo há 6 dias continua; há 8 dias libera', async () => {
+  it('sem serviço: teste que venceu nesse meio-tempo e relógio voltado para trás pedem conexão', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
-    vi.setSystemTime(Date.UTC(2026, 9, 1))
+    const start = Date.UTC(2026, 9, 1)
+    vi.setSystemTime(start)
+    let up = true
+    setup({
+      fetchImpl: async () => {
+        if (!up) throw new TypeError('Failed to fetch')
+        return reply(200, { access: 'trial', code: 'QDU5NXY7', trialEndsAt: start + 2 * DAY, activationEndsAt: null, serverTime: start })
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    up = false
+    vi.setSystemTime(start + DAY)
+    await license.refresh(LIST)
+    expect(license.shouldBlock(LIST)).toBe(false)
+    vi.setSystemTime(start + 3 * DAY)
+    await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('offline')
+    vi.setSystemTime(start - 3 * DAY)
+    await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('offline')
+  })
+
+  it('bloqueio salvo continua valendo sem serviço', async () => {
     let up = true
     setup({
       fetchImpl: async () => {
@@ -211,12 +269,8 @@ describe('bloqueio (G2: falha aberta)', () => {
     const license = useLicenseStore()
     await license.refresh(LIST)
     up = false
-    vi.setSystemTime(Date.UTC(2026, 9, 7))
     await license.refresh(LIST)
-    expect(license.shouldBlock(LIST)).toBe(true)
-    vi.setSystemTime(Date.UTC(2026, 9, 9))
-    await license.refresh(LIST)
-    expect(license.shouldBlock(LIST)).toBe(false)
+    expect(license.blockReason(LIST)).toBe('blocked')
   })
 
   it('o estado salvo sobrevive a reabrir o app (lido do armazenamento)', async () => {
@@ -302,5 +356,68 @@ describe('lista com endereço sem ponto (ex.: http://servidor:8080)', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).host).toBe('')
     expect(license.shouldBlock(LAN)).toBe(true)
+  })
+})
+
+describe('assinatura do servidor (resposta falsa de proxy ou hosts não libera)', () => {
+  const LIST = { baseUrl: 'http://outra.com' }
+
+  async function keys() {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const priv = await crypto.subtle.exportKey('jwk', pair.privateKey)
+    const pub = await crypto.subtle.exportKey('jwk', pair.publicKey)
+    const { createSigner } = await import('../server/license/license-sign.mjs')
+    return { sign: createSigner(JSON.stringify(priv)), publicText: `${pub.x}.${pub.y}` }
+  }
+
+  /** Servidor de verdade: assina a resposta para a chave do aparelho e a lista que perguntaram. */
+  async function signedServer(sign, state) {
+    const { licenseSignedText } = await import('../server/license/license-rules.mjs')
+    return async (_url, init) => {
+      const body = JSON.parse(init.body)
+      return reply(200, { ...state, sig: await sign(licenseSignedText({ ...state, deviceKey: body.deviceKey, host: body.host })) })
+    }
+  }
+
+  const ACTIVATED = { access: 'activated', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: Date.now() + 300 * DAY, serverTime: Date.now() }
+
+  it('resposta assinada vale; sem assinatura ou assinada por outra chave conta como serviço fora do ar', async () => {
+    const { sign, publicText } = await keys()
+    const other = await keys()
+    setup({ fetchImpl: await signedServer(sign, ACTIVATED) })
+    vi.stubEnv('VITE_LICENSE_PUBLIC_KEY', publicText)
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    expect(license.access).toBe('activated')
+    expect(license.shouldBlock(LIST)).toBe(false)
+
+    // Lista nova, proxy respondendo "activated" sem assinatura ou com outra chave: não libera.
+    const NEW = { baseUrl: 'http://nova.com' }
+    vi.stubGlobal('fetch', vi.fn(async () => reply(200, ACTIVATED)))
+    await license.refresh(NEW)
+    expect(license.blockReason(NEW)).toBe('offline')
+    vi.stubGlobal('fetch', vi.fn(await signedServer(other.sign, ACTIVATED)))
+    await license.refresh(NEW)
+    expect(license.blockReason(NEW)).toBe('offline')
+  })
+
+  it('estado salvo editado no aparelho (trocar "blocked" por "activated") é descartado ao abrir', async () => {
+    const { sign, publicText } = await keys()
+    const BLOCKED = { ...ACTIVATED, access: 'blocked', activationEndsAt: null }
+    setup({ fetchImpl: await signedServer(sign, BLOCKED) })
+    vi.stubEnv('VITE_LICENSE_PUBLIC_KEY', publicText)
+    let { useLicenseStore } = await import('@/stores/licenseStore')
+    await useLicenseStore().refresh(LIST)
+    memory.set('license:state', { ...memory.get('license:state'), access: 'activated' })
+
+    vi.resetModules()
+    setActivePinia(createPinia())
+    vi.stubGlobal('fetch', vi.fn(async () => { throw new TypeError('offline') }))
+    ;({ useLicenseStore } = await import('@/stores/licenseStore'))
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    expect(license.access).not.toBe('activated')
+    expect(license.blockReason(LIST)).toBe('offline')
   })
 })

@@ -4,7 +4,7 @@
  */
 import { timingSafeEqualStr, readJsonBody } from '../pair/pair-core.mjs'
 import { cyclesUntil, isActive, normalizeHost, extendActivation, ACTIVE_GAP_MS, DAY_MS } from './license-rules.mjs'
-import { findDeviceByCode, activationEndsAt } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
 import { creditTotal, partnerMonthlyPrice } from './pricing.mjs'
 import {
   publicReseller,
@@ -203,6 +203,9 @@ function creditEntry(body) {
  * Devolve `handleAdmin(request, url) -> Response`, usando `json(status, body)` do núcleo.
  * `checkout`: rotas de pagamento (license-checkout.mjs), para as assinaturas no cartão (RFC-020).
  */
+export const ADMIN_FAIL_LIMIT = 10
+export const ADMIN_FAIL_WINDOW_MS = 15 * 60 * 1000
+
 export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
   const routes = [
     ['GET', /^\/admin\/api\/subscriptions$/, async () => json(200, await checkout.listSubscriptions())],
@@ -391,10 +394,20 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
     ],
   ]
 
-  return async function handleAdmin(request, url) {
+  return async function handleAdmin(request, url, ip = '') {
     if (!adminToken) return json(503, { error: 'Painel desligado: defina LICENSE_ADMIN_TOKEN.' })
+    // Token errado demais desta rede: recusa até o token certo por um tempo (sem isso, dá para tentar sem parar).
+    const failKey = { bucket: 'adminFail', key: ip, limit: ADMIN_FAIL_LIMIT, windowMs: ADMIN_FAIL_WINDOW_MS }
+    const locked = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(failKey.bucket, ip).first()
+    if (locked && locked.count >= ADMIN_FAIL_LIMIT && now() - locked.window_start < ADMIN_FAIL_WINDOW_MS) {
+      const wait = Math.max(1, Math.ceil((locked.window_start + ADMIN_FAIL_WINDOW_MS - now()) / 1000))
+      return json(429, { error: 'Muitas tentativas com o token errado. Aguarde.' }, { 'Retry-After': String(wait) })
+    }
     const auth = request.headers.get('Authorization') || ''
-    if (!timingSafeEqualStr(auth, `Bearer ${adminToken}`)) return json(401, { error: 'Não autorizado.' })
+    if (!timingSafeEqualStr(auth, `Bearer ${adminToken}`)) {
+      await hitLimit(db, { ...failKey, now: now() })
+      return json(401, { error: 'Não autorizado.' })
+    }
     for (const [method, pattern, run] of routes) {
       const match = request.method === method && url.pathname.match(pattern)
       if (!match) continue

@@ -13,20 +13,30 @@ afterEach(async () => {
   vi.resetModules()
 })
 
-async function mountScreen({ storeBuild = '', suspended = false } = {}) {
+async function mountScreen({ storeBuild = '', reason = 'blocked', code = 'QDU5NXY7' } = {}) {
   vi.stubEnv('VITE_LICENSE_BASE_URL', 'https://licenca.test')
   vi.stubEnv('VITE_LICENSE_STORE_BUILD', storeBuild)
   const nav = await import('@/utils/spatialNavigation')
   nav.initSpatialNavigation()
   const { default: ActivationRequired } = await import('@/views/ActivationRequired.vue')
-  const wrapper = mount(ActivationRequired, { props: { code: 'QDU5NXY7', suspended }, attachTo: document.body })
+  const wrapper = mount(ActivationRequired, { props: { code, reason }, attachTo: document.body })
   await flushPromises()
   return wrapper
 }
 
 describe('tela de ativação', () => {
+  it('sem confirmar a licença (carência acabou ou nunca conectou): pede conexão, sem QR nem planos', async () => {
+    const wrapper = await mountScreen({ reason: 'offline', code: '' })
+    expect(wrapper.text()).toContain('Verifique a conexão')
+    expect(wrapper.find('#activation-qr').exists()).toBe(false)
+    expect(wrapper.find('#activation-code').exists()).toBe(false)
+    expect(wrapper.find('#activation-retry').text()).toBe('Tentar de novo')
+    expect(document.activeElement.id).toBe('activation-retry')
+    wrapper.unmount()
+  })
+
   it('aparelho suspenso: avisa e manda falar com o suporte, sem QR nem planos', async () => {
-    const wrapper = await mountScreen({ suspended: true })
+    const wrapper = await mountScreen({ reason: 'suspended' })
     expect(wrapper.text()).toContain('Aparelho suspenso')
     expect(wrapper.text()).toMatch(/suporte/)
     expect(wrapper.find('#activation-qr').exists()).toBe(false)

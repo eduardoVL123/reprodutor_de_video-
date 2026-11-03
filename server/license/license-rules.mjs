@@ -84,6 +84,14 @@ export function accessFor({ trialEndsAt, activationEndsAt, isPartner, now, block
   return isPartner ? 'partner' : 'blocked'
 }
 
+/**
+ * Texto assinado da resposta de acesso (servidor assina, app confere; license-sign.mjs e src/services/licenseSignature.js).
+ * Inclui a chave do aparelho e a lista: a resposta de um aparelho ou de uma lista não serve para outro.
+ */
+export function licenseSignedText({ deviceKey, host, access, code, trialEndsAt, activationEndsAt, serverTime }) {
+  return JSON.stringify(['pulse-license-v1', deviceKey, host || '', access || '', code || '', trialEndsAt ?? null, activationEndsAt ?? null, serverTime ?? null])
+}
+
 /** Ativo do ciclo (R5): duas entradas com 24 h ou mais de diferença. */
 export function isActive({ firstAt, lastAt }) {
   return lastAt - firstAt >= ACTIVE_GAP_MS

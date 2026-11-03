@@ -1019,7 +1019,13 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- Gerenciador de listas -->
-    <ActivationRequired v-if="showActivation" :code="license.code" :suspended="license.access === 'suspended'" @retry="license.refresh(auth.session)" @manage-lists="openListModal" />
+    <ActivationRequired
+      v-if="showActivation"
+      :code="license.code"
+      :reason="license.blockReason(auth.session)"
+      @retry="license.refresh(auth.session)"
+      @manage-lists="openListModal"
+    />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->

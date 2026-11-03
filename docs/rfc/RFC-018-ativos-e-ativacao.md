@@ -201,9 +201,12 @@ Rotas (JSON, só HTTPS, limite por IP como no pareamento):
 
 ## Guardrails (valem para toda a implementação)
 - **G1 Escopo.** Só o que está em "Objetivos (v1)". Qualquer ideia nova vai para "Futuro", não para o código.
-- **G2 Falha aberta.** Servidor de vocês fora do ar ou lento: o app usa o último estado salvo; se não houver, libera.
-  Bloqueio só com resposta `blocked` do servidor ou estado salvo `blocked` com menos de 7 dias. Nunca bloquear por erro
-  de rede.
+- **G2 Carência (revisado em 2026-11-03; antes era "falha aberta").** Servidor fora do ar ou lento: o app usa o último
+  estado salvo da mesma lista, assinado pelo servidor (`LICENSE_SIGNING_KEY` / `VITE_LICENSE_PUBLIC_KEY`), por até 7 dias.
+  Depois disso, sem nada confirmado para a lista, com o relógio voltado para trás ou com o teste/ativação vencido no
+  meio-tempo, a tela pede conexão ("Verifique a conexão"). Motivo: com a falha aberta, bloquear o servidor no roteador
+  liberava o app para sempre (revisão de segurança de 2026-11-03). Risco aceito pelo dono: servidor fora do ar por mais
+  de 7 dias bloqueia clientes pagantes.
 - **G3 Nada de credenciais.** Do app para `server/license` saem só: `deviceKey` (hash), `platform`, `host` da lista.
   Nunca usuário, senha, URL completa, nome de canal ou histórico. Teste automático garante isso.
 - **G4 Relógio do servidor.** Teste, ciclos, 24 h e validade da ativação usam só o horário do servidor

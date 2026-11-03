@@ -123,6 +123,15 @@ MIGRATIONS.push(
     subscription_id TEXT NOT NULL,
     delivered_at INTEGER NOT NULL
   )`,
+  // Limites que valem entre isolates do Worker (a memória de cada um zera e não é compartilhada): novos aparelhos,
+  // checkout e senha errada no painel. `key` = rede do cliente (IPv6 por /64) ou '*' para o teto geral.
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (bucket, key)
+  )`,
 )
 
 /** Colunas novas em tabelas existentes: ALTER TABLE não tem IF NOT EXISTS, então "já existe" é ignorado. */
@@ -173,6 +182,25 @@ export const partnerForHost = (db, host) =>
     .bind(host)
     .first()
 
+/**
+ * Conta uma tentativa no balde e diz quantos segundos esperar (0 = liberado). Atômico (um único UPSERT com RETURNING),
+ * então duas chamadas juntas nunca leem a mesma contagem. Janela fixa; a contagem para em limit + 1.
+ */
+export async function hitLimit(db, { bucket, key, limit, windowMs, now }) {
+  const row = await db
+    .prepare(
+      `INSERT INTO rate_limits (bucket, key, window_start, count) VALUES (?, ?, ?, 1)
+       ON CONFLICT (bucket, key) DO UPDATE SET
+         count = CASE WHEN ? - window_start >= ? THEN 1 WHEN count > ? THEN count ELSE count + 1 END,
+         window_start = CASE WHEN ? - window_start >= ? THEN ? ELSE window_start END
+       RETURNING window_start, count`,
+    )
+    .bind(bucket, key, now, now, windowMs, limit, now, windowMs, now)
+    .first()
+  if (row.count <= limit) return 0
+  return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
+}
+
 /** Guarda prometida na PRIVACY.md: 24 meses. */
 export const RETENTION_MS = 730 * 24 * 3600 * 1000
 
@@ -180,6 +208,14 @@ export const RETENTION_MS = 730 * 24 * 3600 * 1000
 export async function purgeExpired(db, now) {
   const cutoff = now - RETENTION_MS
   await db.prepare('DELETE FROM inbox WHERE expires_at <= ?').bind(now).run()
+  await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(now - 2 * 24 * 3600 * 1000).run()
+  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout.mjs, KEY_VISIBLE_MS).
+  await db
+    .prepare("UPDATE orders SET delivery = json_remove(delivery, '$.resellerKey', '$.keyUntil') WHERE json_extract(delivery, '$.keyUntil') < ?")
+    .bind(now)
+    .run()
+  // Nome e contato do comprador seguem a mesma guarda de 24 meses; o pedido fica (contabilidade), anônimo.
+  await db.prepare('UPDATE orders SET buyer_name = NULL, buyer_contact = NULL WHERE created_at < ? AND buyer_name IS NOT NULL').bind(cutoff).run()
   await db.prepare('DELETE FROM partner_cycle_entries WHERE last_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db

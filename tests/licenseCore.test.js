@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
+import { licenseSignedText } from '../server/license/license-rules.mjs'
 import { generateCode, CODE_ALPHABET } from '../server/pair/pair-core.mjs'
 
 const brt = (y, m, d, h = 12, min = 0) => Date.UTC(y, m - 1, d, h + 3, min)
@@ -220,5 +221,27 @@ describe('licença — aparelhos novos por IP (fraude contra parceiro)', () => {
   it('o núcleo expõe a limpeza dos contadores para o servidor chamar de tempos em tempos', () => {
     expect(typeof handle.sweep).toBe('function')
     expect(() => handle.sweep()).not.toThrow()
+  })
+})
+
+describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
+  it('assina o acesso para a chave do aparelho e a lista; a chave pública confere', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const priv = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey))
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 3), signingKey: priv })
+    const deviceKey = 'a'.repeat(32)
+    const res = await handle(
+      new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey, platform: 'tizen', host: 'HTTP://Lista.com:8080/x' }) }),
+      '10.0.0.1',
+    )
+    const body = await res.json()
+    expect(body.sig).toMatch(/^[A-Za-z0-9_-]+$/)
+    const sig = Uint8Array.from(atob(body.sig.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (body.sig.length % 4)) % 4)), (c) => c.charCodeAt(0))
+    const verify = (host) =>
+      crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pair.publicKey, sig, new TextEncoder().encode(licenseSignedText({ ...body, deviceKey, host })))
+    expect(await verify('lista.com')).toBe(true)
+    expect(await verify('outra.com')).toBe(false)
   })
 })
