@@ -61,6 +61,16 @@ export async function setPictureInPictureEnabled(enabled) {
   }
 }
 
+/**
+ * Abre um endereço no navegador do sistema (site de enviar lista, página de planos). No APK, navegar para fora do
+ * app faz o Capacitor abrir o navegador (BridgeWebViewClient → launchIntent) sem sair da tela; fora dele, nova aba.
+ */
+export function openExternal(url) {
+  if (!/^https?:\/\//i.test(String(url || ''))) return
+  if (isNativeApp()) window.location.href = url
+  else window.open(url, '_blank', 'noopener')
+}
+
 /** Plugin nativo do APK (android/.../OrientationPlugin.java); na TV ele não faz nada. */
 const Orientation = registerPlugin('Orientation')
 

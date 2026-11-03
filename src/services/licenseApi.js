@@ -26,6 +26,11 @@ export function plansPageUrl(code) {
   return `${baseUrl()}/a/${code}`
 }
 
+/** Site "Enviar lista" com o código do aparelho já preenchido (RFC-021/023); vazio sem o serviço ou sem código. */
+export function sendListPageUrl(code) {
+  return baseUrl() && code ? `${baseUrl()}/?codigo=${encodeURIComponent(code)}` : ''
+}
+
 /** POST com tempo limite por Promise.race (TVs com Chromium < 66 não têm AbortController). */
 async function post(path, body) {
   if (!baseUrl()) throw new LicenseError('desligado')

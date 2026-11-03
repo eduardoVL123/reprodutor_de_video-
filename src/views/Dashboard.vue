@@ -6,6 +6,8 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
 import SideMenu from '@/components/SideMenu.vue'
+import BottomNav from '@/components/BottomNav.vue'
+import { useFormFactor } from '@/composables/useFormFactor'
 import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
@@ -30,6 +32,7 @@ const license = useLicenseStore()
 const player = usePlayerStore()
 const catalog = useCatalogStore()
 const profileStore = useProfileStore()
+const { isPhonePortrait } = useFormFactor()
 useLicenseWatch(
   () => auth.session,
   () => ['live', 'vod', 'series'].some((s) => catalog.status[s].state === 'ready'),
@@ -514,8 +517,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="w-full h-full flex bg-tv-deep text-white overflow-hidden select-none relative">
-    <!-- Menu Lateral Recolhido (Layout B aprovado) -->
+    <!-- Celular/tablet em pé: barra de baixo (RFC-023). TV e celular deitado: menu lateral recolhido (Layout B). -->
+    <BottomNav
+      v-if="isPhonePortrait"
+      :active-tab="activeTab"
+      :profile="profileStore.activeProfile"
+      :list-label="auth.activeListLabel || auth.username || ''"
+      @navigate="activeTab = $event"
+      @manage-lists="openListModal"
+      @switch-profile="openProfileGate"
+    />
     <SideMenu
+      v-else
       :active-tab="activeTab"
       :profile="profileStore.activeProfile"
       :list-label="auth.activeListLabel || auth.username || ''"
@@ -525,7 +538,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
-    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 flex flex-col overflow-hidden relative">
+    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 phone-portrait:pb-[calc(4.6rem+env(safe-area-inset-bottom))] flex flex-col overflow-hidden relative">
       <!-- Aba TV ao Vivo -->
       <div v-if="activeTab === 'live'" class="w-full h-full">
         <CatalogBrowser section="live" />
