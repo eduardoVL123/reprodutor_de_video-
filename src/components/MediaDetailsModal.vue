@@ -355,7 +355,7 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <div data-focus-row="movie-details-actions" class="flex items-center gap-3.5 mt-8 phone-portrait:flex-wrap phone-portrait:gap-2.5 phone-portrait:mt-5">
+        <div data-focus-row="movie-details-actions" class="flex items-center gap-3.5 mt-8 phone-portrait:max-w-[32rem] phone-portrait:flex-wrap phone-portrait:gap-2.5 phone-portrait:mt-5">
           <button
             id="details-play-btn"
             type="button"
@@ -443,7 +443,7 @@ onBeforeUnmount(() => {
         </template>
 
         <!-- Botões de Ação da Série -->
-        <div data-focus-row="series-details-actions" class="flex items-center gap-3.5 mt-5 phone-portrait:flex-wrap phone-portrait:gap-2.5">
+        <div data-focus-row="series-details-actions" class="flex items-center gap-3.5 mt-5 phone-portrait:max-w-[32rem] phone-portrait:flex-wrap phone-portrait:gap-2.5">
           <button
             id="series-play-btn"
             type="button"
