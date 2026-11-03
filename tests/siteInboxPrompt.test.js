@@ -86,3 +86,28 @@ describe('lista recebida', () => {
     expect(wrapper.find('#site-inbox-dialog').exists()).toBe(false)
   })
 })
+
+describe('dica do site no celular (RFC-023)', () => {
+  afterEach(() => {
+    vi.doUnmock('@/utils/compat')
+    vi.doUnmock('@/services/platform')
+  })
+
+  it('vira um botão que abre o site com o código do aparelho; na TV continua só o texto', async () => {
+    const openExternal = vi.fn()
+    vi.doMock('@/services/platform', async (importOriginal) => ({ ...(await importOriginal()), openExternal }))
+    vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => true }))
+    await setup()
+    await wrapper.find('#site-open').trigger('click')
+    expect(openExternal).toHaveBeenCalledWith('https://pulse-license.test/?codigo=ABCD2345')
+    wrapper.unmount()
+    wrapper = null
+    document.body.innerHTML = ''
+
+    vi.resetModules()
+    vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => false }))
+    await setup()
+    expect(wrapper.find('#site-open').exists()).toBe(false)
+    expect(wrapper.find('#site-hint').exists()).toBe(true)
+  })
+})

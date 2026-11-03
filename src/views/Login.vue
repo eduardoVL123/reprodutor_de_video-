@@ -82,13 +82,13 @@ onBeforeUnmount(() => auth.clearError())
 
 <template>
   <section
-    class="relative w-full h-full flex justify-center overflow-y-auto bg-tv-deep p-8"
+    class="relative w-full h-full flex justify-center overflow-y-auto bg-tv-deep p-8 phone-portrait:p-3"
   >
     <div class="absolute -top-40 -right-40 w-[35rem] h-[35rem] rounded-full bg-tv-accent/10 pointer-events-none"></div>
 
     <div
       class="relative rounded-2xl border border-white/10 bg-[#121215] shadow-2xl my-auto"
-      :class="pairingOn ? 'w-[84rem] max-w-full grid grid-cols-2' : 'w-[50rem]'"
+      :class="pairingOn ? 'w-[84rem] max-w-full grid grid-cols-2' : 'w-[50rem] max-w-full'"
     >
       <div v-if="pairingOn" class="px-14 py-12 border-r border-white/10">
         <div class="flex items-center gap-2 mb-8">
@@ -100,8 +100,8 @@ onBeforeUnmount(() => auth.clearError())
       </div>
 
       <form
-        class="px-14 py-12"
-        :class="pairingBelow ? '' : 'pb-[20rem]'"
+        class="px-14 py-12 phone-portrait:px-5 phone-portrait:py-6"
+        :class="pairingBelow ? '' : 'pb-[20rem] phone-portrait:pb-6'"
         novalidate
         @submit.prevent="submit"
       >
@@ -110,7 +110,7 @@ onBeforeUnmount(() => auth.clearError())
           <template v-else>
             <div class="flex items-center gap-2 mb-3">
               <BrandMark :size="1.5" class="text-tv-accent" />
-              <p class="text-tv-xs uppercase tracking-[0.25em] text-tv-accent font-bold">PULSE PLAYER · CONEXÃO</p>
+              <p class="text-tv-xs uppercase tracking-[0.25em] text-tv-accent font-bold phone-portrait:tracking-[0.12em]">PULSE PLAYER · CONEXÃO</p>
             </div>
             <h1 class="text-tv-xl font-black text-white tracking-tight">Conectar ao servidor</h1>
             <p class="mt-2 text-tv-sm text-neutral-400">
@@ -248,11 +248,11 @@ onBeforeUnmount(() => auth.clearError())
         </button>
       </form>
 
-      <div v-if="pairingBelow" class="px-14 pt-10 pb-12 border-t border-white/10">
+      <div v-if="pairingBelow" class="px-14 pt-10 pb-12 border-t border-white/10 phone-portrait:px-5 phone-portrait:pt-6 phone-portrait:pb-6">
         <PairPanel :qr-rem="12" @done="onPairDone" />
       </div>
       <!-- RFC-021: enviar a lista pelo site (código do aparelho) -->
-      <div class="px-14 pb-8" :class="pairingOn ? 'col-span-2' : ''">
+      <div class="px-14 pb-8 phone-portrait:px-5" :class="pairingOn ? 'col-span-2' : ''">
         <SiteInboxPrompt @done="onPairDone" />
       </div>
     </div>

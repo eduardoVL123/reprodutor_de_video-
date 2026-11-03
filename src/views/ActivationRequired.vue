@@ -3,6 +3,8 @@ import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import BrandMark from '@/components/BrandMark.vue'
 import { qrSvgData } from '@/utils/qrSvg'
 import { plansPageUrl, isStoreBuild } from '@/services/licenseApi'
+import { openExternal } from '@/services/platform'
+import { isPhone } from '@/utils/compat'
 import { pushFocusScope } from '@/utils/spatialNavigation'
 
 /**
@@ -17,12 +19,14 @@ defineEmits(['retry', 'manage-lists'])
 
 const rootEl = ref(null)
 const storeBuild = isStoreBuild()
+// Celular: o QR leria a própria tela; vira um botão que abre a mesma página de planos (RFC-023).
+const onPhone = isPhone()
 const suspended = computed(() => props.reason === 'suspended')
 const offline = computed(() => props.reason === 'offline')
 const pageUrl = computed(() => plansPageUrl(props.code))
 const displayUrl = computed(() => pageUrl.value.replace(/^https?:\/\//i, ''))
 const qr = computed(() => {
-  if (storeBuild || suspended.value || offline.value || !props.code) return null
+  if (onPhone || storeBuild || suspended.value || offline.value || !props.code) return null
   try {
     return qrSvgData(pageUrl.value)
   } catch (_) {
@@ -52,7 +56,7 @@ onBeforeUnmount(() => {
     aria-modal="true"
     aria-labelledby="activation-title"
     data-focus-group="activation"
-    class="fixed inset-0 z-40 flex items-center justify-center bg-tv-deep px-24 py-14 select-none"
+    class="fixed inset-0 z-40 flex items-center justify-center bg-tv-deep px-24 py-14 select-none phone-portrait:px-6 phone-portrait:py-8 phone-portrait:overflow-y-auto"
   >
     <div class="flex items-center gap-16 max-w-full">
       <svg
@@ -87,7 +91,7 @@ onBeforeUnmount(() => {
           <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
             O período de teste de 7 dias terminou. Para continuar com esta lista, ative o aparelho.
           </p>
-          <p v-if="!storeBuild" class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
+          <p v-if="!storeBuild && !onPhone" class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
             Escaneie o QR code ou abra <span class="text-white font-semibold">{{ displayUrl }}</span> e veja os planos.
           </p>
           <p v-else class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
@@ -100,8 +104,17 @@ onBeforeUnmount(() => {
           <p id="activation-code" class="mt-1 font-mono text-tv-2xl font-black tracking-[0.2em] text-tv-accent">{{ code }}</p>
         </template>
 
-        <div class="mt-8 flex flex-wrap gap-4">
-          <button id="activation-retry" type="button" class="tv-btn tv-btn-primary min-w-[16rem]" @click="$emit('retry')">
+        <div class="mt-8 flex flex-wrap gap-4 phone-portrait:flex-col phone-portrait:gap-2.5">
+          <button
+            v-if="onPhone && !storeBuild && !suspended && !offline && code"
+            id="activation-plans"
+            type="button"
+            class="tv-btn tv-btn-primary min-w-[16rem]"
+            @click="openExternal(pageUrl)"
+          >
+            Ver planos e ativar
+          </button>
+          <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="$emit('retry')">
             {{ offline ? 'Tentar de novo' : 'Já paguei, verificar' }}
           </button>
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">

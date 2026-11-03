@@ -136,3 +136,28 @@ describe('Dashboard com o aparelho bloqueado', () => {
     wrapper.unmount()
   })
 })
+
+describe('tela de ativação no celular (RFC-023)', () => {
+  afterEach(() => {
+    vi.doUnmock('@/utils/compat')
+    vi.doUnmock('@/services/platform')
+  })
+
+  it('no lugar do QR, "Ver planos e ativar" abre a mesma página do QR', async () => {
+    const openExternal = vi.fn()
+    vi.doMock('@/services/platform', async (importOriginal) => ({ ...(await importOriginal()), openExternal }))
+    vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => true }))
+    const wrapper = await mountScreen()
+    expect(wrapper.find('#activation-qr').exists()).toBe(false)
+    await wrapper.find('#activation-plans').trigger('click')
+    expect(openExternal).toHaveBeenCalledWith('https://licenca.test/a/QDU5NXY7')
+    wrapper.unmount()
+  })
+
+  it('versão das lojas no celular: sem botão de planos (regra D4)', async () => {
+    vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => true }))
+    const wrapper = await mountScreen({ storeBuild: '1' })
+    expect(wrapper.find('#activation-plans').exists()).toBe(false)
+    wrapper.unmount()
+  })
+})

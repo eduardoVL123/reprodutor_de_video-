@@ -3,6 +3,9 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 import { useSiteInbox } from '@/composables/useSiteInbox'
 import { useLicenseStore } from '@/stores/licenseStore'
 import { pushFocusScope } from '@/utils/spatialNavigation'
+import { sendListPageUrl } from '@/services/licenseApi'
+import { openExternal } from '@/services/platform'
+import { isPhone } from '@/utils/compat'
 
 /**
  * Enviar a lista pelo site (RFC-021), lado da TV: dica com o endereço do site e o código do aparelho e, quando
@@ -16,6 +19,7 @@ const { received, connecting } = inbox
 const rootEl = ref(null)
 const siteHost = String(import.meta.env.VITE_LICENSE_BASE_URL || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '')
 const showHint = computed(() => !!(siteHost && license.code))
+const onPhone = isPhone()
 let popScope = null
 
 watch(received, async (value) => {
@@ -48,8 +52,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <p v-if="showHint" id="site-hint" class="text-tv-xs text-neutral-400">
-    Ou envie a lista pelo site <span class="text-white font-semibold">{{ siteHost }}</span> com o código
+  <button
+    v-if="showHint && onPhone"
+    id="site-open"
+    type="button"
+    class="tv-btn w-full"
+    @click="openExternal(sendListPageUrl(license.code))"
+  >
+    Enviar a lista pelo site
+  </button>
+  <p v-if="showHint" id="site-hint" class="text-tv-xs text-neutral-400" :class="onPhone ? 'mt-2 text-center' : ''">
+    {{ onPhone ? 'Abre' : 'Ou envie a lista pelo site' }} <span class="text-white font-semibold">{{ siteHost }}</span> com o código
     <span class="font-mono tracking-widest text-tv-accent">{{ license.code }}</span>
   </p>
 
@@ -63,7 +76,7 @@ onBeforeUnmount(() => {
     data-focus-group="site-inbox"
     class="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 select-none"
   >
-    <div class="w-[52rem] max-w-full rounded-2xl border border-white/10 bg-tv-surface px-12 py-10 shadow-2xl">
+    <div class="w-[52rem] max-w-full rounded-2xl border border-white/10 bg-tv-surface px-12 py-10 shadow-2xl phone-portrait:mx-3 phone-portrait:px-5 phone-portrait:py-6">
       <p class="text-tv-xs uppercase tracking-[0.25em] text-tv-accent font-bold">Chegou uma lista pelo site</p>
       <h2 id="site-inbox-title" class="mt-2 text-tv-xl font-bold text-white">
         {{ connecting ? 'Conectando…' : 'Adicionar esta lista?' }}

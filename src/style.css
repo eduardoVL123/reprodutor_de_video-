@@ -183,6 +183,19 @@ video::-webkit-media-controls-start-playback-button {
   }
 }
 
+/* Celular/tablet em pé (RFC-023): os tamanhos de TV (pensados para 3 m de distância) ficavam enormes com o rem do
+   celular em pé (1rem ≈ 15,6px). :where() deixa a especificidade igual à da classe, então um `phone-portrait:text-[...]`
+   escrito na tela continua valendo; a TV e o celular deitado não pegam nada disto. */
+@media (orientation: portrait) {
+  :where(html.is-phone) .text-tv-xs { font-size: 0.8rem; line-height: 1.15rem; }
+  :where(html.is-phone) .text-tv-sm { font-size: 0.9rem; line-height: 1.3rem; }
+  :where(html.is-phone) .text-tv-base { font-size: 1rem; line-height: 1.45rem; }
+  :where(html.is-phone) .text-tv-lg { font-size: 1.15rem; line-height: 1.55rem; }
+  :where(html.is-phone) .text-tv-xl { font-size: 1.5rem; line-height: 1.9rem; }
+  :where(html.is-phone) .text-tv-2xl { font-size: 1.9rem; line-height: 2.3rem; }
+  :where(html.is-phone) .text-tv-row { font-size: 1.1rem; line-height: 1.5rem; }
+}
+
 /* Celular/tablet em pé (RFC-023): navega-se pelo toque, então o anel e o zoom do foco da TV não aparecem (eles ficavam
    presos no último botão tocado ou no "Assistir" focado ao abrir). Deitado continua como já foi aprovado. */
 @media (orientation: portrait) {
