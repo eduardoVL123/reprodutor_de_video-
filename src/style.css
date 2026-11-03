@@ -182,3 +182,15 @@ video::-webkit-media-controls-start-playback-button {
     --tw-scale-y: 1.08;
   }
 }
+
+/* Celular/tablet em pé (RFC-023): navega-se pelo toque, então o anel e o zoom do foco da TV não aparecem (eles ficavam
+   presos no último botão tocado ou no "Assistir" focado ao abrir). Deitado continua como já foi aprovado. */
+@media (orientation: portrait) {
+  html.is-phone .tv-focusable:focus,
+  html.is-phone .tv-focusable.is-focused {
+    --tw-ring-shadow: 0 0 #0000;
+    --tw-ring-offset-shadow: 0 0 #0000;
+    --tw-scale-x: 1;
+    --tw-scale-y: 1;
+  }
+}

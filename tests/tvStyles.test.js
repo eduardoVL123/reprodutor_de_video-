@@ -48,7 +48,8 @@ describe('estilos de TV', () => {
 
   it('nenhum texto abaixo do mínimo de TV (classes text-[0.xrem] fixas)', () => {
     const files = ['src/views/Dashboard.vue', 'src/components/GridItem.vue', 'src/components/ListManagerModal.vue', 'src/components/MediaDetailsModal.vue', 'src/components/SearchScreen.vue']
-    const tiny = files.filter((f) => /text-\[0\.\d+rem\]/.test(readFileSync(f, 'utf8')))
+    // `phone-portrait:text-[0.85rem]` vale só no celular em pé (RFC-023), nunca na TV: a guarda olha as classes sem variante.
+    const tiny = files.filter((f) => /(^|[\s"'])text-\[0\.\d+rem\]/m.test(readFileSync(f, 'utf8')))
 
     expect(tiny).toEqual([])
   })

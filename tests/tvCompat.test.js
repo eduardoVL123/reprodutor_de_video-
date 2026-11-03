@@ -134,6 +134,13 @@ describe('celular em pé (RFC-023)', () => {
     expect(css).toContain('html{font-size:calc(100vw/120);}')
   })
 
+  it('em pé, sem anel nem zoom de foco no toque; a TV continua com o foco de sempre', () => {
+    const css = compact(readFileSync('src/style.css', 'utf8'))
+
+    expect(css).toContain('@media(orientation:portrait){html.is-phone.tv-focusable:focus,html.is-phone.tv-focusable.is-focused{--tw-ring-shadow:00#0000;')
+    expect(css).toContain('.tv-focusable:focus,.tv-focusable.is-focused{@applyoutline-nonering-2ring-white')
+  })
+
   function mockOrientation(portrait) {
     const listeners = []
     const query = {
