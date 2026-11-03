@@ -44,8 +44,9 @@ Novo `src/composables/useFormFactor.js`, a única fonte da verdade, reativo via 
 | `handheld-landscape` | celular ou tablet com toque, deitado (layout de hoje) |
 | `handheld-portrait` | celular ou tablet com toque, em pé (**novo**) |
 
-- `compat.js` passa a marcar `html.is-handheld`, que inclui celular **e** tablet (toque + Android). O `is-phone`
-  continua igual, para não mexer no que já está aprovado deitado.
+- `isPhone()` em `compat.js` passa a incluir o tablet (toque + Android, sem exigir "Mobile" no User-Agent), então
+  `html.is-phone` e a variante `phone:` valem para os dois. É o que a decisão "tablet deitado = celular deitado" pede,
+  sem uma segunda classe. (Onde este texto diz `is-handheld`, leia `is-phone`.)
 - Regra fixa do projeto mantida: **nunca decidir por largura**, porque TVs Android de 960 px pegariam a regra.
   Retrato só com `is-handheld`.
 
@@ -59,8 +60,9 @@ Novo `src/composables/useFormFactor.js`, a única fonte da verdade, reativo via 
   html.is-handheld { font-size: calc(100vw / 45); }   /* tablet 800 px → ≈ 17,8 px */
 }
 ```
-- `tailwind.config.js` ganha a variante `portrait:`, que é `@media (orientation: portrait) { html.is-handheld & }`.
-- As telas usam `portrait:` para ajustes pequenos (espaçamentos, colunas). A troca de estrutura (menu lateral → barra
+- `tailwind.config.js` ganha a variante `phone-portrait:`, que é `@media (orientation: portrait) { html.is-phone & }`
+  (o `portrait:` nativo do Tailwind pegaria qualquer tela em pé).
+- As telas usam `phone-portrait:` para ajustes pequenos (espaçamentos, colunas). A troca de estrutura (menu lateral → barra
   inferior) é feita por `v-if` com `useFormFactor`.
 
 ### 3. Estrutura em pé

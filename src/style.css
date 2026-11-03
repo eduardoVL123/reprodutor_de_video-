@@ -13,6 +13,18 @@ html {
 html.is-phone {
   font-size: calc(100vw / 80);
 }
+/* Em pé (RFC-023): pela largura de 1/80 o rem daria ~5px num celular de 390px. 1/25 dá ~15,6px; no tablet em pé
+   (600px ou mais de largura) 1/45 dá ~17,8px em 800px. */
+@media (orientation: portrait) {
+  html.is-phone {
+    font-size: calc(100vw / 25);
+  }
+}
+@media (orientation: portrait) and (min-width: 600px) {
+  html.is-phone {
+    font-size: calc(100vw / 45);
+  }
+}
 html.is-phone button {
   min-width: 44px;
   min-height: 44px;

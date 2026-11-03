@@ -156,7 +156,15 @@
       $('support-link').hidden = false
     }
     for (const id of ['code', 'sub-code']) if ($(id)) keepCodeClean($(id))
-    if ($('send-form')) $('send-form').addEventListener('submit', sendList)
+    if ($('send-form')) {
+      $('send-form').addEventListener('submit', sendList)
+      // O app no celular abre o site com o código do aparelho (RFC-023): já preenchido, falta só a lista.
+      const fromApp = normalizeCode(new URLSearchParams(location.search).get('codigo'))
+      if (fromApp) {
+        $('code').value = fromApp
+        if ($('link')) $('link').focus()
+      }
+    }
     if ($('sub-form') && config) {
       $('device-price').textContent = brl(config.devicePriceCents)
       $('sub-code').value = normalizeCode(new URLSearchParams(location.search).get('codigo'))

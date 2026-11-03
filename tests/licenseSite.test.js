@@ -166,6 +166,12 @@ describe('site.js no navegador', () => {
     expect(code.value).toBe('ABCD2')
   })
 
+  it('Enviar lista: código vindo do celular (?codigo=) já preenchido e o foco vai para o link (RFC-023)', async () => {
+    await open('index.html', async () => jsonReply(CONFIG), '?codigo=abcd2345')
+    await vi.waitFor(() => expect(document.getElementById('code').value).toBe('ABCD2345'))
+    expect(document.activeElement.id).toBe('link')
+  })
+
   it('Enviar lista: TV que nunca abriu o app recebe a instrução do servidor', async () => {
     await open('index.html', async (url) =>
       String(url).endsWith('/v1/site-config') ? jsonReply(CONFIG) : jsonReply({ error: 'Código não encontrado. Abra o Pulse Player na TV uma vez (com internet) e tente de novo.' }, 404),
