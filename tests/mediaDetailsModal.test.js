@@ -137,3 +137,26 @@ describe('MediaDetailsModal — visual 2.0 e episódios em fileira', () => {
     expect(player.hasNext).toBe(true)
   })
 })
+
+describe('MediaDetailsModal — celular em pé (RFC-023)', () => {
+  afterEach(() => vi.doUnmock('@/composables/useFormFactor'))
+
+  it('episódios em lista de uma coluna; tocar num episódio toca aquele episódio da temporada', async () => {
+    const { computed } = await import('vue')
+    vi.doMock('@/composables/useFormFactor', () => ({ useFormFactor: () => ({ isPhonePortrait: computed(() => true) }) }))
+    wrapper = await setup({ item: SERIES, section: 'series' })
+    await flushPromises()
+    const { usePlayerStore } = await import('@/stores/playerStore')
+    const play = vi.spyOn(usePlayerStore(), 'playPlaylist').mockImplementation(() => {})
+
+    expect(wrapper.find('#episode-card-0').exists()).toBe(false)
+    expect(wrapper.findAll('[id^="episode-row-"]').map((b) => b.text())).toEqual([
+      expect.stringContaining('1. O Começo'),
+      expect.stringContaining('2. O Barco'),
+    ])
+    await wrapper.find('#episode-row-1').trigger('click')
+    expect(play).toHaveBeenCalledTimes(1)
+    const { items, startIndex } = play.mock.calls[0][0]
+    expect(String(items[startIndex].stream_id)).toBe('1002')
+  })
+})
