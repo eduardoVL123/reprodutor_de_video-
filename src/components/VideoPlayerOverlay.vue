@@ -6,7 +6,8 @@ import { buildStreamUrl } from '@/services/streamUrl'
 import { formatTime } from '@/utils/formatTime'
 import { useVideoEngine, PLAYBACK_ERROR } from '@/composables/useVideoEngine'
 import { registerBackHandler, registerKeyHandler, focusFirstIn, pushFocusScope } from '@/utils/spatialNavigation'
-import { onAppBackground, onPictureInPictureChange, setPictureInPictureEnabled } from '@/services/platform'
+import { onAppBackground, onPictureInPictureChange, setPictureInPictureEnabled, setPlayerOrientation } from '@/services/platform'
+import { isPhone } from '@/utils/compat'
 import {
   castMediaFor,
   isCastAvailable,
@@ -269,6 +270,18 @@ watch(
 watch(canPictureInPicture, (enabled) => {
   setPictureInPictureEnabled(enabled)
 })
+
+// Celular/tablet em pé (RFC-023): o vídeo sempre deitado; ao fechar o player, a tela volta a girar. TV: nada muda.
+if (isPhone()) {
+  watch(
+    () => player.isOpen,
+    (open, wasOpen) => {
+      if (open) setPlayerOrientation(true)
+      else if (wasOpen) setPlayerOrientation(false)
+    },
+    { immediate: true },
+  )
+}
 
 watch(
   () => player.isOpen,
@@ -820,6 +833,7 @@ onBeforeUnmount(() => {
   if (cleanupBackground) cleanupBackground()
   if (cleanupPip) cleanupPip()
   setPictureInPictureEnabled(false)
+  if (player.isOpen && isPhone()) setPlayerOrientation(false)
   if (osdTimer) clearTimeout(osdTimer)
   if (popPlayerScope) popPlayerScope()
   if (popDrawerScope) popDrawerScope()

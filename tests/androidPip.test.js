@@ -40,3 +40,23 @@ describe('Android — pop-up (Picture-in-Picture) em celular e tablet', () => {
     expect(activity).toContain('public void onPictureInPictureModeChanged(')
   })
 })
+
+describe('Android — orientação (RFC-023: celular e tablet em pé, TV sempre deitada)', () => {
+  const orientation = read(`${JAVA_DIR}/OrientationPlugin.java`)
+
+  it('o manifesto deixa girar; a Activity trava deitado só na TV', () => {
+    expect(manifest).toContain('android:screenOrientation="fullUser"')
+    expect(manifest).not.toContain('android:screenOrientation="landscape"')
+    expect(activity).toContain('registerPlugin(OrientationPlugin.class)')
+    expect(activity).toMatch(/if \(OrientationPlugin\.isTv\(this\)\) \{\s+setRequestedOrientation\(ActivityInfo\.SCREEN_ORIENTATION_LANDSCAPE\)/)
+  })
+
+  it('o plugin do player trava deitado e solta, e não mexe na TV', () => {
+    expect(orientation).toContain('@CapacitorPlugin(name = "Orientation")')
+    expect(orientation).toMatch(/@PluginMethod\s+public void lockLandscape\(PluginCall call\)/)
+    expect(orientation).toMatch(/@PluginMethod\s+public void unlock\(PluginCall call\)/)
+    expect(orientation).toContain('SCREEN_ORIENTATION_SENSOR_LANDSCAPE')
+    expect(orientation).toContain('SCREEN_ORIENTATION_FULL_USER')
+    expect(orientation).toContain('FEATURE_LEANBACK')
+  })
+})

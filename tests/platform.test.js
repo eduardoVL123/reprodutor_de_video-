@@ -10,6 +10,8 @@ afterEach(() => {
 function mockCapacitorCore() {
   const plugin = {
     setEnabled: vi.fn(async () => {}),
+    lockLandscape: vi.fn(async () => {}),
+    unlock: vi.fn(async () => {}),
     addListener: vi.fn(async (_event, cb) => {
       plugin.emit = cb
       return { remove: plugin.remove }
@@ -127,6 +129,34 @@ describe('platform.onAppBackground (pausar o vídeo quando o app sai da tela)', 
     setHidden(false)
 
     expect(cb).not.toHaveBeenCalled()
+  })
+})
+
+describe('platform.setPlayerOrientation (RFC-023: vídeo sempre deitado no celular)', () => {
+  it('no APK trava deitado ao abrir e solta ao fechar', async () => {
+    const plugin = mockCapacitorCore()
+    window.Capacitor = { isNativePlatform: () => true }
+    const { setPlayerOrientation } = await import('@/services/platform')
+
+    await setPlayerOrientation(true)
+    await setPlayerOrientation(false)
+
+    expect(plugin.lockLandscape).toHaveBeenCalledTimes(1)
+    expect(plugin.unlock).toHaveBeenCalledTimes(1)
+  })
+
+  it('no navegador tenta screen.orientation e ignora a recusa (fora da tela cheia); nunca rejeita', async () => {
+    const plugin = mockCapacitorCore()
+    const lock = vi.fn(async () => {
+      throw new DOMException('not fullscreen', 'NotSupportedError')
+    })
+    vi.stubGlobal('screen', { orientation: { lock, unlock: vi.fn() } })
+    const { setPlayerOrientation } = await import('@/services/platform')
+
+    await expect(setPlayerOrientation(true)).resolves.toBeUndefined()
+    expect(lock).toHaveBeenCalledWith('landscape')
+    expect(plugin.lockLandscape).not.toHaveBeenCalled()
+    vi.unstubAllGlobals()
   })
 })
 
