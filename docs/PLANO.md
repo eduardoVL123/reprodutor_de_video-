@@ -16,14 +16,14 @@ sem nenhuma rota de dados aberta.
 
 ## 2. Google Play (bloqueia o envio)
 - [ ] Decidir o pagamento: sem venda dentro do app (como está) ou faturamento da Google.
-- [ ] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub (sem isso o CI não gera o AAB).
+- [x] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub; AAB 2.1 assinado gerado em 2026-11-04 (`C:devndroidpulse-player-2.1-play.aab`).
 - [x] Variáveis do CI: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_PUBLIC_KEY`, `PULSE_LICENSE_BASE_URL`.
 - [x] `PRIVACY.md` preenchido e publicado em `/privacidade` (2026-11-04).
 - [ ] Lista de demonstração com capas (pôsteres Blender, CC BY) e capturas finais (incluir controle parental e o
       player tocando no aparelho real).
 - [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
 - [ ] Formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores por 14 dias.
-- [ ] Subir `versionCode` em `android/app/build.gradle` a cada envio.
+- [x] `versionCode` 4 / 2.1 (subir de novo a cada envio).
 - [ ] Revisar e juntar o PR #1 (`fix/auditoria` → `main`).
 
 ## 3. Mercado Pago e serviços no ar
