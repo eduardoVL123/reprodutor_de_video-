@@ -11,16 +11,20 @@ import { isPhone } from '@/utils/compat'
  * Enviar a lista pelo site (RFC-021), lado da TV: dica com o endereço do site e o código do aparelho e, quando
  * chega uma lista, "Adicionar esta lista?" por cima da tela (a TV sempre confirma antes, G20).
  * `done`: entrou na lista recebida.
+ * `dialog`: procura listas e mostra a pergunta (o Dashboard tem uma só, em qualquer tela); `hint`: dica com o código.
  */
+const props = defineProps({ dialog: { type: Boolean, default: true }, hint: { type: Boolean, default: true } })
 const emit = defineEmits(['done'])
-const inbox = useSiteInbox()
+// Sem `dialog` não procura: quem procura é a instância do Dashboard (senão a pergunta aparecia duas vezes).
+const inbox = props.dialog ? useSiteInbox() : null
 const license = useLicenseStore()
-const { received, connecting } = inbox
+const received = inbox ? inbox.received : ref(null)
+const connecting = inbox ? inbox.connecting : ref(false)
 const rootEl = ref(null)
 const siteBase = String(import.meta.env.VITE_LICENSE_BASE_URL || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '')
 // RFC-025: a raiz do site é a landing com preços; a dica leva direto à página de enviar lista.
 const siteHost = siteBase ? `${siteBase}/enviar` : ''
-const showHint = computed(() => !!(siteHost && license.code))
+const showHint = computed(() => !!(props.hint && siteHost && license.code))
 const onPhone = isPhone()
 // Sem internet ou serviço fora do ar ao abrir a tela: tenta de novo, senão o código nunca aparece nesta tela.
 const ANNOUNCE_RETRY_MS = [5000, 15000, 30000, 60000]
@@ -31,7 +35,7 @@ let alive = true
 async function announceUntilCode(attempt = 0) {
   await license.announce() // TV sem lista: registra e publica a chave para o site poder enviar
   if (!alive) return
-  if (license.code) return inbox.check()
+  if (license.code) return inbox?.check()
   if (attempt < ANNOUNCE_RETRY_MS.length) retryTimer = setTimeout(() => announceUntilCode(attempt + 1), ANNOUNCE_RETRY_MS[attempt])
 }
 

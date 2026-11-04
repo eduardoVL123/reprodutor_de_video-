@@ -479,7 +479,7 @@ defineExpose({ open, close })
 
       <!-- RFC-021: lista enviada pelo site chega aqui também (a TV confirma antes) -->
       <div class="px-10 pb-6 phone:px-0 phone:pb-0">
-        <SiteInboxPrompt @done="onPairDone" />
+        <SiteInboxPrompt :dialog="false" />
       </div>
     </div>
   </div>

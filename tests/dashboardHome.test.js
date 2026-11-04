@@ -74,11 +74,12 @@ describe('Dashboard — controle parental nos atalhos (auditoria RFC-025, item 9
     catalog.categories = { ...catalog.categories, vod: [{ category_id: '1', category_name: 'Ação' }, { category_id: '9', category_name: 'Adultos +18' }] }
     const ok = { stream_id: 10, name: 'Filme Livre', section: 'vod', category_id: '1' }
     const locked = { stream_id: 20, name: 'Filme Bloqueado', section: 'vod', category_id: '9' }
+    await player.hydrate() // o histórico salvo carrega sozinho e apagaria o que o teste coloca
+    await flushPromises()
     player.watchHistory = [locked, ok]
     player.customQueue = [locked, ok]
-    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.html()).toContain('Filme Livre'))
     const html = wrapper.html()
-    expect(html).toContain('Filme Livre')
     expect(html).not.toContain('Filme Bloqueado')
     const play = vi.spyOn(player, 'playFromCustomQueue').mockResolvedValue(true)
     wrapper.vm.$.setupState.openFavorite(ok)

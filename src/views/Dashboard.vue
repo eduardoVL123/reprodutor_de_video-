@@ -14,6 +14,7 @@ import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
 import ListManagerModal from '@/components/ListManagerModal.vue'
+import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
 import ProfileGate from '@/components/ProfileGate.vue'
 import SearchScreen from '@/components/SearchScreen.vue'
@@ -446,6 +447,7 @@ function openListModal() {
 }
 
 function onListChanged() {
+  listModal.value?.close() // lista aceita pela pergunta global com o Gerenciador aberto
   activeTab.value = 'home'
   return showcaseAfterListChange()
 }
@@ -1067,6 +1069,8 @@ onBeforeUnmount(() => {
       @manage-lists="openListModal"
     />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
+    <!-- RFC-021/025: lista enviada pelo site (ou pela automação do sócio) aparece em qualquer tela, não só no Gerenciador -->
+    <SiteInboxPrompt :hint="false" @done="onListChanged" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->
     <MediaDetailsModal
