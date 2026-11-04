@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+  networkKey,
   createPairCore,
   generateCode,
   timingSafeEqualStr,
@@ -301,5 +302,15 @@ describe('pair-core: ciclo de vida de sessões e endpoints da API', () => {
     const reqLiberado = makeRequest('http://localhost/v1/sessions', { method: 'POST', body: { pub: PUB } })
     const resLiberado = await parseResponse(await core.handleApi(reqLiberado, '192.168.1.10'))
     expect(resLiberado.status).toBe(201)
+  })
+})
+
+describe('networkKey (limites por rede)', () => {
+  it('IPv4 inteiro; IPv6 pelo /64; IPv4 mapeado vira IPv4', () => {
+    expect(networkKey('10.1.2.3')).toBe('10.1.2.3')
+    expect(networkKey('2001:db8:aa:bb::1')).toBe('2001:db8:aa:bb::/64')
+    expect(networkKey('2001:0db8:00aa:00bb:1:2:3:4')).toBe('2001:db8:aa:bb::/64')
+    expect(networkKey('2001:db8::1')).toBe('2001:db8:0:0::/64')
+    expect(networkKey('::ffff:192.168.0.9')).toBe('192.168.0.9')
   })
 })

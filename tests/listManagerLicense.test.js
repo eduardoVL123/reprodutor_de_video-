@@ -28,6 +28,9 @@ describe('Gerenciador de Listas — código do aparelho', () => {
   it('mostra o código quando o serviço de licença já respondeu', async () => {
     await setup('QDU5NXY7')
     expect(wrapper.find('#device-code').text()).toContain('QDU5NXY7')
+    // No topo, antes das listas e do formulário: no fim da tela ninguém achava no celular.
+    const html = wrapper.html()
+    expect(html.indexOf('id="device-code"')).toBeLessThan(html.indexOf('Listas Salvas'))
   })
 
   it('sem código (licença desligada ou ainda sem resposta) não mostra nada', async () => {

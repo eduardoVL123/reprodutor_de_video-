@@ -3,7 +3,7 @@
  * Todo acesso é filtrado pelo revendedor dono da chave (G12). Documentação: server/license/API.md.
  */
 import { readJsonBody } from '../pair/pair-core.mjs'
-import { findDeviceByCode, activationEndsAt } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit, lockedFor } from './license-db.mjs'
 import {
   findResellerByKey,
   publicReseller,
@@ -18,6 +18,10 @@ import {
 const MAX_BODY = 4096
 const PAGE = 50
 const CODE = /^[A-Z0-9]{4,16}$/
+
+// Chave errada demais desta rede trava por 15 min (RFC-025 §4): adivinhar é inviável, mas cada tentativa lê o D1.
+export const API_FAIL_LIMIT = 30
+export const API_FAIL_WINDOW_MS = 15 * 60 * 1000
 
 const before = (url) => Number(url.searchParams.get('before')) || null
 
@@ -90,10 +94,16 @@ export function createApiRoutes({ db, now, json, limiter, checkout, limitPerMinu
     ],
   ]
 
-  return async function handleApi(request, url) {
+  return async function handleApi(request, url, ip = '') {
+    const failKey = { bucket: 'apiFail', key: ip, limit: API_FAIL_LIMIT, windowMs: API_FAIL_WINDOW_MS }
+    const locked = await lockedFor(db, { ...failKey, now: now() })
+    if (locked) return json(429, { error: 'Muitas tentativas com chave inválida. Aguarde.' }, { 'Retry-After': String(locked) })
     const auth = request.headers.get('Authorization') || ''
     const reseller = auth.startsWith('Bearer ') ? await findResellerByKey(db, auth.slice(7).trim()) : null
-    if (!reseller) return json(401, { error: 'Chave inválida.' })
+    if (!reseller) {
+      await hitLimit(db, { ...failKey, now: now() })
+      return json(401, { error: 'Chave inválida.' })
+    }
     if (!reseller.active) return json(403, { error: 'Revenda bloqueada. Fale com quem forneceu a sua chave.' })
     const wait = limiter.retryAfter('api', `r${reseller.id}`, limitPerMinute)
     if (wait) return json(429, { error: 'Muitas chamadas. Aguarde um pouco.' }, { 'Retry-After': String(wait) })

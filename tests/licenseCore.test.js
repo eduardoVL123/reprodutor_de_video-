@@ -1,7 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
+import { licenseSignedText } from '../server/license/license-rules.mjs'
 import { generateCode, CODE_ALPHABET } from '../server/pair/pair-core.mjs'
 
 const brt = (y, m, d, h = 12, min = 0) => Date.UTC(y, m - 1, d, h + 3, min)
@@ -186,8 +187,15 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     clock = brt(2026, 4, 5)
     await post('/v1/entry', { deviceKey: old, host: 'velho.com' })
     await db.prepare('INSERT INTO activations (device_key, starts_at, ends_at, source) VALUES (?, ?, ?, ?)').bind(old, clock, clock + 1000, 'manual').run()
+    const order = (id, at) =>
+      db
+        .prepare("INSERT INTO orders (id, kind, method, buyer_name, quantity, amount_cents, status, view_secret_hash, created_at, expires_at) VALUES (?, 'credits', 'pix', 'Zé', 10, 10000, 'delivered', 'h', ?, ?)")
+        .bind(id, at, at)
+        .run()
+    await order('velho', clock)
 
     clock += RETENTION_MS + 24 * 3600e3
+    await order('novo', clock)
     const fresh = 'n'.repeat(64)
     await post('/v1/hello', { deviceKey: fresh, platform: 'web' })
     await purgeExpired(db, clock)
@@ -196,6 +204,7 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     expect(await count('partner_cycle_entries')).toBe(0)
     expect(await count('activations')).toBe(0)
     expect((await db.prepare('SELECT device_key FROM devices').all()).results.map((r) => r.device_key)).toEqual([fresh])
+    expect((await db.prepare('SELECT id FROM orders').all()).results.map((r) => r.id)).toEqual(['novo']) // pedidos também
   })
 })
 
@@ -220,5 +229,63 @@ describe('licença — aparelhos novos por IP (fraude contra parceiro)', () => {
   it('o núcleo expõe a limpeza dos contadores para o servidor chamar de tempos em tempos', () => {
     expect(typeof handle.sweep).toBe('function')
     expect(() => handle.sweep()).not.toThrow()
+  })
+})
+
+describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
+  it('chave gravada pelo PowerShell (BOM no início e quebra de linha no fim) ainda assina, sem 500', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const priv = '﻿' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)) + '\r\n'
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 4), signingKey: priv })
+    const res = await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey: 'b'.repeat(32), platform: 'android', host: '' }) }), '10.0.0.2')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.code).toMatch(/^[A-Z0-9]{8}$/)
+    expect(body.sig).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
+  it('chave estragada (vazia, só BOM, ou JSON que não é chave) não derruba o /v1/access: responde sem assinatura', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const [n, bad] of ['﻿', '﻿\r\n', 'não é json', '{"kty":"EC"}'].entries()) {
+      const db = openSqlite(':memory:')
+      await migrate(db)
+      const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 4), signingKey: bad })
+      const res = await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey: `c${n}`.repeat(16), platform: 'android', host: '' }) }), '10.0.0.3')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.code).toMatch(/^[A-Z0-9]{8}$/)
+      expect(body.sig).toBeUndefined()
+    }
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/LICENSE_SIGNING_KEY/)
+    warn.mockRestore()
+  })
+
+  it('chave gravada em UTF-16 pelo PowerShell (FF FE + byte nulo em cada letra) também funciona', async () => {
+    const { cleanJwk } = await import('../server/license/license-sign.mjs')
+    const json = JSON.stringify({ kty: 'EC', crv: 'P-256', d: 'abc' })
+    const utf16AsUtf8 = '��' + [...json].map((c) => c + '\u0000').join('') + '\r\u0000\n\u0000'
+    expect(JSON.parse(cleanJwk(utf16AsUtf8))).toEqual({ kty: 'EC', crv: 'P-256', d: 'abc' })
+  })
+
+  it('assina o acesso para a chave do aparelho e a lista; a chave pública confere', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const priv = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey))
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 3), signingKey: priv })
+    const deviceKey = 'a'.repeat(32)
+    const res = await handle(
+      new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey, platform: 'tizen', host: 'HTTP://Lista.com:8080/x' }) }),
+      '10.0.0.1',
+    )
+    const body = await res.json()
+    expect(body.sig).toMatch(/^[A-Za-z0-9_-]+$/)
+    const sig = Uint8Array.from(atob(body.sig.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (body.sig.length % 4)) % 4)), (c) => c.charCodeAt(0))
+    const verify = (host) =>
+      crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pair.publicKey, sig, new TextEncoder().encode(licenseSignedText({ ...body, deviceKey, host })))
+    expect(await verify('lista.com')).toBe(true)
+    expect(await verify('outra.com')).toBe(false)
   })
 })

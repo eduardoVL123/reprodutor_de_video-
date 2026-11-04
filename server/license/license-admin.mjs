@@ -4,7 +4,7 @@
  */
 import { timingSafeEqualStr, readJsonBody } from '../pair/pair-core.mjs'
 import { cyclesUntil, isActive, normalizeHost, extendActivation, ACTIVE_GAP_MS, DAY_MS } from './license-rules.mjs'
-import { findDeviceByCode, activationEndsAt } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
 import { creditTotal, partnerMonthlyPrice } from './pricing.mjs'
 import {
   publicReseller,
@@ -203,7 +203,19 @@ function creditEntry(body) {
  * Devolve `handleAdmin(request, url) -> Response`, usando `json(status, body)` do núcleo.
  * `checkout`: rotas de pagamento (license-checkout.mjs), para as assinaturas no cartão (RFC-020).
  */
+export const ADMIN_FAIL_LIMIT = 10
+export const ADMIN_FAIL_WINDOW_MS = 15 * 60 * 1000
+
 export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
+  /**
+   * Apagar ou revogar não para o cartão: o Mercado Pago seguiria cobrando todo ano e a próxima parcela paga
+   * ativaria o aparelho de novo. O dono cancela a renovação antes.
+   */
+  async function refuseIfRenewing(device, action) {
+    const renewing = await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status != 'cancelled'").bind(device.code).first()
+    if (renewing) throw new AdminError(409, `Este aparelho tem renovação automática no cartão. Cancele a renovação na aba Pagamentos antes de ${action}.`)
+  }
+
   const routes = [
     ['GET', /^\/admin\/api\/subscriptions$/, async () => json(200, await checkout.listSubscriptions())],
     ['POST', /^\/admin\/api\/subscriptions\/([A-Za-z0-9_-]{1,64})\/cancel$/, async (m) => json(200, await checkout.cancelSubscription(m[1]))],
@@ -333,6 +345,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
       /^\/admin\/api\/devices\/([A-Z0-9]{4,16})\/revoke$/,
       async (m) => {
         const { device } = await deviceInfo(db, m[1])
+        await refuseIfRenewing(device, 'revogar')
         const at = now()
         await db.prepare('UPDATE activations SET revoked_at = ? WHERE device_key = ? AND revoked_at IS NULL').bind(at, device.device_key).run()
         await logEvent(db, device.device_key, 'revoke', '', at)
@@ -378,9 +391,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
       async (m) => {
         // Pedido de LGPD: some tudo do aparelho; se o app abrir de novo, ele volta como aparelho novo (com teste).
         const { device } = await deviceInfo(db, m[1])
-        // Apagar o aparelho não para o cartão: o Mercado Pago seguiria cobrando todo ano sem nada a entregar.
-        const renewing = await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status != 'cancelled'").bind(device.code).first()
-        if (renewing) throw new AdminError(409, 'Este aparelho tem renovação automática no cartão. Cancele a renovação na aba Pagamentos antes de apagar.')
+        await refuseIfRenewing(device, 'apagar')
         await db.batch(
           ['partner_cycle_entries', 'activations', 'device_events', 'devices'].map((table) =>
             db.prepare(`DELETE FROM ${table} WHERE device_key = ?`).bind(device.device_key),
@@ -391,10 +402,20 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
     ],
   ]
 
-  return async function handleAdmin(request, url) {
+  return async function handleAdmin(request, url, ip = '') {
     if (!adminToken) return json(503, { error: 'Painel desligado: defina LICENSE_ADMIN_TOKEN.' })
+    // Token errado demais desta rede: recusa até o token certo por um tempo (sem isso, dá para tentar sem parar).
+    const failKey = { bucket: 'adminFail', key: ip, limit: ADMIN_FAIL_LIMIT, windowMs: ADMIN_FAIL_WINDOW_MS }
+    const locked = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(failKey.bucket, ip).first()
+    if (locked && locked.count >= ADMIN_FAIL_LIMIT && now() - locked.window_start < ADMIN_FAIL_WINDOW_MS) {
+      const wait = Math.max(1, Math.ceil((locked.window_start + ADMIN_FAIL_WINDOW_MS - now()) / 1000))
+      return json(429, { error: 'Muitas tentativas com o token errado. Aguarde.' }, { 'Retry-After': String(wait) })
+    }
     const auth = request.headers.get('Authorization') || ''
-    if (!timingSafeEqualStr(auth, `Bearer ${adminToken}`)) return json(401, { error: 'Não autorizado.' })
+    if (!timingSafeEqualStr(auth, `Bearer ${adminToken}`)) {
+      await hitLimit(db, { ...failKey, now: now() })
+      return json(401, { error: 'Não autorizado.' })
+    }
     for (const [method, pattern, run] of routes) {
       const match = request.method === method && url.pathname.match(pattern)
       if (!match) continue

@@ -59,8 +59,49 @@ function categoriesOf(item) {
   return unique.length ? unique : ['none']
 }
 
+// ---------- Categorias fora da vista (controle parental / escondidas) ----------
+// Valem para "Todos", Início, busca e zapping: quem lê o catálogo por aqui nunca vê esses itens.
+const hiddenBySection = new Map() // seção => Set de category_id
+const visibleCache = new Map() // seção => { list: posições visíveis, blocked: Uint8Array } (null = sem filtro)
+
+/** Define as categorias que não aparecem na seção. Item em várias categorias some se qualquer uma estiver fora. */
+export function setHiddenCategories(section, ids) {
+  hiddenBySection.set(section, new Set((ids || []).map(String)))
+  visibleCache.delete(section)
+}
+
+async function visibility(section, meta) {
+  const hidden = hiddenBySection.get(section)
+  if (!hidden || !hidden.size) return null
+  if (visibleCache.has(section)) return visibleCache.get(section)
+  const index = await getIndex(section)
+  const blocked = new Uint8Array(meta.count)
+  hidden.forEach((id) => (index[id] || []).forEach((p) => (blocked[p] = 1)))
+  const list = []
+  for (let p = 0; p < meta.count; p++) if (!blocked[p]) list.push(p)
+  const result = { list, blocked }
+  visibleCache.set(section, result)
+  return result
+}
+
+/** Quantos itens "Todos" mostra com o filtro atual (null = sem filtro: vale o total do catálogo). */
+export async function visibleCount(section) {
+  const meta = await getMeta(section)
+  if (!meta) return null
+  const v = await visibility(section, meta)
+  return v ? v.list.length : null
+}
+
+/** Posições globais fora da vista (para a busca descartar); null = nada escondido. */
+export async function blockedPositions(section) {
+  const meta = await getMeta(section)
+  const v = meta ? await visibility(section, meta) : null
+  return v ? v.blocked : null
+}
+
 function resetCaches(section) {
   generation++
+  visibleCache.delete(section)
   metaCache.delete(section)
   indexCache.delete(section)
   catCache.delete(section)
@@ -124,6 +165,9 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   const chunkCount = Math.ceil(total / CHUNK_SIZE)
   const index = {}
   const searchIndex = new Array(total)
+  // Algo que só coube na memória: o resumo (meta) não vai para o disco, senão o próximo boot acha o catálogo
+  // "pronto" com buracos e nunca baixa de novo. Sem meta no disco, o próximo boot baixa a lista outra vez.
+  let incomplete = false
 
   for (let n = 0; n < chunkCount; n++) {
     const base = n * CHUNK_SIZE
@@ -155,6 +199,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     } catch (quotaErr) {
       console.warn(`[catalogDb] IndexedDB falhou ao persistir chunk ${n} (${quotaErr.message}). Mantendo em memória.`)
       memoryChunks.set(`${section}:${n}`, slice)
+      incomplete = true
     }
 
     if (onProgress) onProgress((n + 1) / chunkCount)
@@ -178,21 +223,23 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     await db.setItem(catKey(section), categories)
   } catch (_) {
     catCache.set(section, categories)
+    incomplete = true
   }
   try {
     await db.setItem(idxKey(section), index)
   } catch (_) {
     indexCache.set(section, index)
+    incomplete = true
   }
   try {
     await db.setItem(searchKey(section), searchIndex)
   } catch (err) {
     console.warn(`[catalogDb] Índice de busca de "${section}" mantido só em memória (${err && err.message}).`)
   }
-  try {
-    await db.setItem(metaKey(section), metaObj)
-  } catch (_) {
-    metaCache.set(section, metaObj)
+  if (!incomplete) {
+    try {
+      await db.setItem(metaKey(section), metaObj)
+    } catch (_) {}
   }
 
   metaCache.set(section, metaObj)
@@ -221,6 +268,10 @@ function readChunk(section, n) {
   const promise = db.getItem(chunkKey(section, n)).then((data) => {
     if (gen !== generation) chunkCache.delete(key) // catálogo trocado enquanto lia
     return data || []
+  }, (err) => {
+    // Falha passageira do IndexedDB: não guarda a falha, a próxima leitura tenta de novo.
+    if (chunkCache.get(key) === promise) chunkCache.delete(key)
+    throw err
   })
   chunkCache.set(key, promise)
   while (chunkCache.size > LRU_MAX_CHUNKS) {
@@ -239,9 +290,14 @@ export async function getItems(section, categoryId, start, count) {
 
   let positions
   if (categoryId === ALL_CATEGORIES) {
-    const end = Math.min(start + count, meta.count)
-    positions = []
-    for (let p = start; p < end; p++) positions.push(p)
+    const v = await visibility(section, meta)
+    if (v) {
+      positions = v.list.slice(start, start + count)
+    } else {
+      const end = Math.min(start + count, meta.count)
+      positions = []
+      for (let p = start; p < end; p++) positions.push(p)
+    }
   } else {
     const list = (await getIndex(section))[String(categoryId)] || []
     positions = list.slice(start, start + count)
@@ -329,6 +385,10 @@ export async function clearCatalog() {
     await db.clear()
   } catch (err) {
     console.warn('[catalogDb] Falha ao limpar catálogo:', err)
+    // Sem os resumos (meta) o catálogo antigo conta como inexistente: a próxima lista não herda os canais desta.
+    for (const section of ['live', 'vod', 'series']) {
+      await db.removeItem(metaKey(section)).catch(() => {})
+    }
   }
   generation++
   metaCache.clear()
@@ -336,4 +396,5 @@ export async function clearCatalog() {
   searchCache.clear()
   chunkCache.clear()
   memoryChunks.clear()
+  visibleCache.clear() // os ids de categoria da próxima lista são outros
 }

@@ -266,6 +266,9 @@ export function useVideoEngine() {
     // Voltou a tocar bem depois da última reconexão: zera o limite de tentativas.
     if (lastRecoveryAt >= 0 && cur - lastRecoveryAt > 30) {
       stallRecoveries = 0
+      // Também os erros fatais do hls.js: um canal aberto por horas não pode morrer na 4ª queda espaçada.
+      networkRecoveryAttempts = 0
+      mediaRecoveryAttempts = 0
       lastRecoveryAt = -1
     }
   }
@@ -596,6 +599,7 @@ export function useVideoEngine() {
         diagDetail = `HLS Network Error: ${data.details}${httpCode ? ` (HTTP ${httpCode})` : ''}`
         if (networkRecoveryAttempts < 3) {
           networkRecoveryAttempts++
+          lastRecoveryAt = resumePoint
           console.warn(`[player] Tentativa ${networkRecoveryAttempts}/3 de recuperação de rede: ${data.details}`)
           setProgressTarget(Math.max(25, loadingProgress.value - 15), 'Reconectando sinal ao vivo...')
           if (networkRetryTimer) clearTimeout(networkRetryTimer)
@@ -612,6 +616,7 @@ export function useVideoEngine() {
         diagDetail = `HLS Media Error: ${data.details}`
         if (mediaRecoveryAttempts === 0) {
           mediaRecoveryAttempts++
+          lastRecoveryAt = resumePoint
           console.warn('[player] Recuperando erro de mídia HLS (tentativa 1):', data.details)
           setProgressTarget(loadingProgress.value, 'Recuperando sinal de vídeo...')
           instance.recoverMediaError()

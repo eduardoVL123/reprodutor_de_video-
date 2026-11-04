@@ -123,6 +123,15 @@ MIGRATIONS.push(
     subscription_id TEXT NOT NULL,
     delivered_at INTEGER NOT NULL
   )`,
+  // Limites que valem entre isolates do Worker (a memória de cada um zera e não é compartilhada): novos aparelhos,
+  // checkout e senha errada no painel. `key` = rede do cliente (IPv6 por /64) ou '*' para o teto geral.
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket TEXT NOT NULL,
+    key TEXT NOT NULL,
+    window_start INTEGER NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY (bucket, key)
+  )`,
 )
 
 /** Colunas novas em tabelas existentes: ALTER TABLE não tem IF NOT EXISTS, então "já existe" é ignorado. */
@@ -173,6 +182,60 @@ export const partnerForHost = (db, host) =>
     .bind(host)
     .first()
 
+/**
+ * Conta uma tentativa no balde e diz quantos segundos esperar (0 = liberado). Atômico (um único UPSERT com RETURNING),
+ * então duas chamadas juntas nunca leem a mesma contagem. Janela fixa; a contagem para em limit + 1.
+ */
+export async function hitLimit(db, { bucket, key, limit, windowMs, now }) {
+  const row = await db
+    .prepare(
+      `INSERT INTO rate_limits (bucket, key, window_start, count) VALUES (?, ?, ?, 1)
+       ON CONFLICT (bucket, key) DO UPDATE SET
+         count = CASE WHEN ? - window_start >= ? THEN 1 WHEN count > ? THEN count ELSE count + 1 END,
+         window_start = CASE WHEN ? - window_start >= ? THEN ? ELSE window_start END
+       RETURNING window_start, count`,
+    )
+    .bind(bucket, key, now, now, windowMs, limit, now, windowMs, now)
+    .first()
+  if (row.count <= limit) return 0
+  return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
+}
+
+/**
+ * Comandos (para um db.batch) que revogam `revokeIds` do aparelho e puxam para trás as ativações empilhadas depois
+ * delas. Cada compra soma 12 meses a partir do fim vigente (extendActivation); sem refazer a fila, MAX(ends_at)
+ * continuaria contando o período estornado (auditoria RFC-025, item 1).
+ */
+export async function revokeActivationStatements(db, deviceKey, revokeIds, at) {
+  const revoke = new Set(revokeIds)
+  const rows = (
+    await db.prepare('SELECT id, starts_at, ends_at FROM activations WHERE device_key = ? AND revoked_at IS NULL ORDER BY id').bind(deviceKey).all()
+  ).results
+  const statements = []
+  let prevOld = 0
+  let prevNew = 0
+  for (const row of rows) {
+    // Quanto esta ativação somou ao fim que existia quando ela foi criada.
+    const own = Math.max(0, row.ends_at - Math.max(row.starts_at, prevOld))
+    prevOld = Math.max(prevOld, row.ends_at)
+    if (revoke.has(row.id)) {
+      statements.push(db.prepare('UPDATE activations SET revoked_at = ? WHERE id = ?').bind(at, row.id))
+      continue
+    }
+    const endsAt = Math.max(row.starts_at, prevNew) + own
+    prevNew = Math.max(prevNew, endsAt)
+    if (endsAt !== row.ends_at) statements.push(db.prepare('UPDATE activations SET ends_at = ? WHERE id = ?').bind(endsAt, row.id))
+  }
+  return statements
+}
+
+/** Segundos de espera se o bucket já chegou ao limite, sem contar mais uma (travas de "erros demais"); 0 = livre. */
+export async function lockedFor(db, { bucket, key, limit, windowMs, now }) {
+  const row = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(bucket, key).first()
+  if (!row || row.count < limit || now - row.window_start >= windowMs) return 0
+  return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
+}
+
 /** Guarda prometida na PRIVACY.md: 24 meses. */
 export const RETENTION_MS = 730 * 24 * 3600 * 1000
 
@@ -180,11 +243,21 @@ export const RETENTION_MS = 730 * 24 * 3600 * 1000
 export async function purgeExpired(db, now) {
   const cutoff = now - RETENTION_MS
   await db.prepare('DELETE FROM inbox WHERE expires_at <= ?').bind(now).run()
+  await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(now - 2 * 24 * 3600 * 1000).run()
+  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout.mjs, KEY_VISIBLE_MS).
+  await db
+    .prepare("UPDATE orders SET delivery = json_remove(delivery, '$.resellerKey', '$.keyUntil') WHERE json_extract(delivery, '$.keyUntil') < ?")
+    .bind(now)
+    .run()
+  // Pedidos seguem a mesma guarda de 24 meses (decisão do dono, 2026-11-03): somem inteiros, com nome e contato.
+  // A assinatura não depende do pedido de adesão (só o atualiza se ele existir), então renovações seguem valendo.
+  await db.prepare('DELETE FROM orders WHERE created_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM partner_cycle_entries WHERE last_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db
     .prepare(
       `DELETE FROM devices WHERE first_seen_at < ?
+       AND blocked_at IS NULL -- suspenso fica: apagado, voltaria sem bloqueio e com teste novo (auditoria RFC-025, item 4)
        AND device_key NOT IN (SELECT device_key FROM activations)
        AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)`,
     )

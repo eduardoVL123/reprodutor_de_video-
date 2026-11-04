@@ -106,6 +106,26 @@
     return body
   }
 
+  // O pedido em andamento fica na aba: recarregar a página retoma o acompanhamento (e mostra de novo a chave da
+  // revenda nova, que o servidor guarda por 1 h). sessionStorage some ao fechar a aba.
+  const ORDER_KEY = 'pulse-pay-order'
+
+  function remember(next) {
+    try {
+      if (next) sessionStorage.setItem(ORDER_KEY, JSON.stringify({ type, orderId: next.orderId, viewSecret: next.viewSecret, subscription: !!next.subscription }))
+      else sessionStorage.removeItem(ORDER_KEY)
+    } catch (_) {}
+  }
+
+  function remembered() {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(ORDER_KEY) || 'null')
+      return saved && saved.type === type && saved.orderId && saved.viewSecret ? saved : null
+    } catch (_) {
+      return null
+    }
+  }
+
   async function send(body) {
     const revenda = type === 'revenda'
     const headers = { 'Content-Type': 'application/json' }
@@ -113,6 +133,7 @@
     const res = await fetch(revenda ? '/api/v1/credits/checkout' : '/v1/checkout', { method: 'POST', headers, body: JSON.stringify(body) })
     const data = await readJson(res)
     if (!res.ok) throw new Error(data.error || 'Não foi possível iniciar o pagamento. Tente de novo.')
+    remember(data)
     return data
   }
 
@@ -132,11 +153,13 @@
       return poll(POLL_MS)
     }
     if (data.status === 'delivered') return done(data.result || {})
-    if (data.status === 'failed') {
+    if (data.status === 'failed' || data.status === 'refunded') {
+      remember(null)
       $('challenge').hidden = true
       return say('Pagamento recusado ou cancelado. Tente de novo ou use outra forma de pagamento.')
     }
     if (data.status === 'expired') {
+      remember(null)
       $('pix-result').hidden = true
       return say('O prazo deste pagamento acabou. Gere um novo.')
     }
@@ -155,8 +178,10 @@
       $('done-text').textContent = `${result.credits} créditos ${where}.`
     }
     if (result.resellerKey) {
-      $('done-key').textContent = `Chave do seu painel (copie agora, ela aparece só esta vez): ${result.resellerKey}`
+      $('done-key').textContent = `Chave do seu painel (copie agora, ela some desta tela em 1 hora): ${result.resellerKey}`
       $('done-key').hidden = false
+    } else {
+      remember(null)
     }
     $('done-panel').hidden = type === 'aparelho'
     $('pay-done').hidden = false
@@ -331,8 +356,15 @@
     })
     $('card-note').textContent =
       type === 'aparelho'
-        ? 'No cartão, a assinatura renova sozinha todo ano (R$ 25). Para cancelar a renovação, fale com a gente pelo WhatsApp.'
+        ? 'No cartão, a assinatura renova sozinha todo ano (R$ 25). Para cancelar a renovação, use Minha TV no site (com o e-mail do pagamento).'
         : 'Pagamento à vista, em 1 parcela.'
+
+    const saved = remembered()
+    if (saved) {
+      order = saved
+      say('Conferindo o pagamento anterior desta aba…', true)
+      checkStatus()
+    }
 
     $('method-pix').addEventListener('click', () => selectMethod('pix'))
     $('method-card').addEventListener('click', () => selectMethod('card'))

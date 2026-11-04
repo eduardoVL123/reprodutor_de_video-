@@ -6,6 +6,10 @@ import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
 import SideMenu from '@/components/SideMenu.vue'
+import BottomNav from '@/components/BottomNav.vue'
+import { useFormFactor } from '@/composables/useFormFactor'
+import { useParentalFilter } from '@/composables/useParentalFilter'
+import { useParentalStore } from '@/stores/parentalStore'
 import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
@@ -29,7 +33,18 @@ const auth = useAuthStore()
 const license = useLicenseStore()
 const player = usePlayerStore()
 const catalog = useCatalogStore()
+const parental = useParentalStore()
+
+// Controle parental também em "Continuar assistindo" e "Minha lista" (auditoria RFC-025, item 9): item de categoria
+// escondida ou bloqueada (sem PIN) não aparece nem toca por esses atalhos.
+const blockedBySection = computed(() =>
+  Object.fromEntries(['live', 'vod', 'series'].map((s) => [s, new Set(parental.blockedIds(s, catalog.categories[s]))])),
+)
+const allowedByParental = (it) => !blockedBySection.value[it.section]?.has(String(it.category_id))
+const visibleHistory = computed(() => player.watchHistory.filter(allowedByParental))
+const visibleQueue = computed(() => player.customQueue.filter(allowedByParental))
 const profileStore = useProfileStore()
+const { isPhonePortrait } = useFormFactor()
 useLicenseWatch(
   () => auth.session,
   () => ['live', 'vod', 'series'].some((s) => catalog.status[s].state === 'ready'),
@@ -59,7 +74,7 @@ const heroArtworkFailed = ref(false)
 
 // Destaque "Continuar assistindo": o filme ou episódio mais recente; canal só se não houver outro.
 const recentHistoryItem = computed(
-  () => player.watchHistory.find((it) => it.section !== 'live') || player.watchHistory[0] || null,
+  () => visibleHistory.value.find((it) => it.section !== 'live') || visibleHistory.value[0] || null,
 )
 
 /** "Continuar assistindo": episódio toca a série inteira a partir dele (o próximo segue sozinho). */
@@ -123,12 +138,13 @@ watch(
 )
 
 const heroBadgeLabel = computed(() => {
-  if (recentHistoryItem.value) return 'CONTINUAR ASSISTINDO'
+  // Em maiúsculas só pelo CSS (TV); no celular em pé o selo aparece como frase (mockup da RFC-023).
+  if (recentHistoryItem.value) return 'Continuar assistindo'
   const it = heroItem.value
-  if (!it) return 'DA SUA LISTA'
-  if (it.section === 'series') return 'SÉRIE DA SUA LISTA'
-  if (it.section === 'live') return 'CANAL DA SUA LISTA'
-  return 'FILME DA SUA LISTA'
+  if (!it) return 'Da sua lista'
+  if (it.section === 'series') return 'Série da sua lista'
+  if (it.section === 'live') return 'Canal da sua lista'
+  return 'Filme da sua lista'
 })
 
 const heroTitle = computed(() => {
@@ -237,7 +253,12 @@ async function loadSectionsInOrder(sections) {
 /**
  * Carrega as seções do catálogo e monta as fileiras do Início.
  */
+let showcaseRequest = 0
+
 async function loadCatalogShowcase({ reset = false } = {}) {
+  // Trocar de lista no meio da leitura: só a leitura mais nova grava as fileiras (senão aparecem itens da lista antiga).
+  const my = ++showcaseRequest
+  const stale = () => my !== showcaseRequest
   if (reset) {
     vodShowcase.value = []
     seriesShowcase.value = []
@@ -249,7 +270,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 20)
-    if (vodItems && vodItems.length > 0) {
+    if (!stale() && vodItems && vodItems.length > 0) {
       vodShowcase.value = vodItems.map((item) => ({
         stream_id: item.stream_id,
         name: item.name,
@@ -264,7 +285,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const seriesItems = await catalog.getItems('series', ALL_CATEGORIES, 0, 20)
-    if (seriesItems && seriesItems.length > 0) {
+    if (!stale() && seriesItems && seriesItems.length > 0) {
       seriesShowcase.value = seriesItems.map((item) => ({
         stream_id: item.stream_id || item.series_id,
         name: item.name,
@@ -279,7 +300,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 20)
-    if (liveItems && liveItems.length > 0) {
+    if (!stale() && liveItems && liveItems.length > 0) {
       liveShowcase.value = liveItems.map((item) => {
         return {
           stream_id: item.stream_id,
@@ -295,6 +316,9 @@ async function loadCatalogShowcase({ reset = false } = {}) {
     }
   } catch (_) {}
 }
+
+// Controle parental: categoria escondida/bloqueada some do Início assim que muda.
+useParentalFilter(() => loadCatalogShowcase())
 
 watch(
   () => [catalog.status.vod.state, catalog.status.series.state, catalog.status.live.state],
@@ -407,7 +431,7 @@ function openFavorite(item) {
     homeDetails.value = { item, index: -1, section: 'series' }
     return
   }
-  player.playFromCustomQueue(item)
+  player.playFromCustomQueue(item, allowedByParental)
 }
 
 function getRemainingText(item) {
@@ -514,8 +538,18 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="w-full h-full flex bg-tv-deep text-white overflow-hidden select-none relative">
-    <!-- Menu Lateral Recolhido (Layout B aprovado) -->
+    <!-- Celular/tablet em pé: barra de baixo (RFC-023). TV e celular deitado: menu lateral recolhido (Layout B). -->
+    <BottomNav
+      v-if="isPhonePortrait"
+      :active-tab="activeTab"
+      :profile="profileStore.activeProfile"
+      :list-label="auth.activeListLabel || auth.username || ''"
+      @navigate="activeTab = $event"
+      @manage-lists="openListModal"
+      @switch-profile="openProfileGate"
+    />
     <SideMenu
+      v-else
       :active-tab="activeTab"
       :profile="profileStore.activeProfile"
       :list-label="auth.activeListLabel || auth.username || ''"
@@ -525,7 +559,7 @@ onBeforeUnmount(() => {
     />
 
     <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
-    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 flex flex-col overflow-hidden relative">
+    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 phone-portrait:pb-[calc(4.6rem+env(safe-area-inset-bottom))] flex flex-col overflow-hidden relative">
       <!-- Aba TV ao Vivo -->
       <div v-if="activeTab === 'live'" class="w-full h-full">
         <CatalogBrowser section="live" />
@@ -557,12 +591,12 @@ onBeforeUnmount(() => {
             <h1 class="text-tv-xl font-bold text-white tracking-tight">Minha lista</h1>
             <p class="text-tv-sm text-neutral-400 mt-1">Seus títulos favoritos, em um só lugar.</p>
           </div>
-          <div v-if="player.customQueue.length > 0" class="flex items-center gap-4">
+          <div v-if="visibleQueue.length > 0" class="flex items-center gap-4">
             <button
               id="fav-play-all"
               type="button"
               class="tv-btn tv-btn-primary !px-6 !py-2.5 text-tv-sm flex items-center gap-2"
-              @click="player.playFromCustomQueue()"
+              @click="player.playFromCustomQueue(null, allowedByParental)"
             >
               <svg class="w-4 h-4 fill-black" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               <span>Reproduzir Tudo</span>
@@ -580,7 +614,7 @@ onBeforeUnmount(() => {
 
         <!-- Estado Vazio -->
         <div
-          v-if="player.customQueue.length === 0"
+          v-if="visibleQueue.length === 0"
           class="flex flex-col items-center justify-center flex-1 py-28 text-center"
         >
           <svg class="w-10 h-10 text-neutral-500 stroke-[1.5] mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -593,7 +627,7 @@ onBeforeUnmount(() => {
         <!-- Grade de Cards da Minha Lista -->
         <div v-else class="grid grid-cols-4 gap-5">
           <div
-            v-for="item in player.customQueue"
+            v-for="item in visibleQueue"
             :id="'fav-card-' + item.section + '-' + item.stream_id"
             :key="item.stream_id + ':' + (item.section || '')"
             tabindex="0"
@@ -640,7 +674,7 @@ onBeforeUnmount(() => {
         data-focus-group="home-vitrine"
       >
         <!-- Hero Banner Destaque (Full-Bleed com vinheta lateral e inferior) -->
-        <div class="relative w-full min-h-[31rem] px-16 pt-10 pb-14 flex flex-col justify-end overflow-hidden">
+        <div class="relative w-full min-h-[31rem] px-16 pt-10 pb-14 phone-portrait:min-h-[34rem] phone-portrait:px-5 phone-portrait:pt-0 phone-portrait:pb-4 flex flex-col justify-end overflow-hidden">
           <!-- Arte de fundo com vinheta cinematográfica -->
           <div class="absolute inset-0 pointer-events-none overflow-hidden">
             <img
@@ -648,7 +682,7 @@ onBeforeUnmount(() => {
               :key="heroArtwork.url"
               :src="heroArtwork.url"
               alt=""
-              class="absolute right-0 top-0 w-[68%] h-full object-cover object-center pointer-events-none"
+              class="absolute right-0 top-0 w-[68%] phone-portrait:w-full h-full object-cover object-center pointer-events-none"
               :class="heroArtwork.mode === 'backdrop' ? 'opacity-65' : 'opacity-35 scale-105'"
               @error="heroArtworkFailed = true"
             />
@@ -656,27 +690,28 @@ onBeforeUnmount(() => {
               v-else
               class="absolute inset-0 bg-[radial-gradient(ellipse_at_70%_40%,#0e7490_0%,#164e63_25%,#0b1220_52%,#0b0f0c_78%)] opacity-80"
             />
-            <!-- Vinheta 2.0 (fusão à esquerda e na base) -->
-            <div class="absolute inset-0 tv-vignette pointer-events-none" />
+            <!-- Vinheta 2.0 (fusão à esquerda e na base); em pé a imagem ocupa a largura e funde só na base -->
+            <div class="absolute inset-0 tv-vignette phone-portrait:hidden pointer-events-none" />
+            <div class="hidden phone-portrait:block absolute inset-0 bg-gradient-to-b from-tv-deep/50 via-transparent via-45% to-tv-deep pointer-events-none" />
           </div>
 
           <!-- Conteúdo do Hero -->
-          <div class="relative z-10 max-w-[44rem] space-y-3.5">
+          <div class="relative z-10 max-w-[44rem] space-y-3.5 phone-portrait:space-y-2.5">
             <!-- Selo superior com o símbolo da marca -->
             <div class="flex items-center gap-2.5">
               <BrandMark :size="1.25" class="text-tv-accent" />
-              <span class="text-tv-xs font-bold tracking-[0.22em] text-neutral-300 uppercase">
+              <span class="text-tv-xs font-bold tracking-[0.22em] text-neutral-300 uppercase phone-portrait:text-[0.85rem] phone-portrait:font-semibold phone-portrait:tracking-normal phone-portrait:normal-case phone-portrait:text-neutral-400">
                 {{ heroBadgeLabel }}
               </span>
             </div>
 
             <!-- Título Principal -->
-            <h1 class="text-tv-hero font-black uppercase text-white line-clamp-2">
+            <h1 class="text-tv-hero font-black uppercase text-white line-clamp-2 phone-portrait:text-[2.2rem] phone-portrait:leading-[1.05] phone-portrait:normal-case">
               {{ heroTitle }}
             </h1>
 
             <!-- Linha de Metadados -->
-            <div class="flex items-center gap-3 text-tv-xs text-tv-meta font-medium flex-wrap">
+            <div class="flex items-center gap-3 text-tv-xs text-tv-meta font-medium flex-wrap phone-portrait:text-[0.85rem]">
               <span v-if="heroRating" class="text-[#4ade80] font-bold">{{ heroRating }}</span>
               <span v-if="heroRating && (heroYear || heroDuration)" class="w-1 h-1 rounded-full bg-neutral-500" />
               <span v-if="heroYear">{{ heroYear }}</span>
@@ -686,19 +721,19 @@ onBeforeUnmount(() => {
             </div>
 
             <!-- Sinopse -->
-            <p class="text-tv-sm text-tv-meta leading-relaxed line-clamp-3 max-w-[34rem]">
+            <p class="text-tv-sm text-tv-meta leading-relaxed line-clamp-3 max-w-[34rem] phone-portrait:hidden">
               {{ heroSynopsis }}
             </p>
 
             <!-- Linha de Ações do Hero -->
-            <div data-focus-row="hero-actions" class="flex items-center gap-3.5 pt-2 w-max">
+            <div data-focus-row="hero-actions" class="flex items-center gap-3.5 pt-2 w-max phone-portrait:w-full phone-portrait:gap-2.5">
               <button
                 id="hero-play"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-7 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
+                class="tv-focusable h-[3.2rem] px-7 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-2.5 whitespace-nowrap phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:bg-tv-accent phone-portrait:text-tv-on-accent phone-portrait:text-[0.95rem]"
                 @click="handleHeroPlay"
               >
-                <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24">
+                <svg class="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24">
                   <polygon points="5 3 19 12 5 21 5 3" />
                 </svg>
                 <span>{{ heroPlayButtonText }}</span>
@@ -707,7 +742,7 @@ onBeforeUnmount(() => {
               <button
                 id="hero-info"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
+                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.95rem]"
                 @click="handleHeroInfo"
               >
                 <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -715,13 +750,18 @@ onBeforeUnmount(() => {
                   <line x1="12" y1="16" x2="12" y2="12" />
                   <line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
-                <span>{{ heroItem?.section === 'series' ? 'Episódios' : 'Mais informações' }}</span>
+                <span v-if="heroItem?.section === 'series'">Episódios</span>
+                <template v-else>
+                  <span class="phone-portrait:hidden">Mais informações</span>
+                  <span class="hidden phone-portrait:inline">Detalhes</span>
+                </template>
               </button>
 
               <button
                 id="hero-mylist"
                 type="button"
-                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap"
+                class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap phone-portrait:w-[3.2rem] phone-portrait:px-0 phone-portrait:justify-center phone-portrait:rounded-xl"
+                :aria-label="isHeroBookmarked ? 'Na minha lista' : 'Minha lista'"
                 @click="handleHeroBookmark"
               >
                 <svg v-if="isHeroBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -731,17 +771,17 @@ onBeforeUnmount(() => {
                   <line x1="12" y1="5" x2="12" y2="19" />
                   <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                <span>{{ isHeroBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
+                <span class="phone-portrait:hidden">{{ isHeroBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
               </button>
             </div>
           </div>
         </div>
 
         <!-- Fileiras Deslizantes (Horizontais) -->
-        <div class="pl-16 pr-24 space-y-7 -mt-4 pb-20 relative z-20">
+        <div class="pl-16 pr-24 space-y-7 -mt-4 pb-20 phone-portrait:pl-5 phone-portrait:pr-0 phone-portrait:space-y-5 phone-portrait:mt-2 phone-portrait:pb-6 relative z-20">
           <!-- Falha ao carregar a lista -->
           <section v-if="homeError" data-focus-group="home-error" class="space-y-2" role="alert">
-            <h2 class="text-tv-row font-bold text-white tracking-tight">Não foi possível carregar sua lista</h2>
+            <h2 class="text-tv-row font-bold text-white tracking-tight phone-portrait:text-[1.15rem] phone-portrait:font-extrabold">Não foi possível carregar sua lista</h2>
             <p class="text-tv-sm text-neutral-400">{{ homeError }}</p>
             <button id="home-retry" type="button" class="tv-btn tv-btn-primary mt-2" @click="retryHome">
               Tentar novamente
@@ -750,12 +790,12 @@ onBeforeUnmount(() => {
 
           <!-- 1. Continuar assistindo -->
           <section
-            v-if="player.watchHistory.length > 0"
+            v-if="visibleHistory.length > 0"
             data-focus-group="continue-watching"
             class="space-y-3"
           >
-            <div data-focus-row="header-history" class="flex items-center justify-between">
-              <h2 class="text-tv-row font-bold text-white tracking-tight">Continuar assistindo</h2>
+            <div data-focus-row="header-history" class="flex items-center justify-between phone-portrait:pr-5">
+              <h2 class="text-tv-row font-bold text-white tracking-tight phone-portrait:text-[1.15rem] phone-portrait:font-extrabold">Continuar assistindo</h2>
               <button
                 id="btn-clear-history"
                 type="button"
@@ -767,14 +807,14 @@ onBeforeUnmount(() => {
             </div>
 
             <HorizontalRail
-              :items="player.watchHistory"
+              :items="visibleHistory"
               id-prefix="history-card"
               :item-key="(it) => `${it.stream_id}:${it.section}`"
               :gap="1"
               @select="onHistoryRailSelect"
             >
               <template #item="{ item }">
-                <div class="w-[16rem] h-[9rem] rounded-xl bg-[#141418] border border-white/10 relative overflow-hidden group">
+                <div class="w-[16rem] h-[9rem] phone-portrait:w-[15rem] phone-portrait:h-[8.5rem] rounded-xl bg-[#141418] border border-white/10 relative overflow-hidden group">
                   <img
                     v-if="item.stream_icon"
                     :src="item.stream_icon"
@@ -801,7 +841,7 @@ onBeforeUnmount(() => {
                   </span>
 
                   <!-- Título sobre a imagem -->
-                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow">
+                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow phone-portrait:text-[0.8rem] phone-portrait:normal-case phone-portrait:left-2.5 phone-portrait:right-2.5">
                     {{ item.name }}
                   </span>
 
@@ -820,13 +860,13 @@ onBeforeUnmount(() => {
             data-focus-group="home-vod-row"
             class="space-y-3"
           >
-            <div data-focus-row="header-vod" class="flex items-center justify-between">
-              <h2 class="text-tv-row font-bold text-white tracking-tight">Filmes da sua lista</h2>
+            <div data-focus-row="header-vod" class="flex items-center justify-between phone-portrait:pr-5">
+              <h2 class="text-tv-row font-bold text-white tracking-tight phone-portrait:text-[1.15rem] phone-portrait:font-extrabold">Filmes da sua lista</h2>
               <button
                 id="home-see-all-vod"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'vod'"
               >
                 <span>Ver todos</span>
@@ -845,20 +885,20 @@ onBeforeUnmount(() => {
                 <!-- Card "Ver todos" -->
                 <div
                   v-if="item.isSeeAll"
-                  class="w-[10.5rem] h-[15.75rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
+                  class="w-[10.5rem] h-[15.75rem] phone-portrait:w-[7.2rem] phone-portrait:h-[10.8rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
                 >
                   <div class="w-12 h-12 rounded-full tv-glass flex items-center justify-center text-white mb-3">
                     <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
                   </div>
-                  <span class="text-tv-sm font-bold text-white leading-snug">Ver todos os filmes</span>
+                  <span class="text-tv-sm font-bold text-white leading-snug phone-portrait:text-[0.85rem]">Ver todos os filmes</span>
                 </div>
 
                 <!-- Card Pôster 2:3 -->
                 <div
                   v-else
-                  class="w-[10.5rem] h-[15.75rem] rounded-xl overflow-hidden bg-[#141418] border border-white/10 relative"
+                  class="w-[10.5rem] h-[15.75rem] phone-portrait:w-[7.2rem] phone-portrait:h-[10.8rem] rounded-xl overflow-hidden bg-[#141418] border border-white/10 relative"
                 >
                   <img
                     v-if="item.image"
@@ -870,7 +910,7 @@ onBeforeUnmount(() => {
                     @error="$event.target.style.display = 'none'"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
-                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow">
+                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow phone-portrait:text-[0.8rem] phone-portrait:normal-case phone-portrait:left-2.5 phone-portrait:right-2.5">
                     {{ item.name }}
                   </span>
                 </div>
@@ -884,13 +924,13 @@ onBeforeUnmount(() => {
             data-focus-group="home-series-row"
             class="space-y-3"
           >
-            <div data-focus-row="header-series" class="flex items-center justify-between">
-              <h2 class="text-tv-row font-bold text-white tracking-tight">Séries da sua lista</h2>
+            <div data-focus-row="header-series" class="flex items-center justify-between phone-portrait:pr-5">
+              <h2 class="text-tv-row font-bold text-white tracking-tight phone-portrait:text-[1.15rem] phone-portrait:font-extrabold">Séries da sua lista</h2>
               <button
                 id="home-see-all-series"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'series'"
               >
                 <span>Ver todos</span>
@@ -909,20 +949,20 @@ onBeforeUnmount(() => {
                 <!-- Card "Ver todos" -->
                 <div
                   v-if="item.isSeeAll"
-                  class="w-[10.5rem] h-[15.75rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
+                  class="w-[10.5rem] h-[15.75rem] phone-portrait:w-[7.2rem] phone-portrait:h-[10.8rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
                 >
                   <div class="w-12 h-12 rounded-full tv-glass flex items-center justify-center text-white mb-3">
                     <svg class="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="9 18 15 12 9 6" />
                     </svg>
                   </div>
-                  <span class="text-tv-sm font-bold text-white leading-snug">Ver todas as séries</span>
+                  <span class="text-tv-sm font-bold text-white leading-snug phone-portrait:text-[0.85rem]">Ver todas as séries</span>
                 </div>
 
                 <!-- Card Pôster 2:3 -->
                 <div
                   v-else
-                  class="w-[10.5rem] h-[15.75rem] rounded-xl overflow-hidden bg-[#141418] border border-white/10 relative"
+                  class="w-[10.5rem] h-[15.75rem] phone-portrait:w-[7.2rem] phone-portrait:h-[10.8rem] rounded-xl overflow-hidden bg-[#141418] border border-white/10 relative"
                 >
                   <img
                     v-if="item.image"
@@ -934,7 +974,7 @@ onBeforeUnmount(() => {
                     @error="$event.target.style.display = 'none'"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent pointer-events-none" />
-                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow">
+                  <span class="absolute bottom-2.5 left-3 right-3 text-tv-sm font-black uppercase tracking-tight text-white truncate drop-shadow phone-portrait:text-[0.8rem] phone-portrait:normal-case phone-portrait:left-2.5 phone-portrait:right-2.5">
                     {{ item.name }}
                   </span>
                 </div>
@@ -948,20 +988,20 @@ onBeforeUnmount(() => {
             data-focus-group="home-live-row"
             class="space-y-3"
           >
-            <div data-focus-row="header-live" class="flex items-center justify-between">
+            <div data-focus-row="header-live" class="flex items-center justify-between phone-portrait:pr-5">
               <div class="flex items-center gap-2.5">
                 <svg class="w-5 h-5 text-tv-accent shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M4.93 19.07A10 10 0 0 1 19.07 4.93" />
                   <path d="M7.76 16.24a6 6 0 0 1 8.48-8.48" />
                   <circle cx="12" cy="12" r="2" />
                 </svg>
-                <h2 class="text-tv-row font-bold text-white tracking-tight">Canais da sua lista</h2>
+                <h2 class="text-tv-row font-bold text-white tracking-tight phone-portrait:text-[1.15rem] phone-portrait:font-extrabold">Canais da sua lista</h2>
               </div>
               <button
                 id="home-see-all-live"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'live'"
               >
                 <span>Explorar canais</span>
@@ -980,7 +1020,7 @@ onBeforeUnmount(() => {
                 <!-- Card "Ver todos" -->
                 <div
                   v-if="item.isSeeAll"
-                  class="w-[16rem] h-[9rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
+                  class="w-[16rem] h-[9rem] phone-portrait:w-[15rem] phone-portrait:h-[8.5rem] rounded-xl bg-[#141418] border border-white/10 flex flex-col items-center justify-center p-4 text-center group"
                 >
                   <div class="w-10 h-10 rounded-full tv-glass flex items-center justify-center text-white mb-2">
                     <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -993,18 +1033,18 @@ onBeforeUnmount(() => {
                 <!-- Card 16:9 Canal -->
                 <div
                   v-else
-                  class="w-[16rem] h-[9rem] rounded-xl bg-[#141418] border border-white/10 p-4 flex flex-col justify-between text-left overflow-hidden relative group"
+                  class="w-[16rem] h-[9rem] phone-portrait:w-[15rem] phone-portrait:h-[8.5rem] rounded-xl bg-[#141418] border border-white/10 p-4 flex flex-col justify-between text-left overflow-hidden relative group"
                 >
                   <div class="flex items-center justify-between">
-                    <span class="text-tv-sm font-black tracking-tight uppercase truncate mr-2 text-white">{{ item.name || 'Canal' }}</span>
-                    <span class="tv-badge-live px-2 py-0.5 rounded text-tv-xs font-bold uppercase tracking-wider shrink-0">
+                    <span class="text-tv-sm font-black tracking-tight uppercase truncate mr-2 text-white phone-portrait:text-[0.9rem] phone-portrait:normal-case">{{ item.name || 'Canal' }}</span>
+                    <span class="tv-badge-live px-2 py-0.5 rounded text-tv-xs font-bold uppercase tracking-wider shrink-0 phone-portrait:text-[0.68rem] phone-portrait:px-1.5">
                       AO VIVO
                     </span>
                   </div>
 
                   <div class="min-w-0">
-                    <p class="text-tv-sm font-medium text-white truncate">{{ item.program }}</p>
-                    <p class="text-tv-xs text-neutral-400 mt-0.5 truncate">{{ item.schedule }}</p>
+                    <p class="text-tv-sm font-medium text-white truncate phone-portrait:text-[0.85rem]">{{ item.program }}</p>
+                    <p class="text-tv-xs text-neutral-400 mt-0.5 truncate phone-portrait:text-[0.78rem]">{{ item.schedule }}</p>
                   </div>
 
                   <div class="w-full h-[2px] bg-white/10 rounded-full overflow-hidden">
@@ -1019,7 +1059,13 @@ onBeforeUnmount(() => {
     </main>
 
     <!-- Gerenciador de listas -->
-    <ActivationRequired v-if="showActivation" :code="license.code" :suspended="license.access === 'suspended'" @retry="license.refresh(auth.session)" @manage-lists="openListModal" />
+    <ActivationRequired
+      v-if="showActivation"
+      :code="license.code"
+      :reason="license.blockReason(auth.session)"
+      @retry="license.refresh(auth.session)"
+      @manage-lists="openListModal"
+    />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->

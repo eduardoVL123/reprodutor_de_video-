@@ -1,9 +1,9 @@
 import { createHmac } from 'node:crypto'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
-import { migrate, activationEndsAt } from '../server/license/license-db.mjs'
+import { migrate, activationEndsAt, purgeExpired } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
-import { createMpClient, toAmount, MpError } from '../server/license/mp-client.mjs'
+import { createMpClient, toAmount, MpError, mpErrorDetail } from '../server/license/mp-client.mjs'
 import { findResellerByKey, createReseller } from '../server/license/license-resellers.mjs'
 
 /**
@@ -311,7 +311,7 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(await activationRows()).toHaveLength(1)
   })
 
-  it('créditos pelo site: cria o revendedor com o saldo e mostra a chave do painel uma única vez (G18)', async () => {
+  it('créditos pelo site: cria o revendedor com o saldo e mostra a chave do painel só por 1 hora (G18)', async () => {
     const { orderId, viewSecret } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
     pay(orderId)
     await webhook(`ORD-${orderId}`)
@@ -324,9 +324,125 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     const movement = await db.prepare('SELECT * FROM credit_movements WHERE reseller_id = ?').bind(reseller.id).first()
     expect(movement).toMatchObject({ delta: 20, kind: 'purchase', amount_cents: 18000, created_by: 'mercadopago' })
 
+    // Recarregar a tela dentro de 1 hora mostra a mesma chave (antes ela sumia na primeira consulta e se perdia).
+    clock += 30 * MIN
+    expect((await req('GET', `/v1/checkout/${orderId}?s=${viewSecret}`)).body.result.resellerKey).toBe(first.result.resellerKey)
+    clock += 31 * MIN
     const again = (await req('GET', `/v1/checkout/${orderId}?s=${viewSecret}`)).body
     expect(again.result).toEqual({ credits: 20 })
     expect(JSON.stringify(await db.prepare('SELECT delivery FROM orders WHERE id = ?').bind(orderId).first())).not.toContain('pk_')
+  })
+
+  it('chave que ninguém buscou é apagada do banco pelo expurgo diário', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    expect((await db.prepare('SELECT delivery FROM orders WHERE id = ?').bind(orderId).first()).delivery).toContain('pk_')
+    await purgeExpired(db, clock + 61 * MIN)
+    expect(JSON.parse((await db.prepare('SELECT delivery FROM orders WHERE id = ?').bind(orderId).first()).delivery)).toEqual({ credits: 20 })
+  })
+
+  it('entrega que falhou no banco depois de pago é retomada pelo webhook repetido (antes ficava "paid" para sempre)', async () => {
+    const { orderId, viewSecret } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    const batch = db.batch.bind(db)
+    db.batch = () => Promise.reject(new Error('D1 fora do ar'))
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await webhook(`ORD-${orderId}`)).status).toBe(500)
+    spy.mockRestore()
+    db.batch = batch
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('paid')
+
+    expect((await webhook(`ORD-${orderId}`, { requestId: 'reenvio' })).status).toBe(200)
+    const seen = (await req('GET', `/v1/checkout/${orderId}?s=${viewSecret}`)).body
+    expect(seen.status).toBe('delivered')
+    // O revendedor criado na 1ª tentativa é reaproveitado e a chave nova (a antiga nunca saiu) funciona.
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM resellers').first()).n).toBe(1)
+    expect(await findResellerByKey(db, seen.result.resellerKey)).toMatchObject({ credits: 20 })
+  })
+
+  it('estorno do Pix: tira os créditos que sobraram, suspende a revenda se já gastou e marca o pedido', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    await db.prepare('UPDATE resellers SET credits = 5').run() // gastou 15 em ativações
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    await webhook(`ORD-${orderId}`, { requestId: 'estorno' })
+    await webhook(`ORD-${orderId}`, { requestId: 'estorno-repetido' })
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('refunded')
+    expect(await db.prepare('SELECT credits, active FROM resellers').first()).toEqual({ credits: 0, active: 0 })
+    const refunds = (await db.prepare("SELECT delta FROM credit_movements WHERE kind = 'refund'").all()).results
+    expect(refunds).toEqual([{ delta: -5 }])
+  })
+
+  it('estorno parcial (desconto, acerto) mantém os créditos e só avisa o dono', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'processed', status_detail: 'partially_refunded' })
+    await webhook(`ORD-${orderId}`, { requestId: 'parcial' })
+    expect(spy.mock.calls.flat().join(' ')).toMatch(/estorno parcial/)
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('delivered')
+    expect(await db.prepare('SELECT credits, active FROM resellers').first()).toEqual({ credits: 20, active: 1 })
+  })
+
+  it('estorno da ativação do aparelho revoga o ano comprado', async () => {
+    const { orderId } = await deviceOrder()
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    expect(await activationEndsAt(db, KEY)).not.toBeNull()
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'processed', status_detail: 'charged_back' })
+    await webhook(`ORD-${orderId}`, { requestId: 'chargeback' })
+    spy.mockRestore()
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+  })
+
+  it('estorno de um ano com outro empilhado depois: o fim volta a contar só o ano que ficou (auditoria RFC-025, item 1)', async () => {
+    const first = await deviceOrder()
+    pay(first.orderId)
+    await webhook(`ORD-${first.orderId}`)
+    const oneYear = await activationEndsAt(db, KEY)
+    const second = await deviceOrder()
+    pay(second.orderId)
+    await webhook(`ORD-${second.orderId}`, { requestId: 'segunda' })
+    expect(await activationEndsAt(db, KEY)).toBeGreaterThan(oneYear)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(first.orderId, { status: 'processed', status_detail: 'charged_back' })
+    await webhook(`ORD-${first.orderId}`, { requestId: 'chargeback-1' })
+    spy.mockRestore()
+    // O ano que ficou mantém a duração exata que somou (366 dias se cair em ano bissexto): até 1 dia de diferença.
+    expect(Math.abs((await activationEndsAt(db, KEY)) - oneYear)).toBeLessThanOrEqual(24 * 3600 * 1000)
+  })
+
+  it('estorno de créditos já repassados: suspende a revenda e quem recebeu o repasse, com as de baixo (auditoria RFC-025, item 2)', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const parent = await db.prepare('SELECT id FROM resellers').first()
+    const at = Date.now()
+    await db.batch([
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (900, ?, 'Filha', 'h900', 20, 1, ?)").bind(parent.id, at),
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (901, 900, 'Neta', 'h901', 0, 1, ?)").bind(at),
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (902, ?, 'Outra filha', 'h902', 0, 1, ?)").bind(parent.id, at),
+      db.prepare('UPDATE resellers SET credits = 0 WHERE id = ?').bind(parent.id),
+      db.prepare("INSERT INTO credit_movements (reseller_id, delta, kind, counterpart_id, created_at) VALUES (?, -20, 'transfer_out', 900, ?)").bind(parent.id, at + 1),
+    ])
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    await webhook(`ORD-${orderId}`, { requestId: 'estorno' })
+    spy.mockRestore()
+    const active = (await db.prepare('SELECT id, active FROM resellers ORDER BY id').all()).results
+    expect(active).toEqual([
+      { id: parent.id, active: 0 },
+      { id: 900, active: 0 },
+      { id: 901, active: 0 },
+      { id: 902, active: 1 },
+    ])
   })
 
   it('webhook perdido: a consulta da tela confirma no Mercado Pago, no máximo uma vez por minuto', async () => {
@@ -600,12 +716,62 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect((await req('GET', `/v1/checkout/${sub.orderId}?s=${sub.viewSecret}`)).body.status).toBe('failed')
   })
 
+  it('assinatura criada lá mas sem registro aqui (timeout na criação): a parcela recupera e entrega', async () => {
+    mpReply = (url, init) => {
+      const reply = subscriptionReply(url, init)
+      return url.endsWith('/preapproval') && init.method === 'POST' ? { status: 504, body: {} } : reply
+    }
+    const sub = await subscribe()
+    expect(sub.httpStatus).toBe(502)
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(0)
+
+    mpReply = subscriptionReply
+    const preId = [...preapprovals.keys()][0]
+    installment('9001', preId)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await webhook('9001', { type: 'subscription_authorized_payment' })
+    spy.mockRestore()
+    expect(await activationEndsAt(db, KEY)).toBe(YEAR_2027)
+    expect((await db.prepare('SELECT mp_preapproval_id FROM subscriptions').first()).mp_preapproval_id).toBe(preId)
+  })
+
+  it('parcela estornada: revoga o ano dela uma vez e cancela a renovação', async () => {
+    const sub = await subscribe()
+    installment('7101', sub.preId)
+    await webhook('7101', { type: 'subscription_authorized_payment' })
+    expect(await activationEndsAt(db, KEY)).toBe(YEAR_2027)
+
+    installments.get('7101').payment.status = 'charged_back'
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await webhook('7101', { type: 'subscription_authorized_payment', requestId: 'cb1' })
+    await webhook('7101', { type: 'subscription_authorized_payment', requestId: 'cb2' })
+    spy.mockRestore()
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+    expect((await db.prepare('SELECT status FROM subscriptions').first()).status).toBe('cancelled')
+    expect(preapprovals.get(sub.preId).status).toBe('cancelled')
+  })
+
   it('cartão recusado na adesão: 402, pedido falho e nenhuma assinatura', async () => {
     mpReply = (url, init) => (url.endsWith('/preapproval') ? { status: 400, body: { message: 'card rejected' } } : subscriptionReply(url, init))
     const sub = await subscribe()
     expect(sub.httpStatus).toBe(402)
     expect((await db.prepare('SELECT status FROM orders').first()).status).toBe('failed')
     expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(0)
+  })
+
+  it('cancelar assinatura já cancelada no Mercado Pago: acerta aqui em vez de dar erro para sempre', async () => {
+    const sub = await subscribe()
+    preapprovals.get(sub.preId).status = 'cancelled' // o cliente cancelou direto no Mercado Pago
+    const reply = subscriptionReply
+    mpReply = (url, init = {}) => (init.method === 'PUT' ? { status: 400, body: { message: 'already cancelled' } } : reply(url, init))
+    const res = await admin('POST', `/admin/api/subscriptions/${sub.orderId}/cancel`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('cancelled')
+
+    // Ainda ativa lá e o PUT falhou: continua sendo erro (nada é marcado à toa).
+    const other = await subscribe()
+    const failed = await admin('POST', `/admin/api/subscriptions/${other.orderId}/cancel`)
+    expect(failed.status).toBe(502)
   })
 
   it('painel do dono: lista as assinaturas e cancela a renovação no Mercado Pago', async () => {
@@ -752,7 +918,7 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('apagar um aparelho (LGPD) com renovação ativa é recusado até cancelar a assinatura', async () => {
+  it('apagar ou revogar um aparelho com renovação ativa é recusado até cancelar a assinatura', async () => {
     mpReply = (url, init = {}) => {
       if (url.endsWith('/preapproval')) return { status: 201, body: { id: 'pre-1', status: 'authorized' } }
       if (init.method === 'PUT') return { status: 200, body: { id: 'pre-1', status: 'cancelled' } }
@@ -762,8 +928,13 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'card', code, email: EMAIL, card: CARD })).body
     const blocked = await admin('DELETE', `/admin/api/devices/${code}`)
     expect(blocked.status).toBe(409)
-    expect(blocked.body.error).toMatch(/renovação/)
+    expect(blocked.body.error).toMatch(/renovação.*antes de apagar/)
+    // Revogar também: a próxima parcela paga ativaria o aparelho de novo.
+    const revoke = await admin('POST', `/admin/api/devices/${code}/revoke`)
+    expect(revoke.status).toBe(409)
+    expect(revoke.body.error).toMatch(/antes de revogar/)
     await admin('POST', `/admin/api/subscriptions/${orderId}/cancel`)
+    expect((await admin('POST', `/admin/api/devices/${code}/revoke`)).status).toBe(200)
     expect((await admin('DELETE', `/admin/api/devices/${code}`)).status).toBe(200)
   })
 
@@ -774,5 +945,66 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     clock += 6 * MIN
     const done = await admin('POST', `/admin/api/orders/${orderId}/reprocess`)
     expect(done.body.status).toBe('delivered')
+  })
+})
+
+describe('revisão de segurança — limites no banco (valem entre isolates do Worker)', () => {
+  const CARD = { token: 'tok_0123456789abcdef', paymentMethodId: 'visa', cpf: '12345678909' }
+  const cardTry = (ip) =>
+    req('POST', '/v1/checkout', { kind: 'credits', method: 'card', quantity: 20, name: 'A', contact: 'B', email: EMAIL, card: CARD }, ip)
+
+  it('teste de cartões: no máximo 5 tentativas no cartão por rede por hora, contando IPv6 pelo /64', async () => {
+    for (let n = 1; n <= 5; n++) expect((await cardTry(`2001:db8:aa:bb::${n}`)).status).not.toBe(429)
+    const blocked = await cardTry('2001:db8:aa:bb:ffff::9')
+    expect(blocked.status).toBe(429)
+    expect((await cardTry('2001:db8:aa:cc::1')).status).not.toBe(429) // outro /64
+    clock += 61 * MIN
+    expect((await cardTry('2001:db8:aa:bb::1')).status).not.toBe(429)
+  })
+
+  it('teto geral do cartão: estourou, o cartão pausa para todos e o Pix continua', async () => {
+    const mp = createMpClient({ accessToken: TOKEN, fetch: fakeFetch })
+    handle = createLicenseHandler({ db, now: () => clock, adminToken: 'x', mp, mpWebhookSecret: SECRET })
+    for (let n = 1; n <= 300; n++) await db.prepare("INSERT OR REPLACE INTO rate_limits VALUES ('cardAll', '*', ?, ?)").bind(clock, n).run()
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const card = await cardTry('10.7.7.7')
+    spy.mockRestore()
+    expect(card.status).toBe(429)
+    expect(card.body.error).toMatch(/Pix/)
+    const pix = await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'A', contact: 'B', email: EMAIL }, '10.7.7.7')
+    expect(pix.status).toBe(201)
+  })
+
+  it('painel do dono: 10 tokens errados travam a rede por 15 minutos, até para o token certo', async () => {
+    const admin = (token, ip = '10.3.3.3') =>
+      handle(new Request('http://license.test/admin/api/orders', { headers: { Authorization: `Bearer ${token}` } }), ip)
+    for (let n = 0; n < 10; n++) expect((await admin('chute')).status).toBe(401)
+    expect((await admin('x')).status).toBe(429)
+    expect((await admin('x', '10.3.3.4')).status).toBe(200)
+    clock += 16 * MIN
+    expect((await admin('x')).status).toBe(200)
+  })
+
+  it('aparelhos novos por dia ficam no banco: outra instância do serviço não zera a conta', async () => {
+    const other = createLicenseHandler({ db, now: () => clock, adminToken: 'x' })
+    const hello = (h, n) =>
+      h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '10.8.8.8')
+    for (let n = 0; n < 20; n++) expect((await hello(n % 2 ? handle : other, n)).status).toBe(200)
+    expect((await hello(other, 99)).status).toBe(429)
+  })
+})
+
+describe('erro do Mercado Pago no log', () => {
+  it('guarda só a mensagem do erro, com e-mail e números longos mascarados', async () => {
+    const body = { message: 'Invalid users involved', error: 'bad_request', cause: [{ code: 3, description: 'payer_email teste@x.com invalid for 12345678909' }] }
+    const detail = mpErrorDetail(body)
+    expect(detail).toContain('Invalid users involved')
+    expect(detail).not.toContain('teste@x.com')
+    expect(detail).not.toContain('12345678909')
+    const mp = createMpClient({ accessToken: 't', fetch: async () => new Response(JSON.stringify(body), { status: 400 }) })
+    const err = await mp.createPreapproval({}).catch((e) => e)
+    expect(err).toBeInstanceOf(MpError)
+    expect(err.status).toBe(400)
+    expect(err.message).toContain('Invalid users involved')
   })
 })

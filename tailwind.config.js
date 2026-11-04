@@ -19,9 +19,14 @@ const flexGapFallback = plugin(({ matchUtilities, theme }) => {
   )
 })
 
-/** `phone:` vale só com `html.is-phone` (src/utils/compat.js): celular pelo User-Agent e toque, nunca pela largura. */
+/**
+ * `phone:` vale só com `html.is-phone` (src/utils/compat.js): celular ou tablet pelo User-Agent e toque, nunca pela
+ * largura. `phone-portrait:` é o mesmo aparelho em pé (RFC-023); a TV nunca pega nenhuma das duas.
+ * (O `portrait:` do Tailwind não serve: pegaria qualquer tela em pé, inclusive TV girada ou janela do PC.)
+ */
 const phoneVariant = plugin(({ addVariant }) => {
   addVariant('phone', 'html.is-phone &')
+  addVariant('phone-portrait', '@media (orientation: portrait) { html.is-phone & }')
 })
 
 /** @type {import('tailwindcss').Config} */

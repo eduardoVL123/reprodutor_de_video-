@@ -65,9 +65,11 @@ export function useSiteInbox() {
     connecting.value = true
     try {
       const ok = await auth.login(list)
+      // Falhou (sem rede, painel fora do ar): a lista fica no servidor e o aviso continua, para tentar de novo.
+      if (!ok) return false
       await ack([id])
       done()
-      return ok
+      return true
     } finally {
       connecting.value = false
     }

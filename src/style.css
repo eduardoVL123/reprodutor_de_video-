@@ -13,6 +13,18 @@ html {
 html.is-phone {
   font-size: calc(100vw / 80);
 }
+/* Em pé (RFC-023): pela largura de 1/80 o rem daria ~5px num celular de 390px. 1/25 dá ~15,6px; no tablet em pé
+   (600px ou mais de largura) 1/45 dá ~17,8px em 800px. */
+@media (orientation: portrait) {
+  html.is-phone {
+    font-size: calc(100vw / 25);
+  }
+}
+@media (orientation: portrait) and (min-width: 600px) {
+  html.is-phone {
+    font-size: calc(100vw / 45);
+  }
+}
 html.is-phone button {
   min-width: 44px;
   min-height: 44px;
@@ -168,5 +180,30 @@ video::-webkit-media-controls-start-playback-button {
   .tv-rail-item.tv-focusable:focus {
     --tw-scale-x: 1.08;
     --tw-scale-y: 1.08;
+  }
+}
+
+/* Celular/tablet em pé (RFC-023): os tamanhos de TV (pensados para 3 m de distância) ficavam enormes com o rem do
+   celular em pé (1rem ≈ 15,6px). :where() deixa a especificidade igual à da classe, então um `phone-portrait:text-[...]`
+   escrito na tela continua valendo; a TV e o celular deitado não pegam nada disto. */
+@media (orientation: portrait) {
+  :where(html.is-phone) .text-tv-xs { font-size: 0.8rem; line-height: 1.15rem; }
+  :where(html.is-phone) .text-tv-sm { font-size: 0.9rem; line-height: 1.3rem; }
+  :where(html.is-phone) .text-tv-base { font-size: 1rem; line-height: 1.45rem; }
+  :where(html.is-phone) .text-tv-lg { font-size: 1.15rem; line-height: 1.55rem; }
+  :where(html.is-phone) .text-tv-xl { font-size: 1.5rem; line-height: 1.9rem; }
+  :where(html.is-phone) .text-tv-2xl { font-size: 1.9rem; line-height: 2.3rem; }
+  :where(html.is-phone) .text-tv-row { font-size: 1.1rem; line-height: 1.5rem; }
+}
+
+/* Celular/tablet em pé (RFC-023): navega-se pelo toque, então o anel e o zoom do foco da TV não aparecem (eles ficavam
+   presos no último botão tocado ou no "Assistir" focado ao abrir). Deitado continua como já foi aprovado. */
+@media (orientation: portrait) {
+  html.is-phone .tv-focusable:focus,
+  html.is-phone .tv-focusable.is-focused {
+    --tw-ring-shadow: 0 0 #0000;
+    --tw-ring-offset-shadow: 0 0 #0000;
+    --tw-scale-x: 1;
+    --tw-scale-y: 1;
   }
 }

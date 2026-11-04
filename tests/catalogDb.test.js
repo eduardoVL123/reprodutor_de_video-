@@ -68,6 +68,8 @@ describe('catalogDb', () => {
 
     expect((await getItems('vod', ALL_CATEGORIES, 1500, 2)).map((i) => i.stream_id)).toEqual([1501, 1502])
     expect((await getItems('vod', ALL_CATEGORIES, 3998, 2)).map((i) => i.stream_id)).toEqual([3999, 4000])
+    // O resumo não vai para o disco: no próximo boot o catálogo conta como inexistente e é baixado de novo.
+    expect(data.has('meta:vod')).toBe(false)
   })
 
   it('clearCatalog remove tudo', async () => {
@@ -77,5 +79,55 @@ describe('catalogDb', () => {
     await clearCatalog()
 
     expect(await getMeta('live')).toBeNull()
+  })
+})
+
+describe('catalogDb — falhas do IndexedDB (auditoria)', () => {
+  function mockStore({ failClear = false, failGetOnce = '' } = {}) {
+    const data = new Map()
+    let failed = false
+    vi.doMock('localforage', () => ({
+      default: {
+        INDEXEDDB: 'asyncStorage',
+        createInstance: () => ({
+          getItem: async (k) => {
+            if (k === failGetOnce && !failed) {
+              failed = true
+              throw new Error('TransactionInactiveError')
+            }
+            return data.has(k) ? data.get(k) : null
+          },
+          setItem: async (k, v) => void data.set(k, v),
+          removeItem: async (k) => void data.delete(k),
+          clear: async () => {
+            if (failClear) throw new Error('clear falhou')
+            data.clear()
+          },
+        }),
+      },
+    }))
+    return data
+  }
+
+  it('limpar falhou: os resumos somem mesmo assim e a próxima lista não herda o catálogo antigo', async () => {
+    const data = mockStore({ failClear: true })
+    const { saveSection, getMeta, clearCatalog } = await import('@/services/catalogDb')
+    await saveSection('live', { categories: [], streams: streams(3) })
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await clearCatalog()
+
+    expect(data.has('meta:live')).toBe(false)
+    expect(await getMeta('live')).toBeNull()
+  })
+
+  it('leitura que falhou uma vez não fica guardada no cache: a próxima tenta de novo', async () => {
+    mockStore({ failGetOnce: 'chunk:vod:0' })
+    const { saveSection, getItems, ALL_CATEGORIES } = await import('@/services/catalogDb')
+    await saveSection('vod', { categories: [], streams: streams(3) })
+
+    await getItems('vod', ALL_CATEGORIES, 0, 2).catch(() => null) // 1ª leitura do banco falha (passageira)
+
+    expect((await getItems('vod', ALL_CATEGORIES, 0, 2)).map((i) => i.stream_id)).toEqual([1, 2])
   })
 })

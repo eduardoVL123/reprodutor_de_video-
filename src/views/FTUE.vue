@@ -103,7 +103,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
   <!-- Rola quando não cabe (celular deitado): com items-center + overflow-hidden o topo ficava fora de alcance. -->
   <section
     class="relative w-full h-full flex justify-center overflow-y-auto
-           bg-tv-deep"
+           bg-tv-deep phone-portrait:p-3"
   >
     <div
       role="dialog"
@@ -111,11 +111,11 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
       aria-labelledby="ftue-title"
       aria-describedby="ftue-notice"
       class="relative w-[96rem] max-w-full my-auto rounded-2xl border border-white/10
-             bg-[#121215] px-16 py-12 shadow-2xl"
+             bg-[#121215] px-16 py-12 shadow-2xl phone-portrait:px-5 phone-portrait:py-6"
     >
-      <header class="flex items-center gap-8 mb-8">
+      <header class="flex items-center gap-8 mb-8 phone-portrait:mb-5">
         <div
-          class="flex items-center justify-center w-20 h-20 rounded-2xl
+          class="flex items-center justify-center w-20 h-20 rounded-2xl phone-portrait:hidden
                  bg-white/[0.08] border border-white/10 text-tv-accent"
         >
           <svg viewBox="0 0 24 24" class="w-14 h-14 text-white" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -124,7 +124,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
           </svg>
         </div>
         <div>
-          <p class="text-tv-sm uppercase tracking-[0.3em] text-tv-accent-soft">Primeiro acesso</p>
+          <p class="text-tv-sm uppercase tracking-[0.3em] text-tv-accent-soft phone-portrait:tracking-[0.12em]">Primeiro acesso</p>
           <h1 id="ftue-title" class="text-tv-xl font-bold">Termos de Uso e Aviso Legal</h1>
         </div>
       </header>
@@ -132,16 +132,16 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
       <!-- Aviso legal em destaque (texto literal obrigatório) -->
       <p
         id="ftue-notice"
-        class="rounded-2xl border-l-8 border-tv-accent bg-tv-card px-8 py-6 text-tv-lg font-medium leading-snug"
+        class="rounded-2xl border-l-8 border-tv-accent bg-tv-card px-8 py-6 text-tv-lg font-medium leading-snug phone-portrait:border-l-4 phone-portrait:px-4 phone-portrait:py-4"
       >
         {{ LEGAL_NOTICE }}
       </p>
 
-      <ul class="mt-8 grid grid-cols-2 gap-6">
+      <ul class="mt-8 grid grid-cols-2 gap-6 phone-portrait:grid-cols-1 phone-portrait:gap-3 phone-portrait:mt-5">
         <li
           v-for="item in terms"
           :key="item.title"
-          class="rounded-2xl border-2 border-tv-border bg-tv-bg/60 px-6 py-5"
+          class="rounded-2xl border-2 border-tv-border bg-tv-bg/60 px-6 py-5 phone-portrait:px-4 phone-portrait:py-3.5"
         >
           <h2 class="text-tv-base font-semibold text-tv-accent-soft mb-2">{{ item.title }}</h2>
           <p class="text-tv-sm text-tv-muted">{{ item.text }}</p>
@@ -153,7 +153,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeyDown))
         É necessário aceitar os termos para usar o aplicativo. Você pode fechá-lo pelo botão de saída do controle.
       </p>
 
-      <footer class="mt-10 flex items-center justify-end gap-6">
+      <footer class="mt-10 flex items-center justify-end gap-6 phone-portrait:mt-6 phone-portrait:flex-col-reverse phone-portrait:items-stretch phone-portrait:gap-2.5">
         <button
           id="ftue-decline"
           ref="declineBtn"

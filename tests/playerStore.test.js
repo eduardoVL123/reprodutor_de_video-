@@ -149,3 +149,32 @@ describe('playerStore — histórico por lista', () => {
     expect(await storage.get('player:watchHistory:p1:A')).toHaveLength(1)
   })
 })
+
+describe('playerStore — série longa (auditoria)', () => {
+  it('episódio 350 de 400 toca o 350, com a fila em volta dele', async () => {
+    const { usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    const items = Array.from({ length: 400 }, (_, i) => ({ stream_id: 1000 + i, name: `E${i + 1}`, section: 'series', directUrl: `http://srv.test/${i}.mp4` }))
+    player.playPlaylist({ items, startIndex: 349 })
+    expect(player.currentItem.stream_id).toBe(1349)
+    expect(player.queue).toHaveLength(200)
+    expect(player.queue[player.queue.length - 1].stream_id).toBe(1399) // o resto da série segue depois dele
+  })
+})
+
+describe('playerStore — canal ao vivo (auditoria)', () => {
+  it('o mesmo canal no topo do histórico não é regravado a cada salvamento', async () => {
+    const { storage, usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    const channel = { stream_id: 77, name: 'Canal 77', section: 'live' }
+    player.saveProgress(10, 0, channel)
+    const set = vi.spyOn(storage, 'set')
+    const before = player.watchHistory
+    for (let i = 0; i < 5; i++) player.saveProgress(20 + i * 10, 0, channel)
+    expect(set).not.toHaveBeenCalled()
+    expect(player.watchHistory).toBe(before) // nada recalcula na tela de trás
+    player.saveProgress(0, 0, { stream_id: 78, name: 'Canal 78', section: 'live' }) // trocar de canal grava
+    expect(player.watchHistory[0].stream_id).toBe(78)
+  })
+})

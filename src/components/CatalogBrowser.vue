@@ -7,10 +7,14 @@ import BrandMark from '@/components/BrandMark.vue'
 import GridView from '@/components/GridView.vue'
 import GridItem from '@/components/GridItem.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
+import PinDialog from '@/components/PinDialog.vue'
+import ParentalModal from '@/components/ParentalModal.vue'
+import { useParentalStore } from '@/stores/parentalStore'
 import { ALL_CATEGORIES } from '@/services/catalogDb'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
 import { pickArtwork } from '@/utils/artwork'
 import { focusFirstIn, registerKeyHandler } from '@/utils/spatialNavigation'
+import { useFormFactor } from '@/composables/useFormFactor'
 
 /**
  * Catálogo moderno 2.0:
@@ -27,13 +31,22 @@ const props = defineProps({
 const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
+const { isPhonePortrait } = useFormFactor()
+const parental = useParentalStore()
+const parentalOpen = ref(false)
+const pinFor = ref(null) // categoria bloqueada esperando o PIN
 
 const activeCategory = ref(ALL_CATEGORIES)
 const detailsTarget = ref(null)
 
 const isLive = computed(() => props.section === 'live')
 const state = computed(() => catalog.status[props.section])
-const categoryList = computed(() => catalog.categories[props.section] || [])
+// Escondidas (controle parental) nem aparecem; bloqueadas aparecem com cadeado e pedem o PIN.
+const categoryList = computed(() =>
+  (catalog.categories[props.section] || []).filter((c) => parental.statusOf(props.section, c) !== 'hidden'),
+)
+const isLockedCategory = (cat) => cat.category_id !== ALL_CATEGORIES && parental.isLocked(props.section, cat)
+const managedCategories = computed(() => (catalog.categories[props.section] || []).filter((c) => c.category_id !== ALL_CATEGORIES))
 
 const sectionTitle = computed(() => {
   if (props.section === 'live') return 'TV ao vivo'
@@ -151,14 +164,22 @@ function isRecent(item) {
 }
 
 // Categoria escolhida ("Ver todos"): grade virtualizada com todos os itens, não só a primeira fileira.
-const showGrid = computed(() => activeCategory.value !== ALL_CATEGORIES)
+// No celular em pé a aba já abre na grade (mockup da RFC-023): fileiras laterais não cabem numa tela estreita.
+const showGrid = computed(() => activeCategory.value !== ALL_CATEGORIES || isPhonePortrait.value)
 const itemCount = computed(() => catalog.countFor(props.section, activeCategory.value))
 const gridKey = computed(() => `${auth.currentListId}:${props.section}:${activeCategory.value}`)
-const layout = computed(() =>
-  isLive.value
+const layout = computed(() => {
+  if (isPhonePortrait.value) {
+    // Em pé: canais em lista de uma coluna; capas em 3 colunas no celular e 5 no tablet (600px ou mais).
+    const tablet = window.innerWidth >= 600
+    return isLive.value
+      ? { columns: 1, rowHeight: 4.4, gap: 0.5, maxDomItems: 24, variant: 'channel' }
+      : { columns: tablet ? 5 : 3, rowHeight: tablet ? 12 : 10, gap: 0.6, maxDomItems: tablet ? 40 : 27, variant: 'poster' }
+  }
+  return isLive.value
     ? { columns: 3, rowHeight: 10, gap: 1.25, maxDomItems: 12, variant: 'channel' }
-    : { columns: 5, rowHeight: 24, gap: 1.25, maxDomItems: 15, variant: 'poster' },
-)
+    : { columns: 5, rowHeight: 24, gap: 1.25, maxDomItems: 15, variant: 'poster' }
+})
 const loadItems = (start, count) => catalog.getItems(props.section, activeCategory.value, start, count)
 
 async function loadCategoryRows() {
@@ -168,7 +189,9 @@ async function loadCategoryRows() {
 
   // Para TV ao vivo: se houver canais nos Favoritos da Minha Lista, mostra no topo
   if (isLive.value) {
-    const favChannels = player.customQueue.filter((it) => it.section === 'live')
+    // Canal de categoria escondida/bloqueada fica fora dos Favoritos também (auditoria RFC-025, item 9).
+    const blocked = new Set(parental.blockedIds('live', catalog.categories.live))
+    const favChannels = player.customQueue.filter((it) => it.section === 'live' && !blocked.has(String(it.category_id)))
     if (favChannels.length > 0) {
       rows.push({
         category_id: 'favorites',
@@ -179,7 +202,7 @@ async function loadCategoryRows() {
   }
 
   // "Todos": uma fileira por categoria principal
-  const catsToLoad = categoryList.value.filter((c) => c.category_id !== ALL_CATEGORIES).slice(0, 12)
+  const catsToLoad = categoryList.value.filter((c) => c.category_id !== ALL_CATEGORIES && !isLockedCategory(c)).slice(0, 12)
   for (const cat of catsToLoad) {
     const items = await catalog.getItems(props.section, cat.category_id, 0, 15)
     if (items && items.length > 0) {
@@ -232,8 +255,20 @@ async function loadFeaturedInfo(it) {
   } catch (_) {}
 }
 
+async function unlockCategory(pin) {
+  const cat = pinFor.value
+  if (!(await parental.unlock(props.section, cat, pin))) return 'PIN incorreto.'
+  pinFor.value = null
+  chooseCategory(cat)
+  return true
+}
+
 async function chooseCategory(cat) {
   if (!cat) return
+  if (isLockedCategory(cat)) {
+    pinFor.value = cat
+    return
+  }
   activeCategory.value = cat.category_id
   await loadCategoryRows()
   await nextTick()
@@ -266,6 +301,14 @@ async function focusActiveCategory() {
   const el = document.getElementById(targetId) || document.getElementById('cat-0')
   if (el) el.focus()
 }
+
+// Mudou no controle parental (ou desbloqueou com PIN): as fileiras de "Todos" saem/entram na hora.
+watch(
+  () => [parental.settings, parental.unlocked],
+  () => {
+    if (state.value.state === 'ready') loadCategoryRows()
+  },
+)
 
 watch(
   () => state.value.state,
@@ -324,11 +367,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 overflow-hidden relative">
+  <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 phone-portrait:pr-0 phone-portrait:pt-2 phone-portrait:pb-0 overflow-hidden relative">
     <!-- Topo Fixo com Categorias Arredondadas -->
     <!-- z-20: abaixo do menu lateral (z-30), senão o título passa por cima do menu aberto -->
-    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
-      <div class="flex items-center gap-8 phone:gap-4 min-w-0 flex-1">
+    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 phone-portrait:items-start phone-portrait:pb-1 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
+      <div class="flex items-center gap-8 phone:gap-4 phone-portrait:flex-wrap phone-portrait:gap-y-1 min-w-0 flex-1">
         <!-- Margem no próprio logo (não gap): escondido na TV, ele não deixa espaço sobrando nas TVs sem flex-gap -->
         <h1 class="shrink-0 text-2xl phone:text-xl font-black tracking-tight text-white flex items-center">
           <BrandMark :size="1.4" class="text-tv-accent hidden phone:inline mr-2" />
@@ -340,14 +383,14 @@ onBeforeUnmount(() => {
           v-if="categoryList.length > 0"
           data-focus-row="categories"
           data-scroll-x
-          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2"
+          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 phone-portrait:basis-full phone-portrait:px-0"
         >
           <button
             v-for="(cat, index) in categoryList"
             :id="`cat-${index}`"
             :key="cat.category_id"
             type="button"
-            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs font-medium transition-colors"
+            class="tv-focusable shrink-0 rounded-full px-4 py-1.5 text-sm phone:text-xs phone-portrait:text-[0.85rem] font-medium transition-colors"
             :class="[
               activeCategory === cat.category_id
                 ? 'bg-tv-accent text-tv-on-accent font-bold shadow-md scale-[1.02]'
@@ -355,12 +398,30 @@ onBeforeUnmount(() => {
             ]"
             :data-grid-index="index"
             :data-focus-active="activeCategory === cat.category_id ? 'true' : null"
+            :aria-label="isLockedCategory(cat) ? `${cat.category_name} (bloqueada)` : null"
             @click="chooseCategory(cat)"
           >
-            {{ cat.category_name }}
+            <span v-if="isLockedCategory(cat)" aria-hidden="true" class="mr-1.5">&#128274;</span>
+            <span>{{ cat.category_name }}</span>
           </button>
         </div>
       </div>
+
+      <!-- Controle parental: bloquear (PIN) ou esconder categorias desta aba -->
+      <button
+        v-if="state.state === 'ready'"
+        id="catalog-parental"
+        type="button"
+        class="tv-focusable shrink-0 flex items-center gap-2 px-4 phone:px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/15 border border-white/10 text-neutral-300 hover:text-white text-sm phone:text-xs font-medium transition-colors"
+        title="Controle parental"
+        @click="parentalOpen = true"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+        <span class="inline phone-portrait:hidden">Controle parental</span>
+      </button>
 
       <!-- Botão Atualizar Lista -->
       <button
@@ -375,7 +436,7 @@ onBeforeUnmount(() => {
           <polyline points="23 4 23 10 17 10" />
           <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
         </svg>
-        <span class="inline">Atualizar lista</span>
+        <span class="inline phone-portrait:hidden">Atualizar lista</span>
       </button>
     </header>
 
@@ -517,7 +578,7 @@ onBeforeUnmount(() => {
       </section>
 
       <!-- Categoria escolhida: todos os itens em grade virtualizada -->
-      <div v-if="showGrid && itemCount > 0" class="h-full px-6 phone:px-4" data-focus-group="content" data-grid="content">
+      <div v-if="showGrid && itemCount > 0" class="h-full px-6 phone:px-4 phone-portrait:px-3" data-focus-group="content" data-grid="content">
         <GridView
           :count="itemCount"
           :load-items="loadItems"
@@ -691,6 +752,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <PinDialog
+      v-if="pinFor"
+      title="Categoria bloqueada"
+      :hint="`Digite o PIN para abrir ${pinFor.category_name}.`"
+      :submit="unlockCategory"
+      @cancel="pinFor = null"
+    />
+    <ParentalModal v-if="parentalOpen" :section="section" :categories="managedCategories" @close="parentalOpen = false" />
 
     <!-- Modal de Detalhes da Mídia -->
     <MediaDetailsModal

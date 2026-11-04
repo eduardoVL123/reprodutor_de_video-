@@ -1,9 +1,9 @@
 # Política de Privacidade — Pulse Player
 
-> **Rascunho técnico.** Preencha os campos entre `[colchetes]`, revise com seu jurídico e publique o texto
+> **Rascunho técnico.** Revise com seu jurídico e publique o texto
 > em uma URL pública: Samsung Seller Office, LG Seller Lounge e Google Play exigem o link no cadastro.
 
-Última atualização: [data]
+Última atualização: 4 de novembro de 2026
 
 ## O que o aplicativo é
 
@@ -19,6 +19,7 @@ responsável por eles.
 | Catálogo (nomes, categorias, capas) baixado da lista do usuário | Mostrar canais, filmes e séries | Somente no aparelho |
 | Perfis, favoritos, histórico de reprodução e buscas recentes | Funções do app por perfil | Somente no aparelho |
 | Aceite do aviso legal (data e versão) | Comprovar o consentimento | Somente no aparelho |
+| Controle parental: PIN (guardado como resumo criptográfico, nunca o número) e o estado de cada categoria por perfil (visível, bloqueada ou escondida) | Bloquear ou esconder categorias, inclusive as de conteúdo adulto | Somente no aparelho |
 | **Opcional, só se o usuário escolher "adicionar pelo celular":** a lista que ele cola no celular (endereço, usuário, senha e apelido), cifrada | Levar a lista do celular para a TV sem digitar no controle | Cifrada de ponta a ponta no celular; o serviço de pareamento guarda **só o texto cifrado**, na memória, por até 10 minutos (60 segundos depois que o celular envia) e o apaga assim que a TV o lê. Nunca em disco. |
 | **Opcional, mesmo caso:** endereço de rede (IP) de quem usa o serviço de pareamento | Limitar abuso (muitas tentativas seguidas) | Contador na memória do serviço, por até 1 minuto; não é gravado em arquivo pelo serviço |
 | **Opcional, só se o usuário enviar a lista pelo site:** a lista (endereço, usuário, senha e apelido), cifrada no navegador para a chave da TV | Levar a lista para a TV sem digitar no controle | A lista enviada pelo site é cifrada no navegador; o serviço de licença guarda **só o texto cifrado**, que não consegue abrir, por até **7 dias**, e o apaga assim que a TV o recebe. A TV pergunta antes de adicionar. |
@@ -48,7 +49,7 @@ demonstração do endereço publicado pelo desenvolvedor e reproduz vídeos de u
 ### Adicionar lista pelo celular (opcional)
 
 Quando a versão do aplicativo traz essa opção (a tela de login mostra "Use o seu celular"), o aplicativo conversa
-com o **serviço de pareamento** do desenvolvedor, em [endereço do serviço de pareamento]:
+com o **serviço de pareamento** do desenvolvedor, em `https://par.pulseplayer.com.br`:
 
 1. A TV pede um código curto e envia ao serviço uma **chave pública** gerada na hora. A chave privada fica só na
    memória da TV e nunca sai dela.
@@ -91,9 +92,13 @@ podem ver o que está tocando na TV. Quem não toca em "Transmitir" não envia n
 
 ## Crianças
 
-O aplicativo não tem restrição de conteúdo por faixa etária: o conteúdo depende inteiramente das listas
-cadastradas pelo usuário. Responsáveis devem supervisionar o uso.
+O aplicativo não é destinado a crianças e não traz conteúdo próprio: o que aparece depende das listas cadastradas
+pelo usuário. Para proteger crianças, o aplicativo tem **controle parental**: categorias com nome de conteúdo adulto
+já começam **bloqueadas** (abrem só com um PIN, criado no primeiro uso e que pode ser trocado), e qualquer categoria
+pode ser bloqueada ou escondida por perfil (botão "Controle parental" nas abas de Filmes, Séries e Canais). Itens de
+categorias bloqueadas ou escondidas também não aparecem no Início nem na busca. Responsáveis devem criar o PIN antes
+de entregar o aparelho e supervisionar o uso.
 
 ## Contato
 
-[nome do responsável] — [e-mail de contato]
+Eduardo Lopes Valerio — eduardo.lopes.valerio@hotmail.com

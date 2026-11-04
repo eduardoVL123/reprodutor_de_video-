@@ -11,6 +11,7 @@ import { storage } from '@/services/storage'
  */
 
 const FALLBACK_KEY = 'license:deviceKey'
+const STABLE_KEY = 'license:deviceKeyStable'
 const WEBOS_TIMEOUT_MS = 3000
 let cached = null
 
@@ -72,10 +73,17 @@ async function fallbackKey() {
   return key
 }
 
-/** Chave estável do aparelho (64 caracteres hex). */
+/**
+ * Chave estável do aparelho (64 caracteres hex). A primeira chave calculada fica guardada e vale nos boots seguintes:
+ * na LG o ID do sistema às vezes demora mais que WEBOS_TIMEOUT_MS, e trocar de chave faria o servidor ver um aparelho
+ * novo (cliente ativado bloqueado, ou teste de 7 dias de novo). Reinstalar apaga o guardado e recalcula pelo ID.
+ */
 export async function getDeviceKey() {
   if (cached) return cached
+  const saved = await storage.get(STABLE_KEY)
+  if (typeof saved === 'string' && saved) return (cached = saved)
   const id = await platformId()
   cached = id && crypto.subtle ? await sha256Hex(`pulse-license:${id}`) : await fallbackKey()
+  await storage.set(STABLE_KEY, cached)
   return cached
 }

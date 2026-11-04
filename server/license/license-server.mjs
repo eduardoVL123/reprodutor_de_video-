@@ -2,17 +2,16 @@
  * Servidor de licença local (RFC-018): node:http + node:sqlite. Converte a requisição para Web Standards e
  * delega ao núcleo license-core.mjs; serve as páginas do painel em /admin/.
  * Variáveis: LICENSE_PORT (8789), LICENSE_HOST (127.0.0.1), LICENSE_DB_PATH, LICENSE_ADMIN_TOKEN, LICENSE_CONTACT_URL,
- * MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (RFC-020; vazios = pagamento/webhook desligados), MP_PUBLIC_KEY (cartão em /pagar).
+ * LICENSE_REPORT_TOKEN (leitura do sócio), PLAY_URL (RFC-025), MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (RFC-020; vazios = pagamento/webhook desligados), MP_PUBLIC_KEY (cartão em /pagar).
  */
 import http from 'node:http'
 import { Readable } from 'node:stream'
 import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { SECURITY_HEADERS, PAGE_CSP } from '../pair/pair-core.mjs'
 import { openSqlite } from './sqlite-d1.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
-import { createLicenseHandler } from './license-core.mjs'
+import { createLicenseHandler, LICENSE_HEADERS, PAGE_HEADERS, SITE_CSP } from './license-core.mjs'
 import { createMpClient } from './mp-client.mjs'
 import { PAY_CSP } from './license-checkout.mjs'
 
@@ -29,6 +28,11 @@ const ADMIN_FILES = {
   '/revenda/revenda.css': { file: 'revenda/revenda.css', type: 'text/css; charset=utf-8' },
   // Site (RFC-021)
   '/': { file: 'site/index.html', type: 'text/html; charset=utf-8' },
+  // RFC-025: enviar lista saiu da raiz (agora a landing) e a área do cliente
+  '/enviar': { file: 'site/enviar.html', type: 'text/html; charset=utf-8' },
+  '/cliente': { file: 'site/cliente.html', type: 'text/html; charset=utf-8' },
+  '/privacidade': { file: 'site/privacidade.html', type: 'text/html; charset=utf-8' },
+  '/site/favicon.svg': { file: 'site/favicon.svg', type: 'image/svg+xml' },
   '/assinar': { file: 'site/assinar.html', type: 'text/html; charset=utf-8' },
   '/creditos': { file: 'site/creditos.html', type: 'text/html; charset=utf-8' },
   '/site/site.js': { file: 'site/site.js', type: 'text/javascript; charset=utf-8' },
@@ -59,25 +63,32 @@ async function sendWeb(res, webRes) {
   res.end(webRes.body ? Buffer.from(await webRes.arrayBuffer()) : undefined)
 }
 
-export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '' } = {}) {
+export function createLicenseServer({ dbPath, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
   const db = openSqlite(dbPath)
   const purge = () => purgeExpired(db, now()).catch((err) => console.warn('[license] Limpeza falhou:', err && err.message))
   const ready = migrate(db).then(purge)
   setInterval(purge, PURGE_EVERY_MS).unref()
-  const handle = createLicenseHandler({ db, now, adminToken, contactUrl, mp, mpWebhookSecret, mpPublicKey })
+  const handle = createLicenseHandler({ db, now, adminToken, reportToken, contactUrl, playUrl, mp, mpWebhookSecret, mpPublicKey, signingKey })
   setInterval(handle.sweep, 60 * 1000).unref()
 
   async function route(req, res) {
     await ready
-    const path = new URL(req.url, 'http://localhost').pathname
+    const reqUrl = new URL(req.url, 'http://localhost')
+    const path = reqUrl.pathname
     if (path === '/healthz') {
-      res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
+      res.writeHead(200, { ...LICENSE_HEADERS, 'Content-Type': 'text/plain; charset=utf-8' })
       return res.end('ok')
+    }
+    // Links antigos de "enviar lista": /?codigo=X agora é /enviar?codigo=X (RFC-025).
+    if (req.method === 'GET' && path === '/' && reqUrl.searchParams.has('codigo')) {
+      res.writeHead(302, { ...LICENSE_HEADERS, Location: `/enviar${reqUrl.search}` })
+      return res.end()
     }
     const page = req.method === 'GET' && ADMIN_FILES[path === '/admin' || path === '/revenda' ? `${path}/` : path]
     if (page) {
       const content = readFileSync(join(publicDir, page.file)) // antes do writeHead: arquivo faltando vira 500, não resposta pendurada
-      res.writeHead(200, { ...SECURITY_HEADERS, 'Content-Type': page.type, 'Content-Security-Policy': page.csp || PAGE_CSP })
+      const html = page.type.startsWith('text/html')
+      res.writeHead(200, { ...(html ? PAGE_HEADERS : LICENSE_HEADERS), 'Content-Type': page.type, 'Content-Security-Policy': page.csp || SITE_CSP })
       return res.end(content)
     }
     return sendWeb(res, await handle(toWebRequest(req), (req.socket && req.socket.remoteAddress) || 'unknown'))
@@ -86,7 +97,7 @@ export function createLicenseServer({ dbPath, adminToken = '', contactUrl = '', 
   return http.createServer((req, res) => {
     route(req, res).catch(() => {
       if (res.writableEnded) return
-      res.writeHead(500, { ...SECURITY_HEADERS, 'Content-Type': 'application/json; charset=utf-8' })
+      res.writeHead(500, { ...LICENSE_HEADERS, 'Content-Type': 'application/json; charset=utf-8' })
       res.end(JSON.stringify({ error: 'Erro interno.' }))
     })
   })
@@ -101,7 +112,8 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const mp = process.env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: process.env.MP_ACCESS_TOKEN }) : null
   const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET || ''
   const mpPublicKey = process.env.MP_PUBLIC_KEY || ''
-  createLicenseServer({ dbPath, adminToken, contactUrl: process.env.LICENSE_CONTACT_URL || '', mp, mpWebhookSecret, mpPublicKey }).listen(port, host, () => {
+  const signingKey = process.env.LICENSE_SIGNING_KEY || ''
+  createLicenseServer({ dbPath, adminToken, reportToken: process.env.LICENSE_REPORT_TOKEN || '', contactUrl: process.env.LICENSE_CONTACT_URL || '', playUrl: process.env.PLAY_URL || '', mp, mpWebhookSecret, mpPublicKey, signingKey }).listen(port, host, () => {
     console.log(`[license] http://${host}:${port} · banco ${dbPath}`)
     if (!adminToken) console.warn('[license] LICENSE_ADMIN_TOKEN vazio: o painel /admin/ fica fechado.')
   })

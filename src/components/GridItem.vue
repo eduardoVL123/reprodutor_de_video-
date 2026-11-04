@@ -64,7 +64,7 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
     </div>
 
     <!-- Canal -->
-    <div v-else-if="variant === 'channel'" class="relative w-full h-full p-5 flex flex-col justify-between text-left overflow-hidden bg-[#121215]">
+    <div v-else-if="variant === 'channel'" class="relative w-full h-full p-5 phone-portrait:px-3 phone-portrait:py-2 flex flex-col justify-between phone-portrait:justify-center text-left overflow-hidden bg-[#121215]">
       <!-- Topo do Card -->
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2.5 min-w-0 pr-2">
@@ -75,12 +75,12 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
             alt=""
             loading="lazy"
             referrerpolicy="no-referrer"
-            class="w-8 h-8 rounded bg-black/40 object-contain p-0.5 shrink-0 border border-white/5"
+            class="w-8 h-8 phone-portrait:w-10 phone-portrait:h-10 rounded bg-black/40 object-contain p-0.5 shrink-0 border border-white/5"
             @error="onImgError"
           />
-          <span class="text-tv-base font-black tracking-tight uppercase truncate text-white">{{ label || 'Canal' }}</span>
+          <span class="text-tv-base font-black tracking-tight uppercase truncate text-white phone-portrait:text-[0.95rem] phone-portrait:font-bold phone-portrait:normal-case">{{ label || 'Canal' }}</span>
         </div>
-        <span class="flex items-center gap-1.5 text-tv-xs font-bold uppercase tracking-wider text-[#10b981] shrink-0">
+        <span class="flex items-center gap-1.5 text-tv-xs font-bold uppercase tracking-wider text-[#10b981] shrink-0 phone-portrait:text-[0.68rem]">
           <span class="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
           <span>AO VIVO</span>
         </span>
@@ -88,8 +88,9 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
 
       <!-- Meio do Card -->
       <div class="min-w-0">
-        <p class="text-tv-sm font-medium text-white truncate">{{ label || 'Transmissão contínua' }}</p>
-        <p class="text-tv-xs text-neutral-500 mt-0.5 truncate">Canal {{ item?.num || index + 1 }} · Ao vivo</p>
+        <!-- Em pé, o nome já está no topo da linha: fica só o número do canal -->
+        <p class="text-tv-sm font-medium text-white truncate phone-portrait:hidden">{{ label || 'Transmissão contínua' }}</p>
+        <p class="text-tv-xs text-neutral-500 mt-0.5 truncate phone-portrait:text-[0.78rem]">Canal {{ item?.num || index + 1 }} · Ao vivo</p>
       </div>
     </div>
 
@@ -115,8 +116,8 @@ const showImage = computed(() => !!image.value && !imgFailed.value)
       </div>
 
       <!-- Faixa escura na base com título sobreposto -->
-      <div class="relative z-10 w-full bg-gradient-to-t from-black/95 via-black/70 to-transparent p-3 pt-8">
-        <p class="text-tv-sm font-semibold text-white line-clamp-2 leading-tight drop-shadow">
+      <div class="relative z-10 w-full bg-gradient-to-t from-black/95 via-black/70 to-transparent p-3 pt-8 phone-portrait:p-2 phone-portrait:pt-6">
+        <p class="text-tv-sm font-semibold text-white line-clamp-2 leading-tight drop-shadow phone-portrait:text-[0.78rem]">
           {{ label }}
         </p>
       </div>

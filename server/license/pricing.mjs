@@ -25,7 +25,9 @@ export const PARTNER_TIERS = [
   [10000, 460000],
 ]
 
-const validQuantity = (qty) => Number.isInteger(qty) && qty >= MIN_CREDITS
+// Teto só contra valores absurdos (1e21 criava pedidos que o Mercado Pago recusa e ficavam como "falhou").
+export const MAX_CREDITS = 100000
+const validQuantity = (qty) => Number.isInteger(qty) && qty >= MIN_CREDITS && qty <= MAX_CREDITS
 
 export function creditUnitPrice(qty) {
   if (!validQuantity(qty)) return null

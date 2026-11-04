@@ -3,7 +3,7 @@
  * (`search:<secao>` no IndexedDB, em memória após a 1ª leitura) e lê do disco
  * apenas os itens que entram no resultado.
  */
-import { getSearchIndex, getItemsAt } from '@/services/catalogDb'
+import { getSearchIndex, getItemsAt, blockedPositions } from '@/services/catalogDb'
 import { foldText, normalizeText } from '@/utils/normalizeText'
 
 export { normalizeText }
@@ -75,7 +75,14 @@ function topMatches(positions, keys, limit) {
 
 async function searchSection(section, query, tokens, limit) {
   const names = await getSearchIndex(section)
-  const { positions, keys } = scanSection(section, names, query, tokens)
+  let { positions, keys } = scanSection(section, names, query, tokens)
+  // Categorias escondidas ou bloqueadas (controle parental) não aparecem na busca.
+  const blocked = await blockedPositions(section)
+  if (blocked) {
+    const keep = positions.map((p) => !blocked[p])
+    positions = positions.filter((_, i) => keep[i])
+    keys = keys.filter((_, i) => keep[i])
+  }
   const top = topMatches(positions, keys, limit)
   const items = await getItemsAt(section, top.map((m) => m.pos))
   const results = []

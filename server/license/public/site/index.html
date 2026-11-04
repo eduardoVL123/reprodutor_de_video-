@@ -3,68 +3,165 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#0b0f0c" />
-    <title>Enviar lista · Pulse Player</title>
-    <meta name="description" content="Envie sua lista para a TV com o código do aparelho, sem digitar no controle remoto." />
+    <meta name="theme-color" content="#1e462b" />
+    <title>Pulse Player · Sua lista na TV, organizada</title>
+    <meta name="description" content="Reprodutor para a sua própria lista na Android TV, em TV box e no celular. R$ 25 por ano por aparelho, com 7 dias de teste." />
+    <link rel="icon" href="/site/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="/site/site.css" />
   </head>
   <body>
-    <header class="site-header">
+    <header class="site-header wide landing-header">
       <a class="brand" href="/" aria-label="Pulse Player, página inicial"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 947 256" aria-hidden="true" focusable="false"><path fill="#B8F000" d="M56.00 122.00 L56.00 64.25 A14 14 0 0 1 77.00 52.12 L198.03 122.00 L146.58 122.00 L137.34 138.00 L107.32 86.00 L86.54 122.00 Z"/><path fill="#B8F000" d="M56.00 134.00 L93.46 134.00 L107.32 110.00 L137.34 162.00 L153.50 134.00 L198.03 134.00 L77.00 203.88 A14 14 0 0 1 56.00 191.75 Z"/><g transform="translate(252 93.50) scale(1.15)"><g fill="none" stroke="#F4F7EE" stroke-linejoin="miter" stroke-miterlimit="2"><path transform="translate(0.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(52.00 0)" stroke-width="6" d="M0 0V42A18 18 0 0 0 36 42V0"/><path transform="translate(106.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(156.00 0)" stroke-width="6" d="M35 12C34 5 27 0 18 0C8 0 1 6 1 14C1 24 9 27 18 30C28 33 36 36 36 46C36 55 28 60 18 60C8 60 1 55 0 47"/><path transform="translate(210.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(292.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(344.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(394.00 0)" stroke-width="6" d="M0 60L20 0L40 60M8 40H32"/><path transform="translate(452.00 0)" stroke-width="6" d="M0 0L20 34.64M40 0L20 34.64M20 30V60"/><path transform="translate(510.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(560.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0M19 31L35.74 60"/></g></g></svg></a>
       <nav class="site-nav" aria-label="Seções do site">
-        <a href="/" class="tab" aria-current="page">Enviar lista</a>
-        <a href="/assinar" class="tab">Assinar meu aparelho</a>
-        <a href="/creditos" class="tab">Comprar créditos</a>
+        <a href="#planos">Planos</a>
+        <a href="/cliente">Minha TV</a>
+        <a href="/creditos">Revendas</a>
+        <a href="/enviar">Enviar lista</a>
       </nav>
+      <a class="button" href="/assinar">Assinar</a>
     </header>
 
-    <main class="page">
-      <h1>Mande sua lista para a TV</h1>
-      <p class="lead">
-        Abra o Pulse Player na TV: o <strong>código do aparelho</strong> aparece na tela de entrada e em Gerenciar listas.
-        Digite o código e a lista aqui, e a TV pergunta se você quer adicionar.
-      </p>
-
-      <form id="send-form" class="form" novalidate>
-        <div class="field">
-          <label for="code">Código que aparece na TV</label>
-          <input id="code" class="code" type="text" maxlength="8" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABCD2345" />
-        </div>
-        <div class="field">
-          <label for="link">Link da lista ou endereço do servidor</label>
-          <textarea id="link" rows="3" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="http://exemplo.com:8080 ou o link da lista"></textarea>
-        </div>
-        <div class="field-pair">
-          <div class="field">
-            <label for="user">Usuário (se tiver)</label>
-            <input id="user" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" />
+    <main id="landing">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-inner">
+          <div class="hero-copy">
+            <h1 id="hero-title">Sua lista na TV, organizada</h1>
+            <p>Você usa a sua própria lista. O Pulse Player organiza tudo com capas, busca e perfis para a família, na Android TV, em TV box e no celular.</p>
+            <div class="hero-actions">
+              <a class="button" href="/assinar">Assinar meu aparelho</a>
+              <a class="button ghost" href="#baixar">Testar 7 dias grátis</a>
+            </div>
           </div>
-          <div class="field">
-            <label for="pass">Senha (se tiver)</label>
-            <input id="pass" type="password" autocomplete="off" />
+          <div class="tv" aria-hidden="true">
+            <div class="tv-screen">
+              <svg class="tv-mark" viewBox="0 0 256 256"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z" /><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z" /></svg>
+              <span class="tv-hint">Código deste aparelho</span>
+              <span class="tv-code">ABCD2345</span>
+              <span class="tv-sub">Use este código para assinar e acompanhar</span>
+            </div>
+            <div class="tv-foot"></div>
           </div>
         </div>
-        <div class="field">
-          <label for="name">Apelido da lista (opcional)</label>
-          <input id="name" type="text" maxlength="60" autocomplete="off" placeholder="Sala" />
+      </section>
+
+      <section class="band" id="planos" aria-labelledby="planos-title">
+        <div class="band-inner">
+          <h2 id="planos-title">Um preço por ano, sem mensalidade</h2>
+          <p class="lead">Pague uma vez por ano por aparelho, com Pix ou cartão. No cartão renova sozinho, e você cancela quando quiser em Minha TV.</p>
+          <div class="plans">
+            <div class="plan-main">
+              <h3>Aparelho</h3>
+              <p class="amount"><strong id="device-price">R$ 25</strong><span>por ano</span></p>
+              <ul class="ticks">
+                <li>1 aparelho, com a sua lista</li>
+                <li>7 dias de teste antes de pagar</li>
+                <li>Pix ou cartão</li>
+                <li>Ativa na hora, sem cadastro</li>
+              </ul>
+              <a class="button" href="/assinar">Assinar meu aparelho</a>
+            </div>
+            <div class="plan-side">
+              <h3>Revenda</h3>
+              <p>Compre créditos e ative as TVs dos seus clientes. Cada crédito vale 1 ano.</p>
+              <table class="tiers">
+                <tbody id="tier-rows">
+                  <tr><td>10 a 19</td><td>R$ 10,00</td></tr>
+                  <tr><td>20 a 50</td><td>R$ 9,00</td></tr>
+                  <tr><td>51 a 99</td><td>R$ 8,00</td></tr>
+                  <tr><td>100 a 499</td><td>R$ 7,00</td></tr>
+                  <tr><td>500 a 999</td><td>R$ 6,00</td></tr>
+                  <tr><td>1000 ou mais</td><td>R$ 5,00</td></tr>
+                </tbody>
+              </table>
+              <a class="button secondary" href="/creditos">Comprar créditos</a>
+            </div>
+          </div>
         </div>
+      </section>
 
-        <button type="submit" id="send-button">Enviar para a TV</button>
-        <p id="send-status" role="status"></p>
-        <svg id="send-pulse" class="pulse" viewBox="0 0 320 32" aria-hidden="true" focusable="false"><path pathLength="100" d="M0 16H128L140 4L158 28L170 16H320" /></svg>
-      </form>
+      <section class="band sand" aria-labelledby="como-title">
+        <div class="band-inner">
+          <h2 id="como-title">Como funciona</h2>
+          <p class="lead">Do download à TV ativa em poucos minutos.</p>
+          <ol class="how">
+            <li><strong>Instale</strong>Baixe o Pulse Player e coloque a sua lista.</li>
+            <li><strong>Veja o código</strong>A TV mostra um código de 8 letras. Os 7 primeiros dias são grátis.</li>
+            <li><strong>Assine</strong>Pague com Pix ou cartão e toque em "Já paguei, verificar" na TV.</li>
+          </ol>
+        </div>
+      </section>
 
-      <p class="note">
-        A lista é cifrada no seu navegador e só a sua TV consegue abrir. O Pulse Player guarda apenas o texto cifrado, por
-        até 7 dias, e apaga assim que a TV recebe.
-      </p>
+      <section class="band" id="baixar" aria-labelledby="baixar-title">
+        <div class="band-inner">
+          <h2 id="baixar-title">Baixar</h2>
+          <p class="lead">Escolha onde vai usar.</p>
+          <div class="downloads">
+            <div class="download" data-device="tv">
+              <span class="yours-tag">Seu aparelho</span>
+              <h3>Android TV e TV box</h3>
+              <p>Na TV, abra o app Downloader e digite <code id="apk-address">pulseplayer.com.br/apk</code>.</p>
+              <a class="button" href="/apk">Baixar o APK</a>
+            </div>
+            <div class="download" data-device="phone">
+              <span class="yours-tag">Seu aparelho</span>
+              <h3>Celular Android</h3>
+              <p id="phone-note">Instale pelo APK. A versão da Google Play está a caminho.</p>
+              <a id="phone-link" class="button secondary" href="/apk">Baixar o APK</a>
+            </div>
+            <div class="download" data-device="soon">
+              <h3>Samsung e LG</h3>
+              <p>Versões para as TVs Samsung e LG estão a caminho.</p>
+              <span class="soon">Em breve</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="band sand" aria-labelledby="faq-title">
+        <div class="band-inner faq">
+          <h2 id="faq-title">Perguntas frequentes</h2>
+          <details>
+            <summary>O Pulse Player vem com algum conteúdo?</summary>
+            <p>Não. É só o reprodutor. Você usa a lista que já tem; nenhum conteúdo é fornecido ou vendido aqui.</p>
+          </details>
+          <details>
+            <summary>Onde funciona?</summary>
+            <p>Android TV, TV box com Android e celular Android. Samsung e LG estão a caminho.</p>
+          </details>
+          <details>
+            <summary>Como eu pago?</summary>
+            <p>Com Pix ou cartão, na página Assinar, usando o código que aparece na TV. A ativação é na hora.</p>
+          </details>
+          <details>
+            <summary>Renova sozinho?</summary>
+            <p>No cartão, sim, uma vez por ano. No Pix, você renova quando quiser em Minha TV.</p>
+          </details>
+          <details>
+            <summary>Como cancelo a renovação?</summary>
+            <p>Em Minha TV, com o código da TV e o e-mail usado no pagamento. O aparelho continua ativo até o fim do período pago.</p>
+          </details>
+          <details>
+            <summary>Troquei de TV. E agora?</summary>
+            <p>Fale com o suporte pelo WhatsApp e informe os dois códigos.</p>
+          </details>
+          <details>
+            <summary>Como coloco a minha lista na TV sem digitar no controle?</summary>
+            <p>Use a página <a href="/enviar">Enviar lista</a> com o código da TV. A lista vai cifrada e a TV pergunta se você quer adicionar.</p>
+          </details>
+        </div>
+      </section>
     </main>
 
-    <footer class="site-footer">
+    <footer class="site-footer landing-footer">
       <p>Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</p>
-      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+      <nav aria-label="Links do rodapé">
+        <a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a>
+        <a href="/cliente">Minha TV</a>
+        <a href="/privacidade">Privacidade</a>
+        <a href="/revenda/">Área da revenda</a>
+      </nav>
     </footer>
-    <script src="/site/pair-lib.js"></script>
+
     <script src="/site/site.js"></script>
   </body>
 </html>

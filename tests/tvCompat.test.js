@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import postcss from 'postcss'
 import tailwindcss from 'tailwindcss'
 import { execFileSync } from 'node:child_process'
@@ -96,7 +96,7 @@ describe('detecção de celular', () => {
     [IPHONE, 5, true],
     [ANDROID_TV_WEBVIEW, 0, false], // diz "Mobile", mas TV não tem tela de toque
     [ANDROID_TV, 0, false],
-    [TABLET, 10, false],
+    [TABLET, 10, true], // RFC-023: tablet usa o layout de celular (deitado e em pé)
     [TIZEN, 0, false],
     [WEBOS, 0, false],
   ])('isPhone(%s, %s toques) = %s', async (ua, touchPoints, expected) => {
@@ -115,5 +115,57 @@ describe('detecção de celular', () => {
 
     expect(phone.classList.contains('is-phone')).toBe(true)
     expect(tv.classList.contains('is-phone')).toBe(false)
+  })
+})
+
+describe('celular em pé (RFC-023)', () => {
+  it('phone-portrait: só vale com is-phone e em pé; a TV nunca pega', async () => {
+    const css = await buildCss('<div class="phone-portrait:hidden phone:px-4"></div>')
+
+    expect(css).toContain('@media(orientation:portrait){html.is-phone.phone-portrait\\:hidden{display:none}}')
+    expect(css).toContain('html.is-phone.phone\\:px-4{')
+  })
+
+  it('a escala em pé fica atrás de is-phone (TV girada ou janela estreita do PC não mudam)', () => {
+    const css = compact(readFileSync('src/style.css', 'utf8'))
+
+    expect(css).toContain('@media(orientation:portrait){html.is-phone{font-size:calc(100vw/25);}}')
+    expect(css).toContain('@media(orientation:portrait)and(min-width:600px){html.is-phone{font-size:calc(100vw/45);}}')
+    expect(css).toContain('html{font-size:calc(100vw/120);}')
+  })
+
+  it('em pé, sem anel nem zoom de foco no toque; a TV continua com o foco de sempre', () => {
+    const css = compact(readFileSync('src/style.css', 'utf8'))
+
+    expect(css).toContain('@media(orientation:portrait){html.is-phone.tv-focusable:focus,html.is-phone.tv-focusable.is-focused{--tw-ring-shadow:00#0000;')
+    expect(css).toContain('.tv-focusable:focus,.tv-focusable.is-focused{@applyoutline-nonering-2ring-white')
+  })
+
+  function mockOrientation(portrait) {
+    const listeners = []
+    const query = {
+      matches: portrait,
+      addEventListener: (_type, fn) => listeners.push(fn),
+      removeEventListener: (_type, fn) => listeners.splice(listeners.indexOf(fn), 1),
+    }
+    window.matchMedia = () => query
+    return { rotate: (next) => listeners.forEach((fn) => fn({ matches: next })), listeners }
+  }
+
+  it('useFormFactor: celular troca entre em pé e deitado ao girar; TV fica "tv" mesmo com tela em pé', async () => {
+    const screen = mockOrientation(true)
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => true }))
+    const { useFormFactor } = await import('@/composables/useFormFactor')
+    const { layout, isPhonePortrait } = useFormFactor()
+    expect(layout.value).toBe('phone-portrait')
+    expect(isPhonePortrait.value).toBe(true)
+    screen.rotate(false)
+    expect(layout.value).toBe('phone-landscape')
+
+    vi.resetModules()
+    vi.doMock('@/utils/compat', () => ({ isPhone: () => false }))
+    const tv = (await import('@/composables/useFormFactor')).useFormFactor()
+    expect(tv.layout.value).toBe('tv')
+    vi.doUnmock('@/utils/compat')
   })
 })

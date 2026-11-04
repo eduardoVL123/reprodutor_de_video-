@@ -165,6 +165,21 @@ export async function readJsonBody(request, maxBytes = MAX_BODY_BYTES) {
 const isOpaqueText = (value, max) =>
   typeof value === 'string' && value.length > 0 && value.length <= max && BASE64URL.test(value)
 
+/**
+ * Rede do cliente para os limites: IPv4 inteiro; IPv6 só o prefixo /64, que é o que um provedor entrega a um cliente
+ * (contar por endereço daria 2^64 tentativas a qualquer um).
+ */
+export function networkKey(ip) {
+  const text = String(ip || '').trim().toLowerCase()
+  if (!text.includes(':')) return text
+  if (/^::ffff:\d+\.\d+\.\d+\.\d+$/.test(text)) return text.slice(7) // IPv4 mapeado em IPv6
+  const [head, tail = ''] = text.split('::')
+  const left = head ? head.split(':') : []
+  const right = text.includes('::') && tail ? tail.split(':') : []
+  const groups = text.includes('::') ? [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right] : left
+  return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '') || '0').join(':')}::/64`
+}
+
 /** Limitador de taxa em janela fixa por IP (1 minuto por padrão). */
 export function createLimiter(now, windowMs = WINDOW_MS) {
   const windows = new Map() // `${bucket}|${ip}` -> { start, count }
@@ -315,14 +330,20 @@ export function createPairCore(options = {}) {
   }
 
   function collectPayload(request, code, ip) {
+    const missWait = limiter.retryAfter('miss', ip, limits.miss)
+    if (missWait) return fail(429, 'Muitas tentativas. Aguarde um minuto.', { 'Retry-After': String(missWait) })
     const rateErr = throttled('poll', ip)
     if (rateErr) return rateErr
 
+    // A TV legítima nunca erra o código nem o segredo: 404 e 403 contam no balde de erros (sem oráculo de códigos).
     const s = liveSession(code)
-    if (!s) return fail(404, 'Código não encontrado ou expirado.')
+    if (!s) return notFound(ip)
 
     const clientSecret = request.headers.get('x-pair-secret') || ''
-    if (!timingSafeEqualStr(clientSecret, s.secret)) return fail(403, 'Segredo inválido.')
+    if (!timingSafeEqualStr(clientSecret, s.secret)) {
+      limiter.add('miss', ip)
+      return fail(403, 'Segredo inválido.')
+    }
 
     if (s.box === null) return sendResponse(204, null, CORS_HEADERS)
 
@@ -330,7 +351,8 @@ export function createPairCore(options = {}) {
     return sendJson(200, { box: s.box })
   }
 
-  async function handleApi(request, ip = '0.0.0.0') {
+  async function handleApi(request, rawIp = '0.0.0.0') {
+    const ip = networkKey(rawIp)
     try {
       const url = new URL(request.url, 'http://localhost')
       const path = url.pathname

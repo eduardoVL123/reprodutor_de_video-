@@ -2,6 +2,31 @@
 
 Endereço: `https://pulse-license.pulseplayer.workers.dev` · Formato: JSON · Erros: `{ "error": "mensagem em português" }`.
 
+## Em poucas palavras
+Com a sua chave `pk_…` o seu sistema faz, sozinho, tudo o que você faz no painel da revenda:
+
+- **Ver seu saldo de créditos**: `GET /api/v1/me`.
+- **Ver se uma TV existe e até quando está ativa**: `GET /api/v1/devices/ABCD2345` (o código de 8 letras aparece
+  na tela da TV).
+- **Ativar uma TV por 1 ano** (gasta 1 crédito; se ela já estava ativa, soma mais 1 ano ao fim):
+  `POST /api/v1/activations` com `{"code":"ABCD2345"}`. Leva o cabeçalho `Idempotency-Key`: se a internet cair no
+  meio, repita a chamada com a **mesma** `Idempotency-Key` e ela não gasta duas vezes.
+- **Listar suas ativações e seu extrato**, 50 de cada vez, das mais novas para as mais antigas:
+  `GET /api/v1/activations` e `GET /api/v1/movements`. Para ver os 50 seguintes, acrescente `?before=<id do último>`.
+- **Cuidar das revendas abaixo de você**: criar uma revenda, passar créditos para ela (com `Idempotency-Key`) e
+  trocar a chave dela.
+- **Comprar créditos** por Pix ou cartão: `POST /api/v1/credits/checkout`. Depois, consulte
+  `GET /v1/checkout/{orderId}?s={viewSecret}` até o `status` virar `paid`.
+- **Trocar a sua chave**: `POST /api/v1/me/key`. A chave antiga para de funcionar na hora.
+
+**Receita comum (ativar depois de vender):** o seu sistema confirma o pagamento do cliente → chama
+`POST /api/v1/activations` com o código da TV e uma `Idempotency-Key` igual ao número do seu pedido → guarda o
+`activationEndsAt` que voltou e mostra ao cliente. Se voltar `402`, falta crédito; `404`, a TV ainda não abriu o
+Pulse Player com internet; `409`, o aparelho está suspenso (fale com o Pulse Player).
+
+**O que a API não faz:** apagar aparelho, desfazer ativação, ver aparelhos ou clientes de outras revendas, ver dados
+pessoais de clientes ou mexer em preços. Isso fica só com o Pulse Player.
+
 ## Autenticação
 Toda chamada leva a chave do revendedor (recebida do Pulse Player ou da revenda acima):
 
@@ -47,7 +72,7 @@ Datas em milissegundos desde 1970 (UTC). Valores em centavos. `kind` do extrato:
 | 403 | Revenda bloqueada |
 | 404 | Código de aparelho inexistente (a TV precisa abrir o Pulse Player uma vez) ou revenda que não é sua |
 | 409 | Aparelho suspenso pelo Pulse Player |
-| 429 | Muitas chamadas seguidas |
+| 429 | Muitas chamadas seguidas, ou 30 chaves erradas da mesma rede em 15 minutos (espere o tempo de `Retry-After`) |
 
 ## Exemplo
 ```bash
@@ -60,3 +85,31 @@ curl -X POST https://pulse-license.pulseplayer.workers.dev/api/v1/activations \
 
 Regras: cada revenda só vê as próprias ativações, o próprio extrato e as revendas diretas dela. Créditos só descem
 (de quem está acima para quem está abaixo) e não vencem. Crédito gasto não volta se a ativação for revogada.
+
+## Relatórios (chave de leitura, RFC-025)
+Para quem acompanha os números do Pulse Player sem poder mudar nada. A chave é outra, entregue pelo dono, e só
+serve para **ler** estas três rotas. Ela não funciona no painel do dono nem nas rotas de revenda acima.
+
+```
+Authorization: Bearer <chave de leitura>
+```
+
+| Rota | O que devolve |
+|---|---|
+| `GET /api/v1/reports/summary?month=2026-11` | Resumo do mês: `{ month, activeDevices, trials, activations, paidOrders, revenueCents, byKind: { device_annual: { orders, cents }, credits: { orders, cents } } }` |
+| `GET /api/v1/reports/partners` | Parceiros e os aparelhos ativos de cada ciclo mensal: `[{ partnerId, name, active, cycles: [{ start, end, actives, monthlyCents }] }]` |
+| `GET /api/v1/reports/orders?month=2026-11&before={seq}` | Pedidos do mês, 50 por vez, mais novos primeiro: `[{ seq, id, createdAt, paidAt, kind, method, quantity, amountCents, status }]`. Para os próximos 50, `before` = o `seq` do último |
+
+- `month` é o mês no horário de Brasília (`AAAA-MM`); sem ele, o mês atual.
+- `activeDevices`: aparelhos com ativação valendo agora. `trials`: em teste e sem ativação. `activations`: ativações
+  que começaram no mês. `paidOrders` e `revenueCents`: pedidos pagos no mês pelo site (Pix e cartão). As renovações
+  automáticas do cartão nos anos seguintes ainda não entram nesse total.
+- Nenhuma resposta traz código de aparelho, nome, contato ou e-mail de cliente.
+- Limites: 60 chamadas por hora; 10 chaves erradas da mesma rede travam por 15 minutos (`429`). `POST` com a chave de
+  leitura → `405`. Sem a chave configurada no servidor → `503`.
+- Se a chave vazar, o dono troca e a antiga para na hora.
+
+```bash
+curl https://pulse-license.pulseplayer.workers.dev/api/v1/reports/summary?month=2026-11 \
+  -H "Authorization: Bearer SUA_CHAVE_DE_LEITURA"
+```

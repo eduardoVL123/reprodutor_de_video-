@@ -103,23 +103,23 @@ onBeforeUnmount(release)
     aria-modal="true"
     data-focus-group="profile-gate"
   >
-    <h1 class="text-[2.8rem] font-semibold text-white tracking-tight mb-12">Escolha o perfil</h1>
+    <h1 class="text-[2.8rem] font-semibold text-white tracking-tight mb-12 phone-portrait:text-[1.6rem] phone-portrait:mb-8">Escolha o perfil</h1>
 
-    <div class="flex items-center gap-8">
+    <div class="flex items-center gap-8 phone-portrait:flex-wrap phone-portrait:justify-center phone-portrait:gap-x-5 phone-portrait:gap-y-6 phone-portrait:px-6">
       <!-- Cards dos perfis -->
       <button
         v-for="p in profileStore.profiles"
         :id="'profile-card-' + p.id"
         :key="p.id"
         type="button"
-        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none"
+        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none phone-portrait:w-[7.5rem]"
         @click="select(p.id)"
       >
         <div
-          class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-transparent group-focus:border-white transition-colors shadow-2xl relative overflow-hidden"
+          class="w-[9.5rem] h-[9.5rem] phone-portrait:w-[5.5rem] phone-portrait:h-[5.5rem] rounded-xl flex items-center justify-center border-2 border-transparent group-focus:border-white transition-colors shadow-2xl relative overflow-hidden"
           :style="{ backgroundColor: p.color, color: avatarTextColor(p.color) }"
         >
-          <span class="text-5xl font-black select-none">
+          <span class="text-5xl font-black select-none phone-portrait:text-[2rem]">
             {{ p.name.charAt(0).toUpperCase() }}
           </span>
         </div>
@@ -133,10 +133,10 @@ onBeforeUnmount(release)
         v-if="profileStore.canAddProfile"
         id="btn-add-profile-card"
         type="button"
-        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none"
+        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none phone-portrait:w-[7.5rem]"
         @click="openAdd"
       >
-        <div class="w-[9.5rem] h-[9.5rem] rounded-xl flex items-center justify-center border-2 border-dashed border-white/20 group-focus:border-white transition-colors bg-white/[0.03]">
+        <div class="w-[9.5rem] h-[9.5rem] phone-portrait:w-[5.5rem] phone-portrait:h-[5.5rem] rounded-xl flex items-center justify-center border-2 border-dashed border-white/20 group-focus:border-white transition-colors bg-white/[0.03]">
           <svg class="w-12 h-12 text-neutral-400 group-focus:text-white transition-colors" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />

@@ -205,7 +205,7 @@ defineExpose({ open, close })
   >
     <!-- No celular deitado o modal inteiro rola (as partes não disputam a altura da tela). -->
     <div
-      class="w-full max-w-[70rem] max-h-[44rem] bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl phone:p-4 phone:overflow-y-auto"
+      class="w-full max-w-[70rem] max-h-[44rem] bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl phone:p-4 phone:overflow-y-auto phone-portrait:max-h-full"
     >
       <!-- Topo do modal -->
       <header class="flex items-center justify-between gap-4 pb-5 border-b border-white/[0.08] phone:pb-3">
@@ -228,6 +228,13 @@ defineExpose({ open, close })
           <span>Fechar</span>
         </button>
       </header>
+
+      <!-- RFC-018: o código do aparelho serve para assinar, para Minha TV no site e para o suporte. No topo: no fim da
+           tela ele ficava escondido embaixo do formulário no celular. -->
+      <p v-if="license.code" id="device-code" class="mt-4 text-tv-sm text-neutral-300 phone:mt-3">
+        Código do aparelho: <span class="font-mono font-bold tracking-widest text-tv-accent">{{ license.code }}</span>
+        <span class="block text-tv-xs text-neutral-500">Use para assinar e em Minha TV no site.</span>
+      </p>
 
       <!-- Mensagem de erro -->
       <div
@@ -252,7 +259,7 @@ defineExpose({ open, close })
       </div>
 
       <!-- Conteúdo do modal: 2 colunas -->
-      <div class="grid grid-cols-2 gap-8 flex-1 min-h-0 pt-6 phone:flex-none phone:gap-4 phone:pt-3">
+      <div class="grid grid-cols-2 gap-8 flex-1 min-h-0 pt-6 phone:flex-none phone:gap-4 phone:pt-3 phone-portrait:grid-cols-1 phone-portrait:gap-6">
         <!-- Coluna 1: listas salvas -->
         <div class="flex flex-col min-h-0">
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-3 uppercase tracking-wider">
@@ -272,7 +279,7 @@ defineExpose({ open, close })
               "
             >
               <div class="min-w-0 pr-3">
-                <div class="flex items-center gap-2.5 mb-1">
+                <div class="flex items-center gap-2.5 mb-1 phone-portrait:flex-wrap phone-portrait:gap-y-1">
                   <span class="text-tv-sm font-bold text-white truncate">
                     {{ list.label || list.username }}
                   </span>
@@ -351,7 +358,7 @@ defineExpose({ open, close })
         </div>
 
         <!-- Coluna 2: adicionar nova lista -->
-        <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08] phone:pl-4">
+        <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08] phone:pl-4 phone-portrait:pl-0 phone-portrait:border-l-0 phone-portrait:pt-5 phone-portrait:border-t">
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-1 uppercase tracking-wider">
             Adicionar Nova Lista
           </h3>
@@ -470,10 +477,6 @@ defineExpose({ open, close })
         </div>
       </div>
 
-      <!-- RFC-018: o código do aparelho serve para pagar a ativação e para o suporte -->
-      <p v-if="license.code" id="device-code" class="px-10 pb-2 text-tv-xs text-neutral-500 phone:px-0 phone:pt-3">
-        Código do aparelho: <span class="font-mono tracking-widest text-neutral-300">{{ license.code }}</span>
-      </p>
       <!-- RFC-021: lista enviada pelo site chega aqui também (a TV confirma antes) -->
       <div class="px-10 pb-6 phone:px-0 phone:pb-0">
         <SiteInboxPrompt @done="onPairDone" />

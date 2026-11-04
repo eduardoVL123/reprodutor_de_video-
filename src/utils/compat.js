@@ -15,12 +15,12 @@ export function supportsFlexGap(doc = document) {
 }
 
 /**
- * Celular: User-Agent de telefone ("Mobile" no Android, "iPhone") e tela de toque. O WebView do Android põe "Mobile"
- * até na TV (o APK no Android TV), mas TV não tem tela de toque (`maxTouchPoints` 0). Largura não serve: TVs Android
- * de 960px pegariam a regra.
+ * Celular ou tablet (aparelho de mão): Android ou iPhone com tela de toque. TV não tem tela de toque
+ * (`maxTouchPoints` 0), mesmo com "Android" e "Mobile" no User-Agent do WebView. Tablet entra junto (RFC-023: deitado
+ * usa o layout do celular deitado; em pé, o do celular em pé). Largura não serve: TVs Android de 960px pegariam a regra.
  */
 export function isPhone(ua = navigator.userAgent, touchPoints = navigator.maxTouchPoints || 0) {
-  return touchPoints > 0 && /iPhone|iPod|Android.*Mobile/i.test(ua)
+  return touchPoints > 0 && /iPhone|iPod|Android/i.test(ua)
 }
 
 /**

@@ -167,13 +167,15 @@ function currentIndex() {
   return isNaN(n) ? -1 : n
 }
 
+// Eixo vertical em px com o MESMO rootPx da conta de rolagem: em rem, se a fonte da raiz mudasse sem `resize`
+// (celular em pé), cada linha deslizava um pouco mais e, lá embaixo, a janela renderizada saía da tela.
 const slotStyle = (s) => {
   const gapsTotal = props.gap * (props.columns - 1)
   return {
-    top: `${PAD + s.row * pitch.value}rem`,
+    top: `${(PAD + s.row * pitch.value) * rootPx.value}px`,
     left: `calc(${PAD}rem + ${s.col} * ((100% - ${PAD * 2 + gapsTotal}rem) / ${props.columns} + ${props.gap}rem))`,
     width: `calc((100% - ${PAD * 2 + gapsTotal}rem) / ${props.columns})`,
-    height: `${props.rowHeight}rem`,
+    height: `${props.rowHeight * rootPx.value}px`,
   }
 }
 
@@ -217,7 +219,7 @@ defineExpose({ scrollToIndex, refresh, measure, focusIndex })
     :data-grid-total="count"
     @scroll.passive="onScroll"
   >
-    <div class="relative w-full" :style="{ height: contentHeight + 'rem' }">
+    <div class="relative w-full" :style="{ height: contentHeight * rootPx + 'px' }">
       <div
         v-for="s in slots"
         :key="s.key"

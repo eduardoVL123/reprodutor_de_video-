@@ -3,7 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 let recovering = null
 
-async function setup({ withNavigation = false, castAvailable = false } = {}) {
+async function setup({ withNavigation = false, castAvailable = false, phone = false } = {}) {
+  vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => phone }))
   const attachAndPlay = vi.fn(async () => {})
   const destroyEngine = vi.fn()
   vi.doMock('@/composables/useVideoEngine', async () => {
@@ -40,6 +41,7 @@ async function setup({ withNavigation = false, castAvailable = false } = {}) {
   const platform = {
     exitApp: vi.fn(),
     setPictureInPictureEnabled: vi.fn(async () => {}),
+    setPlayerOrientation: vi.fn(async () => {}),
     pipCallback: null,
     backgroundCallback: null,
   }
@@ -89,6 +91,29 @@ function fakePlayback(el, { paused = false } = {}) {
   })
   return { time: () => time }
 }
+
+describe('VideoPlayerOverlay — orientação no celular (RFC-023)', () => {
+  it('celular: abrir o vídeo deita a tela e fechar solta', async () => {
+    const { wrapper, player, platform } = await setup({ phone: true })
+    player.playItem(MOVIE)
+    await flushPromises()
+    expect(platform.setPlayerOrientation.mock.calls).toEqual([[true]])
+    player.close()
+    await flushPromises()
+    expect(platform.setPlayerOrientation.mock.calls).toEqual([[true], [false]])
+    wrapper.unmount()
+  })
+
+  it('TV: o player nunca mexe na orientação', async () => {
+    const { wrapper, player, platform } = await setup()
+    player.playItem(MOVIE)
+    await flushPromises()
+    player.close()
+    await flushPromises()
+    expect(platform.setPlayerOrientation).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+})
 
 describe('VideoPlayerOverlay — início da reprodução', () => {
   it('inicia o motor de reprodução uma única vez ao abrir um item', async () => {

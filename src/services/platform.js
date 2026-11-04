@@ -61,6 +61,39 @@ export async function setPictureInPictureEnabled(enabled) {
   }
 }
 
+/**
+ * Abre um endereço no navegador do sistema (site de enviar lista, página de planos). No APK, navegar para fora do
+ * app faz o Capacitor abrir o navegador (BridgeWebViewClient → launchIntent) sem sair da tela; fora dele, nova aba.
+ */
+export function openExternal(url) {
+  if (!/^https?:\/\//i.test(String(url || ''))) return
+  if (isNativeApp()) window.location.href = url
+  else window.open(url, '_blank', 'noopener')
+}
+
+/** Plugin nativo do APK (android/.../OrientationPlugin.java); na TV ele não faz nada. */
+const Orientation = registerPlugin('Orientation')
+
+/**
+ * Player no celular em pé (RFC-023): enquanto o vídeo está aberto a tela fica deitada; ao fechar, volta a girar.
+ * No navegador do celular só funciona em tela cheia (`screen.orientation.lock`), então a recusa é ignorada.
+ * Nunca rejeita.
+ */
+export async function setPlayerOrientation(landscape) {
+  try {
+    if (isNativeApp()) {
+      await (landscape ? Orientation.lockLandscape() : Orientation.unlock())
+      return
+    }
+    const orientation = typeof screen !== 'undefined' && screen.orientation
+    if (!orientation) return
+    if (landscape && orientation.lock) await orientation.lock('landscape')
+    else if (!landscape && orientation.unlock) orientation.unlock()
+  } catch (_) {
+    // Sem permissão (fora da tela cheia) ou sem suporte: segue na orientação atual.
+  }
+}
+
 /** Listener nativo (registro assíncrono) com cancelamento síncrono. */
 export function cancellable(handlePromise) {
   let handle = null

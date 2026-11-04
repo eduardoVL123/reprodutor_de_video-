@@ -1,5 +1,6 @@
 package com.pulseplayer.app;
 
+import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
 import android.os.Build;
@@ -34,7 +35,12 @@ public class MainActivity extends BridgeActivity {
         // Plugins do próprio app precisam ser registrados antes do Capacitor iniciar.
         registerPlugin(PictureInPicturePlugin.class);
         registerPlugin(CastPlugin.class);
+        registerPlugin(OrientationPlugin.class);
         super.onCreate(savedInstanceState);
+        // O manifesto deixa girar (celular e tablet em pé, RFC-023); a TV fica sempre deitada, como antes.
+        if (OrientationPlugin.isTv(this)) {
+            setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+        }
         // Android 9 a 14: na horizontal a janela desviava da câmera e sobrava uma faixa preta (15+ já ocupa).
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             WindowManager.LayoutParams params = getWindow().getAttributes();

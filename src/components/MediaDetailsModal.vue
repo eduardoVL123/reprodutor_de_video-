@@ -8,6 +8,7 @@ import { formatTime, durationLabel } from '@/utils/formatTime'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import { episodesOf as episodesOfSeries, seasonsOf, episodeTitle, buildSeriesPlaylist } from '@/utils/seriesPlaylist'
 import BrandMark from '@/components/BrandMark.vue'
+import { useFormFactor } from '@/composables/useFormFactor'
 
 /**
  * Tela de detalhes em tela cheia (RFC-014 layout 2.0) para filmes (`vod`) e séries (`series`).
@@ -32,6 +33,7 @@ const player = usePlayerStore()
 
 const rootEl = ref(null)
 const isSeries = computed(() => props.section === 'series')
+const { isPhonePortrait } = useFormFactor()
 const info = ref(normalizeVodInfo(null, props.item))
 const isLoadingInfo = ref(true)
 const loadError = ref('')
@@ -281,43 +283,44 @@ onBeforeUnmount(() => {
 <template>
   <div
     ref="rootEl"
-    class="fixed inset-0 z-40 bg-tv-deep text-white overflow-hidden select-none"
+    class="fixed inset-0 z-40 bg-tv-deep text-white overflow-hidden phone-portrait:overflow-y-auto select-none"
     role="dialog"
     aria-modal="true"
     :aria-label="info.name"
     data-focus-group="media-details"
   >
     <!-- Backdrop cinematográfico à direita em tela cheia com vinheta -->
-    <div class="absolute inset-0 overflow-hidden pointer-events-none">
+    <div class="absolute inset-0 phone-portrait:bottom-auto phone-portrait:h-[22rem] overflow-hidden pointer-events-none">
       <img
         v-if="info.backdrop && !backdropFailed"
         :key="info.backdrop"
         :src="info.backdrop"
         alt=""
         referrerpolicy="no-referrer"
-        class="absolute top-0 right-0 w-[68%] h-full object-cover object-center opacity-60 pointer-events-none"
+        class="absolute top-0 right-0 w-[68%] phone-portrait:w-full h-full object-cover object-center opacity-60 pointer-events-none"
         @error="backdropFailed = true"
       />
       <div
         v-else
         class="absolute inset-0 bg-[radial-gradient(ellipse_at_75%_30%,#1e40af_0%,#312e81_25%,#0b0b1a_55%,#0b0f0c_80%)] opacity-80"
       />
-      <div class="absolute inset-0 tv-vignette pointer-events-none" />
+      <div class="absolute inset-0 tv-vignette phone-portrait:hidden pointer-events-none" />
+      <div class="hidden phone-portrait:block absolute inset-0 bg-gradient-to-b from-tv-deep/40 via-transparent to-tv-deep pointer-events-none" />
     </div>
 
     <!-- ===================== FILME ===================== -->
-    <div v-if="!isSeries" class="relative z-10 px-20 py-12 flex flex-col justify-between h-full max-w-[56rem]">
+    <div v-if="!isSeries" class="relative z-10 px-20 py-12 phone-portrait:px-5 phone-portrait:pt-[15rem] phone-portrait:pb-8 phone-portrait:justify-start phone-portrait:h-auto phone-portrait:min-h-full flex flex-col justify-between h-full max-w-[56rem]">
       <div>
         <div class="flex items-center gap-2.5">
           <BrandMark :size="1.25" class="text-tv-accent" />
-          <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">FILME</span>
+          <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase phone-portrait:text-[0.8rem] phone-portrait:tracking-[0.12em]">FILME</span>
         </div>
 
-        <h1 class="text-tv-hero font-black uppercase text-white mt-2 line-clamp-2">
+        <h1 class="text-tv-hero font-black uppercase text-white mt-2 line-clamp-2 phone-portrait:text-[2rem] phone-portrait:leading-[1.05] phone-portrait:normal-case">
           {{ info.name }}
         </h1>
 
-        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-4 font-medium flex-wrap">
+        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-4 font-medium flex-wrap phone-portrait:text-[0.85rem] phone-portrait:gap-2.5 phone-portrait:mt-2">
           <span v-if="hasRating" class="text-[#4ade80] font-bold">Nota {{ info.rating }}</span>
           <span v-if="hasRating && (info.year || info.duration)" class="w-1 h-1 rounded-full bg-neutral-500" />
           <span v-if="info.year">{{ info.year }}</span>
@@ -327,10 +330,10 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="hasMovieProgress" class="flex items-center gap-4 mt-5">
-          <div class="w-80 h-1.5 bg-white/15 rounded-full overflow-hidden">
+          <div class="w-80 phone-portrait:w-24 h-1.5 bg-white/15 rounded-full overflow-hidden">
             <div class="h-full bg-tv-accent" :style="{ width: movieProgressPct + '%' }" />
           </div>
-          <span class="text-tv-xs text-neutral-300">Em andamento · Retomar de {{ formatTime(savedTime) }}</span>
+          <span class="text-tv-xs text-neutral-300 phone-portrait:text-[0.8rem]">Em andamento · Retomar de {{ formatTime(savedTime) }}</span>
         </div>
       </div>
 
@@ -341,8 +344,8 @@ onBeforeUnmount(() => {
           <div class="h-4 rounded bg-white/[0.06] w-3/5" />
         </div>
         <template v-else>
-          <p class="text-tv-base text-neutral-200 leading-relaxed line-clamp-4 mt-4">{{ info.plot }}</p>
-          <div class="mt-4 space-y-1 text-tv-xs text-neutral-400">
+          <p class="text-tv-base text-neutral-200 leading-relaxed line-clamp-4 mt-4 phone-portrait:text-[0.9rem] phone-portrait:line-clamp-none">{{ info.plot }}</p>
+          <div class="mt-4 space-y-1 text-tv-xs text-neutral-400 phone-portrait:text-[0.8rem]">
             <p v-if="info.cast" class="line-clamp-1">
               <span class="text-neutral-500 font-semibold">Elenco:</span> {{ info.cast }}
             </p>
@@ -352,14 +355,14 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <div data-focus-row="movie-details-actions" class="flex items-center gap-3.5 mt-8">
+        <div data-focus-row="movie-details-actions" class="flex items-center gap-3.5 mt-8 phone-portrait:max-w-[32rem] phone-portrait:flex-wrap phone-portrait:gap-2.5 phone-portrait:mt-5">
           <button
             id="details-play-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3 phone-portrait:basis-full phone-portrait:justify-center phone-portrait:h-12 phone-portrait:rounded-xl phone-portrait:bg-tv-accent phone-portrait:text-tv-on-accent phone-portrait:text-[0.95rem]"
             @click="playMovie"
           >
-            <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <svg class="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
             <span>{{ hasMovieProgress ? 'Continuar assistindo' : 'Assistir agora' }}</span>
           </button>
 
@@ -367,7 +370,7 @@ onBeforeUnmount(() => {
             v-if="hasMovieProgress"
             id="details-restart-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="playFromStart"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -380,7 +383,7 @@ onBeforeUnmount(() => {
           <button
             id="details-fav-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="toggleBookmark"
           >
             <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -396,7 +399,7 @@ onBeforeUnmount(() => {
           <button
             id="details-back-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="close"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -410,19 +413,19 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ===================== SÉRIE ===================== -->
-    <div v-else class="relative z-10 flex flex-col h-full justify-between pb-8">
+    <div v-else class="relative z-10 flex flex-col h-full justify-between pb-8 phone-portrait:h-auto phone-portrait:justify-start">
       <!-- Cabeçalho e Sinopse da série -->
-      <header class="px-20 pt-10 shrink-0 max-w-[62rem]">
+      <header class="px-20 pt-10 phone-portrait:px-5 phone-portrait:pt-[15rem] shrink-0 max-w-[62rem]">
         <div class="flex items-center gap-2.5">
           <BrandMark :size="1.25" class="text-tv-accent" />
-          <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase">SÉRIE</span>
+          <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase phone-portrait:text-[0.8rem] phone-portrait:tracking-[0.12em]">SÉRIE</span>
         </div>
 
-        <h1 class="text-tv-hero font-black uppercase text-white mt-1.5 line-clamp-2">
+        <h1 class="text-tv-hero font-black uppercase text-white mt-1.5 line-clamp-2 phone-portrait:text-[2rem] phone-portrait:leading-[1.05] phone-portrait:normal-case">
           {{ info.name }}
         </h1>
 
-        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-3 font-medium flex-wrap">
+        <div class="flex items-center gap-3.5 text-tv-sm text-tv-meta mt-3 font-medium flex-wrap phone-portrait:text-[0.85rem] phone-portrait:gap-2.5 phone-portrait:mt-2">
           <span v-if="hasRating" class="text-[#4ade80] font-bold">Nota {{ info.rating }}</span>
           <span v-if="hasRating && (info.year || seasons.length)" class="w-1 h-1 rounded-full bg-neutral-500" />
           <span v-if="info.year">{{ info.year }}</span>
@@ -436,25 +439,25 @@ onBeforeUnmount(() => {
           <div class="h-4 rounded bg-white/[0.06] w-3/4" />
         </div>
         <template v-else>
-          <p class="text-tv-sm text-neutral-200 leading-relaxed line-clamp-2 mt-3">{{ info.plot }}</p>
+          <p class="text-tv-sm text-neutral-200 leading-relaxed line-clamp-2 mt-3 phone-portrait:text-[0.9rem] phone-portrait:line-clamp-4">{{ info.plot }}</p>
         </template>
 
         <!-- Botões de Ação da Série -->
-        <div data-focus-row="series-details-actions" class="flex items-center gap-3.5 mt-5">
+        <div data-focus-row="series-details-actions" class="flex items-center gap-3.5 mt-5 phone-portrait:max-w-[32rem] phone-portrait:flex-wrap phone-portrait:gap-2.5">
           <button
             id="series-play-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-8 rounded-lg bg-white text-black font-bold text-tv-sm flex items-center gap-3 phone-portrait:basis-full phone-portrait:justify-center phone-portrait:h-12 phone-portrait:rounded-xl phone-portrait:bg-tv-accent phone-portrait:text-tv-on-accent phone-portrait:text-[0.95rem]"
             @click="playSeries"
           >
-            <svg class="w-4 h-4 fill-black shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            <svg class="w-4 h-4 fill-current shrink-0" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3" /></svg>
             <span>{{ seriesPlayLabel }}</span>
           </button>
 
           <button
             id="series-fav-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="toggleBookmark"
           >
             <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -470,7 +473,7 @@ onBeforeUnmount(() => {
           <button
             id="series-back-btn"
             type="button"
-            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3"
+            class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="close"
           >
             <svg class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -502,7 +505,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Temporadas em abas e Episódios em Fileira 16:9 (Mockup Detalhes de série) -->
-      <div v-else class="px-20 mt-4 shrink-0 space-y-4">
+      <div v-else class="px-20 phone-portrait:px-5 mt-4 shrink-0 space-y-4">
         <!-- Seletor de Temporadas -->
         <!-- py-2/px-2: a faixa rola de lado e cortaria o anel do foco (ring + offset) em cima e embaixo -->
         <div data-focus-row="series-seasons" data-scroll-x class="flex items-center gap-3 overflow-x-auto py-2 px-2 -mx-2">
@@ -511,7 +514,7 @@ onBeforeUnmount(() => {
             :id="'season-tab-' + season.key"
             :key="season.key"
             type="button"
-            class="tv-focusable shrink-0 px-6 py-2 rounded-lg text-tv-sm font-semibold transition-colors"
+            class="tv-focusable shrink-0 px-6 py-2 rounded-lg text-tv-sm font-semibold transition-colors phone-portrait:px-4 phone-portrait:rounded-full phone-portrait:text-[0.85rem]"
             :class="
               season.key === activeSeasonKey
                 ? 'bg-white text-black font-bold'
@@ -521,15 +524,45 @@ onBeforeUnmount(() => {
           >
             Temporada {{ season.number }}
           </button>
-          <span v-if="seasons.length" class="pl-2 shrink-0 text-tv-xs text-neutral-400 font-medium">
+          <span v-if="seasons.length" class="pl-2 shrink-0 text-tv-xs text-neutral-400 font-medium phone-portrait:text-[0.8rem]">
             {{ currentEpisodes.length }} {{ currentEpisodes.length === 1 ? 'episódio' : 'episódios' }}
           </span>
         </div>
 
         <!-- Fileira Deslizante de Episódios com HorizontalRail -->
         <div data-focus-group="series-episodes" class="min-h-[14rem]">
+          <!-- Em pé: lista de uma coluna (mockup da RFC-023); TV e deitado seguem na fileira -->
+          <div v-if="isPhonePortrait && currentEpisodes.length > 0" data-focus-row="series-episode-list">
+            <button
+              v-for="(ep, idx) in currentEpisodes"
+              :id="'episode-row-' + idx"
+              :key="ep.id"
+              type="button"
+              class="tv-focusable w-full flex items-center gap-3.5 py-2.5 text-left border-b border-white/[0.08] last:border-b-0"
+              @click="playEpisode(idx)"
+            >
+              <span class="relative w-[8rem] h-[4.5rem] shrink-0 rounded-lg overflow-hidden bg-[#141418]">
+                <img
+                  v-if="episodeImage(ep)"
+                  :src="episodeImage(ep)"
+                  alt=""
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  class="w-full h-full object-cover"
+                  @error="$event.target.style.display = 'none'"
+                />
+                <span v-if="episodeProgressPct(ep) > 0" class="tv-progress">
+                  <i :style="{ width: episodeProgressPct(ep) + '%' }" />
+                </span>
+              </span>
+              <span class="min-w-0">
+                <span class="block phone-portrait:text-[0.95rem] font-bold text-white truncate">{{ ep.episode_num }}. {{ episodeTitle(ep) }}</span>
+                <span class="block phone-portrait:text-[0.8rem] text-tv-meta mt-0.5">{{ episodeRemainingText(ep) || episodeDuration(ep) }}</span>
+              </span>
+            </button>
+          </div>
           <HorizontalRail
-            v-if="currentEpisodes.length > 0"
+            v-else-if="currentEpisodes.length > 0"
             :key="activeSeasonKey"
             :items="currentEpisodes"
             :active-index="activeEpisodeIndex"

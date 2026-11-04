@@ -273,6 +273,8 @@ export const usePlayerStore = defineStore('player', () => {
     if (!plain) return
 
     if (plain.section === 'live') {
+      // Ao vivo não tem progresso: já no topo, não há o que gravar (antes regravava a cada 10 s durante horas).
+      if (watchHistory.value[0] && sameItem(watchHistory.value[0], plain)) return
       addToHistory({ ...plain, currentTime: 0, duration: 0, progressPct: 0, updatedAt: Date.now() })
       return
     }
@@ -372,11 +374,11 @@ export const usePlayerStore = defineStore('player', () => {
 
   /**
    * Toca a Minha Fila a partir de `startItem` (ou do início). Séries ficam de fora:
-   * são contêineres de episódios, não um vídeo reproduzível.
+   * são contêineres de episódios, não um vídeo reproduzível. `allow`: filtro extra (controle parental).
    */
-  async function playFromCustomQueue(startItem = null) {
+  async function playFromCustomQueue(startItem = null, allow = null) {
     await hydrate()
-    const playable = customQueue.value.filter((it) => it.section !== 'series').slice(0, QUEUE_MAX)
+    const playable = customQueue.value.filter((it) => it.section !== 'series' && (!allow || allow(it))).slice(0, QUEUE_MAX)
     if (!playable.length) return false
     seq++
     if (!isOpen.value) rememberFocus()
@@ -411,9 +413,11 @@ export const usePlayerStore = defineStore('player', () => {
     if (!isOpen.value) rememberFocus()
     mode.value = section
     context.value = null
-    queue.value = plainList.slice(0, QUEUE_MAX)
+    // Fila limitada a QUEUE_MAX em volta do item escolhido (não do começo): o episódio 350 de uma novela é o 350.
+    const from = Math.max(0, Math.min(startIndex, plainList.length - QUEUE_MAX))
+    queue.value = plainList.slice(from, from + QUEUE_MAX)
     isOpen.value = true
-    const validIndex = Math.max(0, Math.min(startIndex, queue.value.length - 1))
+    const validIndex = Math.max(0, Math.min(startIndex - from, queue.value.length - 1))
     setCurrent(validIndex)
   }
 

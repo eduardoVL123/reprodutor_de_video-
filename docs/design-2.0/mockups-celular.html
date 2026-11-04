@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pulse Player — celular em pé</title>
+<!--
+  RFC-023: telas de exemplo do celular em pé (390×844) e do tablet em pé (800×1280), para aprovação antes do código.
+  Marca (RFC-015): grafite #0B0F0C, limão #B8F000, texto sobre limão em grafite. As cores dos pôsteres são ilustrativas:
+  no app entram as capas da lista do usuário. Abrir direto no navegador (arquivo local, sem dependências).
+-->
+<style>
+  :root {
+    --bg: #0b0f0c; --surface: #141a15; --raised: #1c241d; --line: rgba(244, 247, 238, .09);
+    --ink: #f4f7ee; --muted: #9ba49c; --dim: #66706a; --lime: #b8f000; --on-lime: #0b0f0c; --live: #ff5a4e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { background: #232823; color: var(--ink); font-family: Roboto, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif; padding: 32px 28px 60px }
+  .page-title { font-size: 22px; font-weight: 700; margin-bottom: 6px }
+  .page-lead { color: #c3c9c1; font-size: 14px; line-height: 1.6; max-width: 72ch; margin-bottom: 8px }
+  .group { margin-top: 40px }
+  .group h2 { font-size: 17px; font-weight: 700; margin-bottom: 4px }
+  .group p.note { color: #b3bab2; font-size: 13px; line-height: 1.55; max-width: 72ch; margin-bottom: 16px }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start }
+  .cap { color: #c3c9c1; font-size: 13px; margin-top: 10px; max-width: 390px; line-height: 1.5 }
+  .cap b { color: var(--ink) }
+
+  /* Aparelho */
+  .phone { width: 390px; height: 844px; border-radius: 44px; background: var(--bg); position: relative; overflow: hidden;
+    box-shadow: 0 0 0 10px #050705, 0 30px 70px rgba(0, 0, 0, .55); font-size: 15px }
+  .phone.land { width: 844px; height: 390px }
+  .tablet { width: 800px; height: 1280px; border-radius: 36px; zoom: .62 }
+  .status { height: 44px; padding: 14px 28px 0; display: flex; justify-content: space-between; font-size: 13px; font-weight: 600; color: var(--ink); position: relative; z-index: 6 }
+  .scroll { position: absolute; inset: 0; overflow: hidden; padding-bottom: 96px }
+
+  /* Topo */
+  .top { position: absolute; left: 0; right: 0; top: 44px; height: 56px; padding: 0 20px; display: flex; align-items: center; justify-content: space-between; z-index: 5 }
+  .top.solid { background: var(--bg); border-bottom: 1px solid var(--line) }
+  .mark { height: 26px; fill: var(--lime) }
+  .top-actions { display: flex; gap: 6px; align-items: center }
+  .iconbtn { width: 44px; height: 44px; border-radius: 22px; display: grid; place-items: center; color: var(--ink) }
+  .iconbtn svg { width: 22px; height: 22px; stroke: currentColor; fill: none; stroke-width: 2 }
+  .avatar { width: 32px; height: 32px; border-radius: 9px; background: var(--lime); color: var(--on-lime); display: grid; place-items: center; font-weight: 800; font-size: 14px }
+
+  /* Destaque */
+  .hero { position: relative; height: 540px }
+  .hero .art { position: absolute; inset: 0 }
+  .hero .fade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(11, 15, 12, .55) 0%, transparent 22%, transparent 45%, rgba(11, 15, 12, .85) 72%, var(--bg) 100%) }
+  .hero .body { position: absolute; left: 20px; right: 20px; bottom: 18px }
+  .kind { font-size: 13px; color: var(--muted); font-weight: 600 }
+  .hero h1 { font-size: 34px; line-height: 1.02; font-weight: 900; letter-spacing: -.02em; margin: 6px 0 10px }
+  .facts { display: flex; flex-wrap: wrap; gap: 6px 12px; font-size: 13px; color: #d5dbd3 }
+  .facts .score { color: var(--lime); font-weight: 700 }
+  .actions { display: flex; gap: 10px; margin-top: 16px }
+  .btn { height: 48px; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; font-weight: 700; font-size: 15px; padding: 0 18px }
+  .btn.primary { background: var(--lime); color: var(--on-lime); flex: 1 }
+  .btn.quiet { background: var(--raised); color: var(--ink); border: 1px solid var(--line); flex: 1 }
+  .btn.full { width: 100% }
+  .btn svg { width: 18px; height: 18px; fill: currentColor }
+
+  /* Fileiras */
+  .section { padding: 20px 0 4px }
+  .section-head { display: flex; justify-content: space-between; align-items: baseline; padding: 0 20px; margin-bottom: 12px }
+  .section-head h3 { font-size: 18px; font-weight: 800 }
+  .section-head a { font-size: 13px; color: var(--muted); font-weight: 600 }
+  .rail { display: flex; gap: 10px; padding: 0 20px; overflow: hidden }
+  .poster { flex: 0 0 auto; width: 112px; height: 168px; border-radius: 10px; position: relative; overflow: hidden }
+  .wide { flex: 0 0 auto; width: 236px; height: 133px; border-radius: 10px; position: relative; overflow: hidden }
+  .shade:after { content: ''; position: absolute; inset: 0; background: linear-gradient(to top, rgba(0, 0, 0, .8), transparent 55%) }
+  .poster .t, .wide .t { position: absolute; left: 10px; right: 10px; bottom: 9px; z-index: 1; font-weight: 800; font-size: 13px; line-height: 1.15 }
+  .wide .sub { display: block; font-size: 12px; font-weight: 500; color: #d5dbd3; margin-top: 3px }
+  .progress { position: absolute; left: 0; right: 0; bottom: 0; height: 4px; background: rgba(244, 247, 238, .22); z-index: 2 }
+  .progress i { display: block; height: 100%; background: var(--lime) }
+  .badge { position: absolute; top: 8px; left: 8px; z-index: 2; font-size: 11px; font-weight: 800; padding: 3px 7px; border-radius: 5px; background: var(--live); color: #fff }
+
+  /* Barra inferior: o pulso da marca marca a aba ativa */
+  .tabbar { position: absolute; left: 0; right: 0; bottom: 0; height: 88px; padding: 6px 6px 26px; background: rgba(11, 15, 12, .97); border-top: 1px solid var(--line); display: flex; z-index: 6 }
+  .tab { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 3px; color: var(--dim); font-size: 11px; font-weight: 600; position: relative; padding-top: 12px }
+  .tab svg.ic { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.9 }
+  .tab.on { color: var(--ink) }
+  .tab .pulse { position: absolute; top: -1px; width: 40px; height: 10px; stroke: var(--lime); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round }
+  .home-ind { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; margin-left: -67px; border-radius: 3px; background: rgba(244, 247, 238, .5); z-index: 7 }
+
+  /* Chips de categoria */
+  .chips { display: flex; gap: 8px; padding: 12px 20px; overflow: hidden }
+  .chip { flex: 0 0 auto; height: 36px; padding: 0 14px; border-radius: 18px; border: 1px solid var(--line); background: var(--surface); display: inline-flex; align-items: center; font-size: 13px; font-weight: 600; color: #d5dbd3 }
+  .chip.on { background: var(--ink); color: var(--on-lime); border-color: transparent }
+
+  /* Grade */
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 4px 20px 20px }
+  .grid .poster { width: auto; height: 170px }
+  .tablet .grid { grid-template-columns: repeat(5, 1fr) }
+
+  /* Lista (canais, episódios, menus) */
+  .list { padding: 0 20px }
+  .item { display: flex; gap: 14px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line) }
+  .item:last-child { border-bottom: 0 }
+  .logo-box { width: 64px; height: 44px; border-radius: 8px; flex: 0 0 auto; display: grid; place-items: center; font-weight: 900; font-size: 13px }
+  .item .grow { flex: 1; min-width: 0 }
+  .item .name { font-weight: 700; font-size: 15px }
+  .item .now { font-size: 13px; color: var(--muted); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis }
+  .item .bar { height: 3px; border-radius: 2px; background: rgba(244, 247, 238, .14); margin-top: 7px }
+  .item .bar i { display: block; height: 100%; border-radius: 2px; background: var(--lime) }
+  .thumb { width: 128px; height: 72px; border-radius: 8px; flex: 0 0 auto; position: relative; overflow: hidden }
+  .chev { width: 20px; height: 20px; stroke: var(--dim); fill: none; stroke-width: 2 }
+
+  /* Folha (Mais) */
+  .dim { position: absolute; inset: 0; background: rgba(0, 0, 0, .6); z-index: 8 }
+  .sheet { position: absolute; left: 0; right: 0; bottom: 0; background: var(--surface); border-radius: 22px 22px 0 0; padding: 10px 0 34px; z-index: 9 }
+  .grab { width: 40px; height: 5px; border-radius: 3px; background: rgba(244, 247, 238, .25); margin: 0 auto 14px }
+  .menu-row { display: flex; align-items: center; gap: 16px; padding: 0 22px; height: 56px; font-size: 16px; font-weight: 600 }
+  .menu-row svg.ic { width: 22px; height: 22px; stroke: var(--muted); fill: none; stroke-width: 1.9 }
+  .menu-row .hint { margin-left: auto; color: var(--muted); font-size: 13px; font-weight: 500 }
+  .rule { height: 1px; background: var(--line); margin: 8px 22px }
+
+  /* Formulários */
+  .field { margin-bottom: 14px }
+  .field label { display: block; font-size: 13px; color: var(--muted); font-weight: 600; margin-bottom: 6px }
+  .input { height: 52px; border-radius: 12px; background: var(--surface); border: 1px solid var(--line); padding: 0 16px; display: flex; align-items: center; font-size: 15px; color: var(--dim) }
+  .input.filled { color: var(--ink) }
+  .input.focus { border-color: var(--lime); box-shadow: 0 0 0 3px rgba(184, 240, 0, .18) }
+
+  /* Teclado do sistema (ilustrativo) */
+  .kbd { position: absolute; left: 0; right: 0; bottom: 0; height: 290px; background: #1d211e; padding: 10px 4px 34px; z-index: 6 }
+  .krow { display: flex; justify-content: center; gap: 6px; margin-bottom: 10px }
+  .krow span { width: 32px; height: 44px; border-radius: 6px; background: #3a403b; display: grid; place-items: center; font-size: 17px }
+
+  /* Pôsteres ilustrativos */
+  .p1 { background: linear-gradient(150deg, #4d7c0f, #1a2e05 60%, #0b0f0c) } .p2 { background: linear-gradient(160deg, #0e7490, #083344 60%) }
+  .p3 { background: linear-gradient(140deg, #b45309, #431407 65%) } .p4 { background: linear-gradient(150deg, #6d28d9, #1e1b4b 70%) }
+  .p5 { background: linear-gradient(130deg, #be123c, #3f0d18 65%) } .p6 { background: linear-gradient(160deg, #475569, #0f172a 70%) }
+  .p7 { background: linear-gradient(140deg, #a16207, #1c1917 70%) } .p8 { background: linear-gradient(150deg, #0f766e, #022c22 70%) }
+  .art-a { background: radial-gradient(ellipse at 60% 30%, #d9f99d 0%, #65a30d 18%, #1a2e05 45%, var(--bg) 78%) }
+  .art-b { background: radial-gradient(ellipse at 40% 25%, #67e8f9 0%, #0e7490 20%, #082f49 48%, var(--bg) 80%) }
+</style>
+</head>
+<body>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="mark" viewBox="52 48 152 160"><path d="M56.00 122.00 L56.00 64.25 A14 14 0 0 1 77.00 52.12 L198.03 122.00 L146.58 122.00 L137.34 138.00 L107.32 86.00 L86.54 122.00 Z"/><path d="M56.00 134.00 L93.46 134.00 L107.32 110.00 L137.34 162.00 L153.50 134.00 L198.03 134.00 L77.00 203.88 A14 14 0 0 1 56.00 191.75 Z"/></symbol>
+    <symbol id="pulse" viewBox="0 0 40 10"><path d="M1 6 H13 L16 2 L21 9 L24 6 H39"/></symbol>
+    <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></symbol>
+    <symbol id="i-live" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M8 2l4 4 4-4"/></symbol>
+    <symbol id="i-film" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/></symbol>
+    <symbol id="i-series" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M7 3h10M5 5h14"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></symbol>
+    <symbol id="i-cast" viewBox="0 0 24 24"><path d="M3 18a3 3 0 0 1 3 3M3 14a7 7 0 0 1 7 7M3 10a11 11 0 0 1 11 11"/><path d="M3 7V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/></symbol>
+    <symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+    <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.6 3.8 5.6 3.8 9s-1.3 6.4-3.8 9c-2.5-2.6-3.8-5.6-3.8-9S9.5 5.6 12 3z"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6V14M12 17.5v.01"/></symbol>
+    <symbol id="i-exit" viewBox="0 0 24 24"><path d="M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3"/></symbol>
+    <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></symbol>
+    <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><path d="M11 10h2v7h-2zM11 6.5h2v2h-2z"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M11 4h2v16h-2zM4 11h16v2H4z"/></symbol>
+  </defs>
+</svg>
+
+<h1 class="page-title">Pulse Player — celular em pé (RFC-023)</h1>
+<p class="page-lead">Telas de exemplo em tamanho real de um celular de 390×844 e de um tablet de 800×1280 (reduzido). A TV e o celular deitado não mudam. Escolha a barra de baixo no primeiro par de telas.</p>
+
+<!-- ============ 1. BARRA DE BAIXO: ESCOLHA ============ -->
+<section class="group">
+  <h2>Barra de baixo: opção B escolhida (2026-11-03)</h2>
+  <p class="note">As duas telas são iguais, só muda a barra. Escolhida a opção B: a busca vira aba e o "Ao vivo" passa para uma fileira no Início e um item no Mais. A opção A fica aqui só como registro.</p>
+  <div class="row">
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="art art-a"></div><div class="fade"></div>
+            <div class="body">
+              <div class="kind">Filme da sua lista</div>
+              <h1>O último horizonte</h1>
+              <div class="facts"><span class="score">Nota 8,4</span><span>2024</span><span>2h 14min</span><span>Aventura</span></div>
+              <div class="actions">
+                <span class="btn primary"><svg><use href="#i-play"/></svg>Assistir</span>
+                <span class="btn quiet"><svg><use href="#i-info"/></svg>Detalhes</span>
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>Continuar assistindo</h3></div>
+            <div class="rail">
+              <div class="wide p2 shade"><span class="badge">AO VIVO</span><div class="t">Canal Notícias 24h</div></div>
+              <div class="wide p5 shade"><div class="t">A casa do lago<span class="sub">T2:E5 · faltam 18 min</span></div><div class="progress"><i style="width:62%"></i></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="top">
+          <svg class="mark"><use href="#mark"/></svg>
+          <div class="top-actions">
+            <span class="iconbtn"><svg><use href="#i-cast"/></svg></span>
+            <span class="iconbtn"><svg><use href="#i-search"/></svg></span>
+            <span class="avatar">P</span>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <span class="tab on"><svg class="pulse"><use href="#pulse"/></svg><svg class="ic"><use href="#i-home"/></svg>Início</span>
+          <span class="tab"><svg class="ic"><use href="#i-live"/></svg>Ao vivo</span>
+          <span class="tab"><svg class="ic"><use href="#i-film"/></svg>Filmes</span>
+          <span class="tab"><svg class="ic"><use href="#i-series"/></svg>Séries</span>
+          <span class="tab"><svg class="ic"><use href="#i-more"/></svg>Mais</span>
+        </nav>
+        <div class="home-ind"></div>
+      </div>
+      <p class="cap"><b>Opção A (não escolhida):</b> Início · Ao vivo · Filmes · Séries · Mais. Busca e transmitir (Chromecast) no topo. Igual ao menu da TV: quem usa nos dois aparelhos acha tudo no mesmo lugar.</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div class="scroll">
+          <div class="hero">
+            <div class="art art-a"></div><div class="fade"></div>
+            <div class="body">
+              <div class="kind">Filme da sua lista</div>
+              <h1>O último horizonte</h1>
+              <div class="facts"><span class="score">Nota 8,4</span><span>2024</span><span>2h 14min</span><span>Aventura</span></div>
+              <div class="actions">
+                <span class="btn primary"><svg><use href="#i-play"/></svg>Assistir</span>
+                <span class="btn quiet"><svg><use href="#i-info"/></svg>Detalhes</span>
+              </div>
+            </div>
+          </div>
+          <div class="section">
+            <div class="section-head"><h3>Canais ao vivo</h3><a>Ver todos</a></div>
+            <div class="rail">
+              <div class="wide p2 shade"><span class="badge">AO VIVO</span><div class="t">Canal Notícias 24h</div></div>
+              <div class="wide p8 shade"><span class="badge">AO VIVO</span><div class="t">Esporte Total</div></div>
+            </div>
+          </div>
+        </div>
+        <div class="top">
+          <svg class="mark"><use href="#mark"/></svg>
+          <div class="top-actions">
+            <span class="iconbtn"><svg><use href="#i-cast"/></svg></span>
+            <span class="avatar">P</span>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <span class="tab on"><svg class="pulse"><use href="#pulse"/></svg><svg class="ic"><use href="#i-home"/></svg>Início</span>
+          <span class="tab"><svg class="ic"><use href="#i-film"/></svg>Filmes</span>
+          <span class="tab"><svg class="ic"><use href="#i-series"/></svg>Séries</span>
+          <span class="tab"><svg class="ic"><use href="#i-search"/></svg>Busca</span>
+          <span class="tab"><svg class="ic"><use href="#i-more"/></svg>Mais</span>
+        </nav>
+        <div class="home-ind"></div>
+      </div>
+      <p class="cap"><b>Opção B (escolhida):</b> Início · Filmes · Séries · Busca · Mais. A busca fica a um toque do polegar; os canais ao vivo aparecem como fileira no Início e como item no Mais.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 2. CATÁLOGO ============ -->
+<section class="group">
+  <h2>Filmes, séries e canais</h2>
+  <p class="note">Categorias da lista numa faixa que desliza com o dedo, fixa no topo. Filmes e séries em grade de 3 colunas; canais em lista, com o que está passando agora.</p>
+  <div class="row">
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div class="top solid"><span style="font-size:22px; font-weight:900">Filmes</span>
+          <div class="top-actions"><span class="iconbtn"><svg><use href="#i-search"/></svg></span><span class="avatar">P</span></div></div>
+        <div style="position:absolute; top:100px; left:0; right:0">
+          <div class="chips"><span class="chip on">Todos</span><span class="chip">Lançamentos</span><span class="chip">Ação</span><span class="chip">Comédia</span><span class="chip">Drama</span></div>
+          <div class="grid">
+            <div class="poster p1 shade"><div class="t">Neon distrito</div></div>
+            <div class="poster p3 shade"><div class="t">O último horizonte</div></div>
+            <div class="poster p4 shade"><div class="t">Maré alta</div></div>
+            <div class="poster p5 shade"><div class="t">Coração de pedra</div></div>
+            <div class="poster p8 shade"><div class="t">Expedição verde</div></div>
+            <div class="poster p6 shade"><div class="t">Silêncio</div></div>
+            <div class="poster p7 shade"><div class="t">Deserto</div></div>
+            <div class="poster p2 shade"><div class="t">Rota 66</div></div>
+            <div class="poster p1 shade"><div class="t">Noite de jazz</div></div>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <span class="tab"><svg class="ic"><use href="#i-home"/></svg>Início</span>
+          <span class="tab on"><svg class="pulse"><use href="#pulse"/></svg><svg class="ic"><use href="#i-film"/></svg>Filmes</span>
+          <span class="tab"><svg class="ic"><use href="#i-series"/></svg>Séries</span>
+          <span class="tab"><svg class="ic"><use href="#i-search"/></svg>Busca</span>
+          <span class="tab"><svg class="ic"><use href="#i-more"/></svg>Mais</span>
+        </nav>
+        <div class="home-ind"></div>
+      </div>
+      <p class="cap">Grade de 3 colunas, capas com 170 px de altura (o dedo acerta sem esforço). Rolagem vertical contínua, carregando aos poucos como na TV.</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div class="top solid"><div style="display:flex; align-items:center; gap:4px; margin-left:-12px"><span class="iconbtn"><svg><use href="#i-back"/></svg></span><span style="font-size:22px; font-weight:900">Canais ao vivo</span></div>
+          <div class="top-actions"><span class="avatar">P</span></div></div>
+        <div style="position:absolute; top:100px; left:0; right:0">
+          <div class="chips"><span class="chip on">Todos</span><span class="chip">Notícias</span><span class="chip">Esportes</span><span class="chip">Filmes</span><span class="chip">Infantil</span></div>
+          <div class="list">
+            <div class="item"><div class="logo-box p2">N24</div><div class="grow"><div class="name">Canal Notícias 24h</div><div class="now">Agora: Jornal da tarde</div><div class="bar"><i style="width:40%"></i></div></div></div>
+            <div class="item"><div class="logo-box p8">ET</div><div class="grow"><div class="name">Esporte Total</div><div class="now">Agora: Mesa redonda</div><div class="bar"><i style="width:72%"></i></div></div></div>
+            <div class="item"><div class="logo-box p4">CN</div><div class="grow"><div class="name">Cine Noite</div><div class="now">Agora: Maré alta</div><div class="bar"><i style="width:15%"></i></div></div></div>
+            <div class="item"><div class="logo-box p3">KD</div><div class="grow"><div class="name">Kids Mundo</div><div class="now">Agora: Desenhos da tarde</div><div class="bar"><i style="width:55%"></i></div></div></div>
+            <div class="item"><div class="logo-box p6">DOC</div><div class="grow"><div class="name">Documental</div><div class="now">Sem programação na lista</div></div></div>
+            <div class="item"><div class="logo-box p5">MV</div><div class="grow"><div class="name">Música e Vídeo</div><div class="now">Agora: Clipes</div><div class="bar"><i style="width:88%"></i></div></div></div>
+          </div>
+        </div>
+        <nav class="tabbar">
+          <span class="tab on"><svg class="pulse"><use href="#pulse"/></svg><svg class="ic"><use href="#i-home"/></svg>Início</span>
+          <span class="tab"><svg class="ic"><use href="#i-film"/></svg>Filmes</span>
+          <span class="tab"><svg class="ic"><use href="#i-series"/></svg>Séries</span>
+          <span class="tab"><svg class="ic"><use href="#i-search"/></svg>Busca</span>
+          <span class="tab"><svg class="ic"><use href="#i-more"/></svg>Mais</span>
+        </nav>
+        <div class="home-ind"></div>
+      </div>
+      <p class="cap">Aberta pelo "Ver todos" da fileira de canais do Início (ou pelo Mais). Canais em lista, com o programa atual quando a lista traz a programação. Tocar no canal abre o player deitado.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 3. DETALHES, BUSCA, MAIS ============ -->
+<section class="group">
+  <h2>Detalhes, busca e o menu Mais</h2>
+  <p class="note">Detalhes em tela cheia (a barra some e o gesto de voltar do Android fecha). A busca usa o teclado do celular. O Mais reúne o que fica no rodapé do menu da TV.</p>
+  <div class="row">
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div style="position:absolute; top:0; left:0; right:0; height:330px"><div class="art art-b" style="position:absolute; inset:0"></div><div class="fade" style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(11,15,12,.5), transparent 30%, rgba(11,15,12,.7) 75%, var(--bg))"></div></div>
+        <div class="top"><span class="iconbtn" style="background:rgba(11,15,12,.55)"><svg><use href="#i-back"/></svg></span><span class="iconbtn" style="background:rgba(11,15,12,.55)"><svg><use href="#i-cast"/></svg></span></div>
+        <div style="position:absolute; top:236px; left:20px; right:20px">
+          <div class="kind">Série da sua lista</div>
+          <h1 style="font-size:30px; font-weight:900; letter-spacing:-.02em; margin:4px 0 8px">A casa do lago</h1>
+          <div class="facts"><span class="score">Nota 7,9</span><span>2023</span><span>3 temporadas</span><span>Suspense</span></div>
+          <div class="actions"><span class="btn primary"><svg><use href="#i-play"/></svg>Continuar T2:E5</span><span class="btn quiet" style="flex:0 0 48px; padding:0"><svg><use href="#i-plus"/></svg></span></div>
+          <p style="color:#c3c9c1; font-size:14px; line-height:1.5; margin-top:14px">Uma família herda uma casa à beira do lago e descobre que o último dono nunca foi embora de verdade.</p>
+        </div>
+        <div style="position:absolute; top:520px; left:0; right:0">
+          <div class="chips" style="padding-top:0"><span class="chip">Temporada 1</span><span class="chip on">Temporada 2</span><span class="chip">Temporada 3</span></div>
+          <div class="list">
+            <div class="item"><div class="thumb p6"><div class="progress"><i style="width:100%"></i></div></div><div class="grow"><div class="name">4. O barco</div><div class="now">48 min · assistido</div></div></div>
+            <div class="item"><div class="thumb p2"><div class="progress"><i style="width:62%"></i></div></div><div class="grow"><div class="name">5. A outra margem</div><div class="now">51 min · faltam 18 min</div></div></div>
+            <div class="item"><div class="thumb p4"></div><div class="grow"><div class="name">6. Neblina</div><div class="now">45 min</div></div></div>
+          </div>
+        </div>
+      </div>
+      <p class="cap">Episódios em lista de uma coluna, com o progresso de cada um. O botão principal já diz qual episódio continua.</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div style="position:absolute; top:52px; left:16px; right:16px; display:flex; gap:8px; align-items:center">
+          <span class="iconbtn"><svg><use href="#i-back"/></svg></span>
+          <div class="input filled focus" style="flex:1">mar<span style="display:inline-block; width:2px; height:20px; background:var(--lime); margin-left:1px"></span></div>
+        </div>
+        <div style="position:absolute; top:122px; left:0; right:0">
+          <div class="chips" style="padding-top:0"><span class="chip on">Tudo</span><span class="chip">Filmes</span><span class="chip">Séries</span><span class="chip">Canais</span></div>
+          <div class="grid" style="padding-bottom:8px">
+            <div class="poster p4 shade" style="height:150px"><div class="t">Maré alta</div></div>
+            <div class="poster p2 shade" style="height:150px"><div class="t">Mar aberto</div></div>
+            <div class="poster p8 shade" style="height:150px"><div class="t">Marinheiros</div></div>
+          </div>
+          <div class="list"><div class="item" style="border:0"><div class="logo-box p2">MAR</div><div class="grow"><div class="name">Canal Mar e Pesca</div><div class="now">Canal ao vivo</div></div></div></div>
+        </div>
+        <div class="kbd">
+          <div class="krow"><span>q</span><span>w</span><span>e</span><span>r</span><span>t</span><span>y</span><span>u</span><span>i</span><span>o</span><span>p</span></div>
+          <div class="krow"><span>a</span><span>s</span><span>d</span><span>f</span><span>g</span><span>h</span><span>j</span><span>k</span><span>l</span></div>
+          <div class="krow"><span style="width:44px">⇧</span><span>z</span><span>x</span><span>c</span><span>v</span><span>b</span><span>n</span><span>m</span><span style="width:44px">⌫</span></div>
+          <div class="krow"><span style="width:80px; font-size:13px">123</span><span style="width:170px"></span><span style="width:80px; font-size:13px; background:var(--lime); color:var(--on-lime)">Buscar</span></div>
+        </div>
+      </div>
+      <p class="cap">Teclado do próprio celular, sem o teclado da TV. Os resultados aparecem enquanto digita, separados por tipo.</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div class="scroll" style="filter:saturate(.6)">
+          <div class="hero"><div class="art art-a"></div><div class="fade"></div></div>
+        </div>
+        <div class="dim"></div>
+        <div class="sheet">
+          <div class="grab"></div>
+          <div style="display:flex; gap:14px; align-items:center; padding:0 22px 14px">
+            <span class="avatar" style="width:44px; height:44px; font-size:18px; border-radius:12px">P</span>
+            <div><div style="font-weight:800; font-size:17px">Principal</div><div style="color:var(--muted); font-size:13px; margin-top:2px">Lista: servidor.exemplo.com</div></div>
+          </div>
+          <div class="rule"></div>
+          <div class="menu-row"><svg class="ic"><use href="#i-live"/></svg>Canais ao vivo</div>
+          <div class="menu-row"><svg class="ic"><use href="#i-list"/></svg>Minhas listas<span class="hint">2 listas</span></div>
+          <div class="menu-row"><svg class="ic"><use href="#i-globe"/></svg>Enviar lista pelo site<span class="hint">abre o navegador</span></div>
+          <div class="menu-row"><svg class="ic"><use href="#i-user"/></svg>Trocar perfil</div>
+          <div class="menu-row"><svg class="ic"><use href="#i-key"/></svg>Ativação do aparelho<span class="hint">até 12/10/2027</span></div>
+          <div class="menu-row"><svg class="ic"><use href="#i-help"/></svg>Ajuda pelo WhatsApp</div>
+          <div class="rule"></div>
+          <div class="menu-row" style="color:var(--live)"><svg class="ic" style="stroke:var(--live)"><use href="#i-exit"/></svg>Sair do app</div>
+        </div>
+      </div>
+      <p class="cap">O "Mais" abre por cima, sem trocar de tela: perfil e lista atuais, listas, perfis, ativação, ajuda e sair.</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 4. ENTRADA ============ -->
+<section class="group">
+  <h2>Entrar com a lista e tela de ativação</h2>
+  <p class="note">Uma coluna, botões na largura toda. No celular o QR não faz sentido (seria ler a própria tela), então a ativação vira um botão para a página de planos.</p>
+  <div class="row">
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div style="position:absolute; top:64px; left:24px; right:24px">
+          <svg class="mark" style="height:40px"><use href="#mark"/></svg>
+          <h1 style="font-size:28px; font-weight:900; letter-spacing:-.02em; margin:18px 0 8px">Adicione sua lista</h1>
+          <p style="color:var(--muted); font-size:15px; line-height:1.5; margin-bottom:20px">Cole o link que você recebeu do seu fornecedor, ou o endereço do servidor com usuário e senha.</p>
+          <div class="field"><label>Link da lista ou servidor</label><div class="input filled focus">http://servidor.exemplo.com:8080</div></div>
+          <div class="field"><label>Usuário (se o link não tiver)</label><div class="input">Seu usuário</div></div>
+          <div class="field"><label>Senha (se o link não tiver)</label><div class="input">Sua senha</div></div>
+          <span class="btn primary full" style="margin-top:4px">Entrar</span>
+          <span class="btn quiet full" style="margin-top:10px">Colar link copiado</span>
+          <div style="display:flex; align-items:center; gap:12px; margin:20px 0 14px; color:var(--dim); font-size:13px"><span style="flex:1; height:1px; background:var(--line)"></span>ou<span style="flex:1; height:1px; background:var(--line)"></span></div>
+          <span class="btn quiet full" style="gap:10px"><svg style="width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:1.9"><use href="#i-globe"/></svg>Enviar a lista pelo site</span>
+          <p style="color:var(--muted); font-size:13px; line-height:1.5; margin-top:10px; text-align:center">Abre o site do Pulse Player com o código deste aparelho, <b style="color:var(--lime); letter-spacing:.06em">QDU5NXY7</b>, já preenchido.</p>
+        </div>
+      </div>
+      <p class="cap">"Colar link copiado" lê a área de transferência, o caso comum de quem recebe a lista por WhatsApp. "Enviar a lista pelo site" é o mesmo caminho do QR da TV: abre o site no navegador com o código já preenchido, e a lista chega cifrada no app, que pede a confirmação de sempre.</p>
+    </div>
+
+    <div>
+      <div class="phone">
+        <div class="status"><span>9:41</span><span>5G ▮▮▮ 82%</span></div>
+        <div style="position:absolute; top:110px; left:24px; right:24px">
+          <svg class="mark" style="height:44px"><use href="#mark"/></svg>
+          <h1 style="font-size:28px; font-weight:900; letter-spacing:-.02em; margin:22px 0 8px">Ative este aparelho</h1>
+          <p style="color:var(--muted); font-size:15px; line-height:1.5">O período de teste de 7 dias terminou. Para continuar com esta lista, ative o aparelho.</p>
+          <div style="margin:28px 0; padding:18px; border-radius:14px; background:var(--surface); border:1px solid var(--line)">
+            <div style="color:var(--muted); font-size:13px; font-weight:600">Código do aparelho</div>
+            <div style="font-family:Consolas, 'Roboto Mono', monospace; font-size:32px; font-weight:800; letter-spacing:.14em; color:var(--lime); margin-top:6px">QDU5NXY7</div>
+          </div>
+          <span class="btn primary full">Ver planos e ativar</span>
+          <span class="btn quiet full" style="margin-top:10px">Já paguei, verificar</span>
+          <span class="btn quiet full" style="margin-top:10px; background:transparent">Usar outra lista</span>
+        </div>
+      </div>
+      <p class="cap">Na versão das lojas o botão "Ver planos" some e o texto pede para falar com o fornecedor (regra D4 de hoje).</p>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 5. PLAYER E TABLET ============ -->
+<section class="group">
+  <h2>Player deitado e tablet em pé</h2>
+  <p class="note">O vídeo sempre gira para deitado e volta para em pé ao fechar. O tablet em pé usa as mesmas telas do celular, com mais colunas; deitado, usa o layout do celular deitado (decisão de 2026-11-03).</p>
+  <div class="row">
+
+    <div>
+      <div class="phone land">
+        <div style="position:absolute; inset:0; background:radial-gradient(ellipse at 50% 40%, #3f6212, #0b0f0c 70%)"></div>
+        <div style="position:absolute; inset:0; background:linear-gradient(180deg, rgba(0,0,0,.6), transparent 30%, transparent 62%, rgba(0,0,0,.8))"></div>
+        <div style="position:absolute; top:20px; left:28px; right:28px; display:flex; align-items:center; gap:12px">
+          <span class="iconbtn"><svg><use href="#i-back"/></svg></span>
+          <div><div style="font-weight:800">A casa do lago</div><div style="color:var(--muted); font-size:13px">T2:E5 · A outra margem</div></div>
+          <span class="iconbtn" style="margin-left:auto"><svg><use href="#i-cast"/></svg></span>
+        </div>
+        <div style="position:absolute; top:50%; left:50%; width:76px; height:76px; margin:-38px 0 0 -38px; border-radius:50%; background:var(--lime); color:var(--on-lime); display:grid; place-items:center"><svg style="width:30px; height:30px; fill:currentColor; margin-left:4px"><use href="#i-play"/></svg></div>
+        <div style="position:absolute; left:28px; right:28px; bottom:26px">
+          <div style="height:4px; border-radius:2px; background:rgba(244,247,238,.25)"><div style="width:62%; height:100%; border-radius:2px; background:var(--lime)"></div></div>
+          <div style="display:flex; justify-content:space-between; color:#d5dbd3; font-size:12px; margin-top:8px"><span>31:42</span><span>-18:10</span></div>
+        </div>
+      </div>
+      <p class="cap">Player de hoje, travado deitado enquanto toca. Ao fechar, o celular volta para em pé.</p>
+    </div>
+
+    <div>
+      <div class="phone tablet">
+        <div class="status"><span>9:41</span><span>Wi-Fi 82%</span></div>
+        <div class="top solid"><span style="font-size:24px; font-weight:900">Filmes</span>
+          <div class="top-actions"><span class="iconbtn"><svg><use href="#i-search"/></svg></span><span class="avatar">P</span></div></div>
+        <div style="position:absolute; top:100px; left:0; right:0">
+          <div class="chips"><span class="chip on">Todos</span><span class="chip">Lançamentos</span><span class="chip">Ação</span><span class="chip">Comédia</span><span class="chip">Drama</span><span class="chip">Suspense</span></div>
+          <div class="grid">
+            <div class="poster p1 shade" style="height:210px"><div class="t">Neon distrito</div></div><div class="poster p3 shade" style="height:210px"><div class="t">O último horizonte</div></div><div class="poster p4 shade" style="height:210px"><div class="t">Maré alta</div></div><div class="poster p5 shade" style="height:210px"><div class="t">Coração de pedra</div></div><div class="poster p8 shade" style="height:210px"><div class="t">Expedição verde</div></div>
+            <div class="poster p6 shade" style="height:210px"><div class="t">Silêncio</div></div><div class="poster p7 shade" style="height:210px"><div class="t">Deserto</div></div><div class="poster p2 shade" style="height:210px"><div class="t">Rota 66</div></div><div class="poster p1 shade" style="height:210px"><div class="t">Noite de jazz</div></div><div class="poster p4 shade" style="height:210px"><div class="t">Órbita</div></div>
+            <div class="poster p5 shade" style="height:210px"><div class="t">Vermelho</div></div><div class="poster p3 shade" style="height:210px"><div class="t">Cânion</div></div><div class="poster p8 shade" style="height:210px"><div class="t">Floresta</div></div><div class="poster p6 shade" style="height:210px"><div class="t">Asfalto</div></div><div class="poster p2 shade" style="height:210px"><div class="t">Correnteza</div></div>
+          </div>
+        </div>
+        <nav class="tabbar" style="padding-left:120px; padding-right:120px">
+          <span class="tab"><svg class="ic"><use href="#i-home"/></svg>Início</span>
+          <span class="tab on"><svg class="pulse"><use href="#pulse"/></svg><svg class="ic"><use href="#i-film"/></svg>Filmes</span>
+          <span class="tab"><svg class="ic"><use href="#i-series"/></svg>Séries</span>
+          <span class="tab"><svg class="ic"><use href="#i-search"/></svg>Busca</span>
+          <span class="tab"><svg class="ic"><use href="#i-more"/></svg>Mais</span>
+        </nav>
+      </div>
+      <p class="cap">Tablet 800×1280 (reduzido na página): grade de 5 colunas e a barra centralizada.</p>
+    </div>
+
+  </div>
+</section>
+
+</body>
+</html>

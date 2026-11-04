@@ -18,7 +18,12 @@
     }
   ],
   // Atendimento e vendas pelo WhatsApp no site (RFC-021) e na página do QR da TV.
-  "vars": { "LICENSE_CONTACT_URL": "https://wa.me/5516992791692" },
+  // RFC-025: quando existirem, entram aqui (o deploy sobrescreve o que estiver só no painel) "PLAY_URL" (link da Google Play). ACCESS_TEAM = equipe do
+  // Zero Trust (shy-mountain-9579.cloudflareaccess.com). ACCESS_AUD, ACCESS_OWNER_EMAIL e LICENSE_REPORT_TOKEN
+  // são segredos: `wrangler secret put`.
+  "vars": { "LICENSE_CONTACT_URL": "https://wa.me/5516992791692", "ACCESS_TEAM": "shy-mountain-9579",
+    // Chave PÚBLICA do Mercado Pago (cartão em /pagar). Hoje a de TESTE; trocar pela de produção na homologação.
+    "MP_PUBLIC_KEY": "APP_USR-cee4c72b-6913-4ce2-b917-1d59bfc3362e" },
   // Limpeza diária da guarda de 24 meses (PRIVACY.md), às 06:00 UTC.
   "triggers": { "crons": ["0 6 * * *"] },
   "observability": { "enabled": false }

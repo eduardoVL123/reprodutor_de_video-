@@ -35,7 +35,7 @@
             android:label="@string/title_activity_main"
             android:theme="@style/AppTheme.NoActionBarLaunch"
             android:launchMode="singleTask"
-            android:screenOrientation="landscape"
+            android:screenOrientation="fullUser"
             android:supportsPictureInPicture="true"
             android:resizeableActivity="true"
             android:exported="true">
