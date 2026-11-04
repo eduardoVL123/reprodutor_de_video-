@@ -860,7 +860,7 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     expect(calls).toHaveLength(0)
   })
 
-  it('apagar um aparelho (LGPD) com renovação ativa é recusado até cancelar a assinatura', async () => {
+  it('apagar ou revogar um aparelho com renovação ativa é recusado até cancelar a assinatura', async () => {
     mpReply = (url, init = {}) => {
       if (url.endsWith('/preapproval')) return { status: 201, body: { id: 'pre-1', status: 'authorized' } }
       if (init.method === 'PUT') return { status: 200, body: { id: 'pre-1', status: 'cancelled' } }
@@ -870,8 +870,13 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'card', code, email: EMAIL, card: CARD })).body
     const blocked = await admin('DELETE', `/admin/api/devices/${code}`)
     expect(blocked.status).toBe(409)
-    expect(blocked.body.error).toMatch(/renovação/)
+    expect(blocked.body.error).toMatch(/renovação.*antes de apagar/)
+    // Revogar também: a próxima parcela paga ativaria o aparelho de novo.
+    const revoke = await admin('POST', `/admin/api/devices/${code}/revoke`)
+    expect(revoke.status).toBe(409)
+    expect(revoke.body.error).toMatch(/antes de revogar/)
     await admin('POST', `/admin/api/subscriptions/${orderId}/cancel`)
+    expect((await admin('POST', `/admin/api/devices/${code}/revoke`)).status).toBe(200)
     expect((await admin('DELETE', `/admin/api/devices/${code}`)).status).toBe(200)
   })
 

@@ -46,3 +46,14 @@ describe('parseM3u — auditoria', () => {
     expect(new Set(ids).size).toBe(2)
   })
 })
+
+describe('parseM3u — fim de linha', () => {
+  it('lê igual com \r\n (Windows), sem quebra no final e com linhas em branco', () => {
+    const text = '#EXTM3U\r\n\r\n#EXTINF:-1 group-title="Notícias",Canal 1\r\nhttp://h.test/1.m3u8\r\n#EXTINF:-1,Canal 2\r\nhttp://h.test/2.m3u8'
+    const { liveStreams } = parseM3u(text)
+    expect(liveStreams.map((s) => [s.name, s.directUrl])).toEqual([
+      ['Canal 1', 'http://h.test/1.m3u8'],
+      ['Canal 2', 'http://h.test/2.m3u8'],
+    ])
+  })
+})

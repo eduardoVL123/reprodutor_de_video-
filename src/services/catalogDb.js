@@ -227,6 +227,10 @@ function readChunk(section, n) {
   const promise = db.getItem(chunkKey(section, n)).then((data) => {
     if (gen !== generation) chunkCache.delete(key) // catálogo trocado enquanto lia
     return data || []
+  }, (err) => {
+    // Falha passageira do IndexedDB: não guarda a falha, a próxima leitura tenta de novo.
+    if (chunkCache.get(key) === promise) chunkCache.delete(key)
+    throw err
   })
   chunkCache.set(key, promise)
   while (chunkCache.size > LRU_MAX_CHUNKS) {
@@ -335,6 +339,10 @@ export async function clearCatalog() {
     await db.clear()
   } catch (err) {
     console.warn('[catalogDb] Falha ao limpar catálogo:', err)
+    // Sem os resumos (meta) o catálogo antigo conta como inexistente: a próxima lista não herda os canais desta.
+    for (const section of ['live', 'vod', 'series']) {
+      await db.removeItem(metaKey(section)).catch(() => {})
+    }
   }
   generation++
   metaCache.clear()

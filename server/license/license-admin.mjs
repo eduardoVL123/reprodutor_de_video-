@@ -207,6 +207,15 @@ export const ADMIN_FAIL_LIMIT = 10
 export const ADMIN_FAIL_WINDOW_MS = 15 * 60 * 1000
 
 export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
+  /**
+   * Apagar ou revogar não para o cartão: o Mercado Pago seguiria cobrando todo ano e a próxima parcela paga
+   * ativaria o aparelho de novo. O dono cancela a renovação antes.
+   */
+  async function refuseIfRenewing(device, action) {
+    const renewing = await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status != 'cancelled'").bind(device.code).first()
+    if (renewing) throw new AdminError(409, `Este aparelho tem renovação automática no cartão. Cancele a renovação na aba Pagamentos antes de ${action}.`)
+  }
+
   const routes = [
     ['GET', /^\/admin\/api\/subscriptions$/, async () => json(200, await checkout.listSubscriptions())],
     ['POST', /^\/admin\/api\/subscriptions\/([A-Za-z0-9_-]{1,64})\/cancel$/, async (m) => json(200, await checkout.cancelSubscription(m[1]))],
@@ -336,6 +345,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
       /^\/admin\/api\/devices\/([A-Z0-9]{4,16})\/revoke$/,
       async (m) => {
         const { device } = await deviceInfo(db, m[1])
+        await refuseIfRenewing(device, 'revogar')
         const at = now()
         await db.prepare('UPDATE activations SET revoked_at = ? WHERE device_key = ? AND revoked_at IS NULL').bind(at, device.device_key).run()
         await logEvent(db, device.device_key, 'revoke', '', at)
@@ -381,9 +391,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
       async (m) => {
         // Pedido de LGPD: some tudo do aparelho; se o app abrir de novo, ele volta como aparelho novo (com teste).
         const { device } = await deviceInfo(db, m[1])
-        // Apagar o aparelho não para o cartão: o Mercado Pago seguiria cobrando todo ano sem nada a entregar.
-        const renewing = await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status != 'cancelled'").bind(device.code).first()
-        if (renewing) throw new AdminError(409, 'Este aparelho tem renovação automática no cartão. Cancele a renovação na aba Pagamentos antes de apagar.')
+        await refuseIfRenewing(device, 'apagar')
         await db.batch(
           ['partner_cycle_entries', 'activations', 'device_events', 'devices'].map((table) =>
             db.prepare(`DELETE FROM ${table} WHERE device_key = ?`).bind(device.device_key),

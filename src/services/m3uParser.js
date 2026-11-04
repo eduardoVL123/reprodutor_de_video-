@@ -42,7 +42,6 @@ export function parseM3u(text) {
     return { liveStreams: [], vodStreams: [], liveCategories: [], vodCategories: [] }
   }
 
-  const lines = text.split(/\r?\n/)
   const liveStreams = []
   const vodStreams = []
 
@@ -53,8 +52,12 @@ export function parseM3u(text) {
   let currentMeta = null
   let count = 0
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim()
+  // Linha a linha sem split: numa M3U de 30 MB o array com todas as linhas ficava na memória junto com o texto.
+  for (let start = 0; start < text.length; ) {
+    let end = text.indexOf('\n', start)
+    if (end === -1) end = text.length
+    const line = text.slice(start, end).trim() // o trim tira também o \r de fim de linha do Windows
+    start = end + 1
     if (!line) continue
 
     if (line.startsWith('#EXTINF:')) {

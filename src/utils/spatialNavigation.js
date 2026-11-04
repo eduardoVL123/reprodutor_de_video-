@@ -467,10 +467,19 @@ function isInDirection(fromRect, el, direction) {
 
 const lastFocusedByRow = new Map() // nome da row => { id, el }
 
+/** Esquece lembranças de telas já fechadas: o nó guardado segurava a tela inteira na memória (TV por horas). */
+function forgetDetached(map) {
+  map.forEach((record, key) => {
+    if (!record.el || !record.el.isConnected) map.delete(key)
+  })
+}
+
 function onFocusIn(e) {
   const el = e.target
   if (isTextField(el)) initTextField(el)
   if (!el || !el.id) return
+  forgetDetached(lastFocusedByGroup)
+  forgetDetached(lastFocusedByRow)
   const group = groupElOf(el)
   if (group) lastFocusedByGroup.set(group.getAttribute('data-focus-group'), { id: el.id, el })
   const row = el.closest ? el.closest('[data-focus-row]') : null

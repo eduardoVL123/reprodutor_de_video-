@@ -273,6 +273,8 @@ export const usePlayerStore = defineStore('player', () => {
     if (!plain) return
 
     if (plain.section === 'live') {
+      // Ao vivo não tem progresso: já no topo, não há o que gravar (antes regravava a cada 10 s durante horas).
+      if (watchHistory.value[0] && sameItem(watchHistory.value[0], plain)) return
       addToHistory({ ...plain, currentTime: 0, duration: 0, progressPct: 0, updatedAt: Date.now() })
       return
     }

@@ -73,6 +73,7 @@ function sendProxyError(res, status, message) {
 }
 
 const LOCAL_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i
 
 export function proxyHandler(req, res) {
   if (!isLoopbackAddress(req.socket && req.socket.remoteAddress)) {
@@ -83,6 +84,13 @@ export function proxyHandler(req, res) {
   const origin = req.headers && req.headers.origin
   if (origin && !LOCAL_ORIGIN.test(origin)) {
     sendProxyError(res, 403, 'Proxy: origem não permitida.')
+    return
+  }
+  // DNS rebinding: um site que passa a resolver para 127.0.0.1 faz o pedido "da mesma origem" (sem Origin), mas o
+  // Host continua sendo o nome dele. Este proxy roda antes da checagem de Host do Vite.
+  const host = (req.headers && req.headers.host) || ''
+  if (!LOCAL_HOST.test(host)) {
+    sendProxyError(res, 403, 'Proxy: host não permitido.')
     return
   }
 

@@ -161,3 +161,20 @@ describe('playerStore — série longa (auditoria)', () => {
     expect(player.queue[player.queue.length - 1].stream_id).toBe(1399) // o resto da série segue depois dele
   })
 })
+
+describe('playerStore — canal ao vivo (auditoria)', () => {
+  it('o mesmo canal no topo do histórico não é regravado a cada salvamento', async () => {
+    const { storage, usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    const channel = { stream_id: 77, name: 'Canal 77', section: 'live' }
+    player.saveProgress(10, 0, channel)
+    const set = vi.spyOn(storage, 'set')
+    const before = player.watchHistory
+    for (let i = 0; i < 5; i++) player.saveProgress(20 + i * 10, 0, channel)
+    expect(set).not.toHaveBeenCalled()
+    expect(player.watchHistory).toBe(before) // nada recalcula na tela de trás
+    player.saveProgress(0, 0, { stream_id: 78, name: 'Canal 78', section: 'live' }) // trocar de canal grava
+    expect(player.watchHistory[0].stream_id).toBe(78)
+  })
+})
