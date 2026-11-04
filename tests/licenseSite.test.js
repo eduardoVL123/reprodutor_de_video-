@@ -5,6 +5,7 @@ import { migrate } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
 import { createLicenseServer } from '../server/license/license-server.mjs'
 import { PAGE_CSP } from '../server/pair/pair-core.mjs'
+import { SITE_CSP } from '../server/license/license-core.mjs'
 import { PAY_CSP } from '../server/license/license-checkout.mjs'
 
 /** RFC-021: site do Pulse Player (enviar lista, assinar, comprar créditos), servido pelo serviço de licença. */
@@ -86,7 +87,7 @@ describe('servidor local — páginas do site', () => {
     for (const path of ['/', '/assinar', '/creditos']) {
       const res = await fetch(base + path)
       expect(res.status).toBe(200)
-      expect(res.headers.get('Content-Security-Policy')).toBe(PAGE_CSP)
+      expect(res.headers.get('Content-Security-Policy')).toBe(SITE_CSP)
     }
     for (const path of ['/site/site.js', '/site/site.css', '/site/pair-lib.js', '/site/pagar.js']) expect((await fetch(base + path)).status).toBe(200)
   })
@@ -123,6 +124,20 @@ describe('arquivos do site', () => {
   it('/enviar (destino do app das lojas, RFC-025 §2): sem preço nem link de compra, nem para a landing', () => {
     const html = readFileSync(SITE + 'enviar.html', 'utf8')
     for (const banned of ['href="/"', '/assinar', '/creditos', '/pagar', 'R$', 'preço']) expect(html).not.toContain(banned)
+  })
+
+  it('/privacidade é o PRIVACY.md publicado (Google Play exige o link) e não ficou desatualizada', () => {
+    const html = readFileSync(SITE + 'privacidade.html', 'utf8')
+    const md = readFileSync('PRIVACY.md', 'utf8')
+    expect(html).not.toMatch(/<script>|\sstyle=|\son[a-z]+=/)
+    expect(html).not.toContain('Rascunho técnico')
+    for (const heading of md.match(/^#{1,3} .+$/gm)) expect(html).toContain(heading.replace(/^#+ /, '').replace(/\*\*/g, ''))
+    expect(html).toContain(md.match(/Última atualização: (.+)/)[1].trim())
+    expect(readFileSync(SITE + 'index.html', 'utf8')).toContain('href="/privacidade"')
+  })
+
+  it('o favicon é servido e todas as páginas do site o usam', () => {
+    for (const page of PAGES) expect(readFileSync(SITE + page, 'utf8')).toContain('href="/site/favicon.svg"')
   })
 
   it('tema claro: o limão da marca só aparece dentro da faixa verde do herói (RFC-015 + RFC-025)', () => {

@@ -330,3 +330,13 @@ button.quiet:hover { background: var(--sand); }
 @media (prefers-reduced-motion: reduce) {
   .pulse.beat path { animation: none; stroke-dashoffset: 0; }
 }
+
+/* ===== Política de privacidade (/privacidade, gerada de PRIVACY.md) ===== */
+.privacy { max-width: 48rem; }
+.privacy h1 { max-width: none; }
+.privacy p, .privacy li { color: var(--taupe); }
+.privacy strong { color: var(--moss); }
+.table-wrap { overflow-x: auto; margin: 1rem 0 1.5rem; }
+.privacy-table { width: 100%; border-collapse: collapse; font-size: 0.9375rem; }
+.privacy-table th { text-align: left; color: var(--moss); padding: 0.6rem 0.5rem; border-bottom: 2px solid var(--line); }
+.privacy-table td { vertical-align: top; padding: 0.6rem 0.5rem; border-bottom: 1px solid var(--line); color: var(--taupe); }

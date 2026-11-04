@@ -62,3 +62,29 @@ describe('Dashboard — início com a lista que não carregou', () => {
     wrapper.unmount()
   })
 })
+
+describe('Dashboard — controle parental nos atalhos (auditoria RFC-025, item 9)', () => {
+  it('"Continuar assistindo" e "Minha lista" não mostram nem tocam item de categoria bloqueada sem PIN', async () => {
+    vi.resetModules()
+    const { wrapper } = await mountHome({})
+    const { useCatalogStore } = await import('@/stores/catalogStore')
+    const { usePlayerStore } = await import('@/stores/playerStore')
+    const catalog = useCatalogStore()
+    const player = usePlayerStore()
+    catalog.categories = { ...catalog.categories, vod: [{ category_id: '1', category_name: 'Ação' }, { category_id: '9', category_name: 'Adultos +18' }] }
+    const ok = { stream_id: 10, name: 'Filme Livre', section: 'vod', category_id: '1' }
+    const locked = { stream_id: 20, name: 'Filme Bloqueado', section: 'vod', category_id: '9' }
+    player.watchHistory = [locked, ok]
+    player.customQueue = [locked, ok]
+    await flushPromises()
+    const html = wrapper.html()
+    expect(html).toContain('Filme Livre')
+    expect(html).not.toContain('Filme Bloqueado')
+    const play = vi.spyOn(player, 'playFromCustomQueue').mockResolvedValue(true)
+    wrapper.vm.$.setupState.openFavorite(ok)
+    const allow = play.mock.calls[0][1]
+    expect(allow(locked)).toBe(false)
+    expect(allow(ok)).toBe(true)
+    wrapper.unmount()
+  })
+})

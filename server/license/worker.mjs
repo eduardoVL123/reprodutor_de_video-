@@ -8,19 +8,18 @@
  * Limites: os que protegem dinheiro e o painel (novos aparelhos, checkout, token errado) ficam no D1 (rate_limits);
  * os de volume por minuto ficam na memória de cada isolate (um atacante espalhado por vários isolates passa um pouco).
  */
-import { PAGE_CSP } from '../pair/pair-core.mjs'
-import { createLicenseHandler, LICENSE_HEADERS, PAGE_HEADERS } from './license-core.mjs'
+import { createLicenseHandler, LICENSE_HEADERS, PAGE_HEADERS, SITE_CSP } from './license-core.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
 import { createMpClient } from './mp-client.mjs'
 import { PAY_CSP } from './license-checkout.mjs'
 import { createAccessVerifier } from './license-access.mjs'
 
-const STATIC_FILES = new Set(['/revenda/', '/revenda/revenda.js', '/revenda/revenda.css', '/site/site.js', '/site/site.css', '/site/pair-lib.js', '/site/pagar.js'])
+const STATIC_FILES = new Set(['/revenda/', '/revenda/revenda.js', '/revenda/revenda.css', '/site/site.js', '/site/site.css', '/site/pair-lib.js', '/site/pagar.js', '/site/favicon.svg'])
 // Painel do dono (RFC-025 §5): só com o Cloudflare Access conferido.
 const OWNER_FILES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css'])
 // Páginas do site (RFC-021/025) -> caminho canônico nos assets (o Workers serve /x.html como /x e index.html como /).
-const SITE_PAGES = { '/': '/site/', '/enviar': '/site/enviar', '/cliente': '/site/cliente', '/assinar': '/site/assinar', '/creditos': '/site/creditos', '/pagar': '/site/pagar' }
-const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8' }
+const SITE_PAGES = { '/': '/site/', '/enviar': '/site/enviar', '/cliente': '/site/cliente', '/assinar': '/site/assinar', '/creditos': '/site/creditos', '/pagar': '/site/pagar', '/privacidade': '/site/privacidade' }
+const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' }
 const SWEEP_EVERY_MS = 60 * 1000
 
 let handle = null
@@ -28,7 +27,7 @@ let migrated = false
 let lastSweep = 0
 let verifyOwner = null
 
-function withHeaders(res, type, csp = PAGE_CSP) {
+function withHeaders(res, type, csp = SITE_CSP) {
   const headers = new Headers(res.headers)
   const html = type.startsWith('text/html')
   for (const [k, v] of Object.entries(html ? PAGE_HEADERS : LICENSE_HEADERS)) headers.set(k, v)
@@ -73,7 +72,7 @@ export default {
       return new Response(null, { status: 302, headers: { ...LICENSE_HEADERS, Location: `/enviar${url.search}` } })
     }
     if (request.method === 'GET' && SITE_PAGES[url.pathname]) {
-      const csp = url.pathname === '/pagar' ? PAY_CSP : PAGE_CSP
+      const csp = url.pathname === '/pagar' ? PAY_CSP : SITE_CSP
       return withHeaders(await env.ASSETS.fetch(new Request(new URL(SITE_PAGES[url.pathname], url).toString())), 'text/html; charset=utf-8', csp)
     }
     if (request.method === 'GET' && (STATIC_FILES.has(url.pathname) || OWNER_FILES.has(url.pathname))) {

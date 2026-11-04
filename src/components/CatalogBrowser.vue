@@ -189,7 +189,9 @@ async function loadCategoryRows() {
 
   // Para TV ao vivo: se houver canais nos Favoritos da Minha Lista, mostra no topo
   if (isLive.value) {
-    const favChannels = player.customQueue.filter((it) => it.section === 'live')
+    // Canal de categoria escondida/bloqueada fica fora dos Favoritos também (auditoria RFC-025, item 9).
+    const blocked = new Set(parental.blockedIds('live', catalog.categories.live))
+    const favChannels = player.customQueue.filter((it) => it.section === 'live' && !blocked.has(String(it.category_id)))
     if (favChannels.length > 0) {
       rows.push({
         category_id: 'favorites',

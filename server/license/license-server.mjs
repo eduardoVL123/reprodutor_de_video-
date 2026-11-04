@@ -9,10 +9,9 @@ import { Readable } from 'node:stream'
 import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { PAGE_CSP } from '../pair/pair-core.mjs'
 import { openSqlite } from './sqlite-d1.mjs'
 import { migrate, purgeExpired } from './license-db.mjs'
-import { createLicenseHandler, LICENSE_HEADERS, PAGE_HEADERS } from './license-core.mjs'
+import { createLicenseHandler, LICENSE_HEADERS, PAGE_HEADERS, SITE_CSP } from './license-core.mjs'
 import { createMpClient } from './mp-client.mjs'
 import { PAY_CSP } from './license-checkout.mjs'
 
@@ -32,6 +31,8 @@ const ADMIN_FILES = {
   // RFC-025: enviar lista saiu da raiz (agora a landing) e a área do cliente
   '/enviar': { file: 'site/enviar.html', type: 'text/html; charset=utf-8' },
   '/cliente': { file: 'site/cliente.html', type: 'text/html; charset=utf-8' },
+  '/privacidade': { file: 'site/privacidade.html', type: 'text/html; charset=utf-8' },
+  '/site/favicon.svg': { file: 'site/favicon.svg', type: 'image/svg+xml' },
   '/assinar': { file: 'site/assinar.html', type: 'text/html; charset=utf-8' },
   '/creditos': { file: 'site/creditos.html', type: 'text/html; charset=utf-8' },
   '/site/site.js': { file: 'site/site.js', type: 'text/javascript; charset=utf-8' },
@@ -87,7 +88,7 @@ export function createLicenseServer({ dbPath, adminToken = '', reportToken = '',
     if (page) {
       const content = readFileSync(join(publicDir, page.file)) // antes do writeHead: arquivo faltando vira 500, não resposta pendurada
       const html = page.type.startsWith('text/html')
-      res.writeHead(200, { ...(html ? PAGE_HEADERS : LICENSE_HEADERS), 'Content-Type': page.type, 'Content-Security-Policy': page.csp || PAGE_CSP })
+      res.writeHead(200, { ...(html ? PAGE_HEADERS : LICENSE_HEADERS), 'Content-Type': page.type, 'Content-Security-Policy': page.csp || SITE_CSP })
       return res.end(content)
     }
     return sendWeb(res, await handle(toWebRequest(req), (req.socket && req.socket.remoteAddress) || 'unknown'))

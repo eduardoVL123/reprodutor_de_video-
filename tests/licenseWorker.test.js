@@ -161,7 +161,7 @@ describe('Worker da licença', () => {
 
   it('serve as páginas do site (RFC-021) com a política de segurança', async () => {
     const env = mockEnv()
-    for (const [path, text] of [['/', 'id="landing"'], ['/enviar', 'send-form'], ['/cliente', 'status-form'], ['/assinar', 'sub-form'], ['/creditos', 'credit-qty']]) {
+    for (const [path, text] of [['/', 'id="landing"'], ['/enviar', 'send-form'], ['/cliente', 'status-form'], ['/assinar', 'sub-form'], ['/creditos', 'credit-qty'], ['/privacidade', 'Política de Privacidade']]) {
       const res = await worker.fetch(new Request(`https://licenca.test${path}`), env)
       expect(res.status).toBe(200)
       expect(res.headers.get('Content-Security-Policy')).toContain("script-src 'self'")

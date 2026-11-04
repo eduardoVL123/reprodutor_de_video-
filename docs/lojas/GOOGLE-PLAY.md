@@ -54,7 +54,9 @@ desenvolvedor e a resposta é "não coleta dados".
 
 - **Nome**: Pulse Player · **Descrição curta** (até 80): *"Reprodutor de vídeo para suas próprias listas M3U e servidores de mídia."*
 - **Descrição completa**: seção 2 de `PUBLICACAO.md` + um parágrafo sobre o controle parental.
-- **Ícone 512×512** e **imagem de destaque 1024×500**: `npm run icons` gera a partir da marca.
+- **Ícone 512×512**, **imagem de destaque 1024×500** e **banner da TV 320×180**: prontos em `docs/lojas/play/`
+  (`icone-512.png`, `destaque-1024x500.png`, `banner-tv-320x180.png`, feitos com a marca em 2026-11-04).
+- **Política de privacidade**: `https://pulseplayer.com.br/privacidade` (gerada do `PRIVACY.md`).
 - **Capturas**: celular em pé e deitado, tablet e **Android TV** (o app declara leanback; a Google pede capturas de TV
   e o banner 320×180 para aparecer na Play da TV). Use só a lista de demonstração.
 - **Categoria**: Vídeo e editores de vídeo (ou Entretenimento).

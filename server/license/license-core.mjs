@@ -5,7 +5,7 @@
  * Do app chegam só deviceKey (hash), platform e o domínio da lista (G3); qualquer outro campo é ignorado.
  * Todos os horários vêm de now() do servidor (G4).
  */
-import { generateCode, createLimiter, readJsonBody, networkKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET } from '../pair/pair-core.mjs'
+import { generateCode, createLimiter, readJsonBody, networkKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
 import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText } from './license-rules.mjs'
 import { createSigner } from './license-sign.mjs'
 import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry, hitLimit } from './license-db.mjs'
@@ -33,6 +33,8 @@ export const LICENSE_HEADERS = {
   'X-Frame-Options': 'DENY',
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), usb=()',
 }
+/** CSP das páginas do site e dos painéis: a fechada do pareamento + imagens do próprio site (favicon). */
+export const SITE_CSP = `${PAGE_CSP}; img-src 'self'`
 /** Páginas HTML: além dos de cima, isola a janela de quem abriu o site. */
 export const PAGE_HEADERS = { ...LICENSE_HEADERS, 'Cross-Origin-Opener-Policy': 'same-origin' }
 export const APK_URL = 'https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk'

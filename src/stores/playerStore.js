@@ -374,11 +374,11 @@ export const usePlayerStore = defineStore('player', () => {
 
   /**
    * Toca a Minha Fila a partir de `startItem` (ou do início). Séries ficam de fora:
-   * são contêineres de episódios, não um vídeo reproduzível.
+   * são contêineres de episódios, não um vídeo reproduzível. `allow`: filtro extra (controle parental).
    */
-  async function playFromCustomQueue(startItem = null) {
+  async function playFromCustomQueue(startItem = null, allow = null) {
     await hydrate()
-    const playable = customQueue.value.filter((it) => it.section !== 'series').slice(0, QUEUE_MAX)
+    const playable = customQueue.value.filter((it) => it.section !== 'series' && (!allow || allow(it))).slice(0, QUEUE_MAX)
     if (!playable.length) return false
     seq++
     if (!isOpen.value) rememberFocus()

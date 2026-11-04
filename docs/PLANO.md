@@ -18,10 +18,10 @@ sem nenhuma rota de dados aberta.
 - [ ] Decidir o pagamento: sem venda dentro do app (como está) ou faturamento da Google.
 - [ ] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub (sem isso o CI não gera o AAB).
 - [ ] Variáveis do CI: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_PUBLIC_KEY`, `PULSE_LICENSE_BASE_URL`.
-- [ ] `PRIVACY.md`: nome, e-mail de contato, data e endereço do serviço de pareamento.
+- [x] `PRIVACY.md` preenchido e publicado em `/privacidade` (2026-11-04).
 - [ ] Lista de demonstração com capas (pôsteres Blender, CC BY) e capturas finais (incluir controle parental e o
       player tocando no aparelho real).
-- [ ] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180.
+- [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
 - [ ] Formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores por 14 dias.
 - [ ] Subir `versionCode` em `android/app/build.gradle` a cada envio.
 - [ ] Revisar e juntar o PR #1 (`fix/auditoria` → `main`).
@@ -31,7 +31,7 @@ sem nenhuma rota de dados aberta.
       pontos 🔎, homologação.
 - [ ] Painel da Cloudflare: regra de limite em `/v1/checkout`.
 - [ ] Publicar os Workers de licença e de pareamento (só com seu OK).
-- [ ] Favicon do site.
+- [x] Favicon do site.
 - [ ] Downloader: depois de publicar o Worker, passar a usar `<site>/apk` (já pronto no código) no lugar do link
       do GitHub; cadastrar `PULSE_LICENSE_BASE_URL` para o texto da release mostrar o endereço curto.
 

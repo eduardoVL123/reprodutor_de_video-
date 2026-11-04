@@ -9,6 +9,7 @@ import SideMenu from '@/components/SideMenu.vue'
 import BottomNav from '@/components/BottomNav.vue'
 import { useFormFactor } from '@/composables/useFormFactor'
 import { useParentalFilter } from '@/composables/useParentalFilter'
+import { useParentalStore } from '@/stores/parentalStore'
 import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
@@ -32,6 +33,16 @@ const auth = useAuthStore()
 const license = useLicenseStore()
 const player = usePlayerStore()
 const catalog = useCatalogStore()
+const parental = useParentalStore()
+
+// Controle parental também em "Continuar assistindo" e "Minha lista" (auditoria RFC-025, item 9): item de categoria
+// escondida ou bloqueada (sem PIN) não aparece nem toca por esses atalhos.
+const blockedBySection = computed(() =>
+  Object.fromEntries(['live', 'vod', 'series'].map((s) => [s, new Set(parental.blockedIds(s, catalog.categories[s]))])),
+)
+const allowedByParental = (it) => !blockedBySection.value[it.section]?.has(String(it.category_id))
+const visibleHistory = computed(() => player.watchHistory.filter(allowedByParental))
+const visibleQueue = computed(() => player.customQueue.filter(allowedByParental))
 const profileStore = useProfileStore()
 const { isPhonePortrait } = useFormFactor()
 useLicenseWatch(
@@ -63,7 +74,7 @@ const heroArtworkFailed = ref(false)
 
 // Destaque "Continuar assistindo": o filme ou episódio mais recente; canal só se não houver outro.
 const recentHistoryItem = computed(
-  () => player.watchHistory.find((it) => it.section !== 'live') || player.watchHistory[0] || null,
+  () => visibleHistory.value.find((it) => it.section !== 'live') || visibleHistory.value[0] || null,
 )
 
 /** "Continuar assistindo": episódio toca a série inteira a partir dele (o próximo segue sozinho). */
@@ -420,7 +431,7 @@ function openFavorite(item) {
     homeDetails.value = { item, index: -1, section: 'series' }
     return
   }
-  player.playFromCustomQueue(item)
+  player.playFromCustomQueue(item, allowedByParental)
 }
 
 function getRemainingText(item) {
@@ -580,12 +591,12 @@ onBeforeUnmount(() => {
             <h1 class="text-tv-xl font-bold text-white tracking-tight">Minha lista</h1>
             <p class="text-tv-sm text-neutral-400 mt-1">Seus títulos favoritos, em um só lugar.</p>
           </div>
-          <div v-if="player.customQueue.length > 0" class="flex items-center gap-4">
+          <div v-if="visibleQueue.length > 0" class="flex items-center gap-4">
             <button
               id="fav-play-all"
               type="button"
               class="tv-btn tv-btn-primary !px-6 !py-2.5 text-tv-sm flex items-center gap-2"
-              @click="player.playFromCustomQueue()"
+              @click="player.playFromCustomQueue(null, allowedByParental)"
             >
               <svg class="w-4 h-4 fill-black" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
               <span>Reproduzir Tudo</span>
@@ -603,7 +614,7 @@ onBeforeUnmount(() => {
 
         <!-- Estado Vazio -->
         <div
-          v-if="player.customQueue.length === 0"
+          v-if="visibleQueue.length === 0"
           class="flex flex-col items-center justify-center flex-1 py-28 text-center"
         >
           <svg class="w-10 h-10 text-neutral-500 stroke-[1.5] mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
@@ -616,7 +627,7 @@ onBeforeUnmount(() => {
         <!-- Grade de Cards da Minha Lista -->
         <div v-else class="grid grid-cols-4 gap-5">
           <div
-            v-for="item in player.customQueue"
+            v-for="item in visibleQueue"
             :id="'fav-card-' + item.section + '-' + item.stream_id"
             :key="item.stream_id + ':' + (item.section || '')"
             tabindex="0"
@@ -779,7 +790,7 @@ onBeforeUnmount(() => {
 
           <!-- 1. Continuar assistindo -->
           <section
-            v-if="player.watchHistory.length > 0"
+            v-if="visibleHistory.length > 0"
             data-focus-group="continue-watching"
             class="space-y-3"
           >
@@ -796,7 +807,7 @@ onBeforeUnmount(() => {
             </div>
 
             <HorizontalRail
-              :items="player.watchHistory"
+              :items="visibleHistory"
               id-prefix="history-card"
               :item-key="(it) => `${it.stream_id}:${it.section}`"
               :gap="1"
