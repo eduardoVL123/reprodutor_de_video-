@@ -18,6 +18,7 @@ import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
 import ProfileGate from '@/components/ProfileGate.vue'
 import SearchScreen from '@/components/SearchScreen.vue'
+import AccountScreen from '@/components/AccountScreen.vue'
 import { registerBackHandler, focusFirstIn } from '@/utils/spatialNavigation'
 import { ALL_CATEGORIES } from '@/services/catalogDb'
 import { formatTime } from '@/utils/formatTime'
@@ -45,7 +46,9 @@ const allowedByParental = (it) => !blockedBySection.value[it.section]?.has(Strin
 const visibleHistory = computed(() => player.watchHistory.filter(allowedByParental))
 const visibleQueue = computed(() => player.customQueue.filter(allowedByParental))
 const profileStore = useProfileStore()
-const { isPhonePortrait } = useFormFactor()
+const { layout } = useFormFactor()
+// Celular/tablet (em pé ou deitado): barra de baixo + busca flutuante no topo; a TV fica com o menu lateral.
+const handheld = computed(() => layout.value !== 'tv')
 useLicenseWatch(
   () => auth.session,
   () => ['live', 'vod', 'series'].some((s) => catalog.status[s].state === 'ready'),
@@ -55,7 +58,7 @@ const showActivation = computed(
   () => !player.isOpen && !profileStore.isProfileGateOpen && license.shouldBlock(auth.session),
 )
 
-// Abas de Navegação ('home' | 'live' | 'vod' | 'series' | 'favorites' | 'search')
+// Abas de Navegação ('home' | 'live' | 'vod' | 'series' | 'favorites' | 'search' | 'account')
 const activeTab = ref('home')
 
 // Gerenciador de listas
@@ -192,6 +195,8 @@ const heroSynopsis = computed(() => {
 })
 
 const heroPlayButtonText = computed(() => {
+  // Em pé os três botões dividem a largura: texto curto para caber no botão verde.
+  if (layout.value === 'phone-portrait') return recentHistoryItem.value ? 'Continuar' : 'Assistir'
   if (recentHistoryItem.value) {
     return recentHistoryItem.value.section === 'series' ? 'Continuar' : 'Continuar assistindo'
   }
@@ -540,18 +545,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="w-full h-full flex bg-tv-deep text-white overflow-hidden select-none relative">
-    <!-- Celular/tablet em pé: barra de baixo (RFC-023). TV e celular deitado: menu lateral recolhido (Layout B). -->
-    <BottomNav
-      v-if="isPhonePortrait"
-      :active-tab="activeTab"
-      :profile="profileStore.activeProfile"
-      :list-label="auth.activeListLabel || auth.username || ''"
-      @navigate="activeTab = $event"
-      @manage-lists="openListModal"
-      @switch-profile="openProfileGate"
-    />
+    <!-- Celular/tablet: barra de baixo (busca dentro do destaque e no cabeçalho das abas). TV: menu lateral recolhido (Layout B). -->
+    <BottomNav v-if="handheld" :active-tab="activeTab" @navigate="activeTab = $event" />
     <SideMenu
-      v-else
+      v-if="!handheld"
       :active-tab="activeTab"
       :profile="profileStore.activeProfile"
       :list-label="auth.activeListLabel || auth.username || ''"
@@ -561,20 +558,20 @@ onBeforeUnmount(() => {
     />
 
     <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
-    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-16 phone-portrait:pb-[calc(4.6rem+env(safe-area-inset-bottom))] flex flex-col overflow-hidden relative">
+    <main class="flex-1 min-w-0 h-full pl-[7rem] phone:pl-0 phone:pb-[calc(4.6rem+env(safe-area-inset-bottom))] flex flex-col overflow-hidden relative">
       <!-- Aba TV ao Vivo -->
       <div v-if="activeTab === 'live'" class="w-full h-full">
-        <CatalogBrowser section="live" />
+        <CatalogBrowser section="live" @search="activeTab = 'search'" />
       </div>
 
       <!-- Aba Filmes -->
       <div v-else-if="activeTab === 'vod'" class="w-full h-full">
-        <CatalogBrowser section="vod" />
+        <CatalogBrowser section="vod" @search="activeTab = 'search'" />
       </div>
 
       <!-- Aba Séries -->
       <div v-else-if="activeTab === 'series'" class="w-full h-full">
-        <CatalogBrowser section="series" />
+        <CatalogBrowser section="series" @search="activeTab = 'search'" />
       </div>
 
       <!-- Aba Busca -->
@@ -582,22 +579,32 @@ onBeforeUnmount(() => {
         <SearchScreen />
       </div>
 
+      <!-- Aba Conta (só celular/tablet) -->
+      <AccountScreen
+        v-else-if="activeTab === 'account'"
+        :profile="profileStore.activeProfile"
+        :list-label="auth.activeListLabel || auth.username || ''"
+        @navigate="activeTab = $event"
+        @manage-lists="openListModal"
+        @switch-profile="openProfileGate"
+      />
+
       <!-- Aba Minha lista (Favoritos) -->
       <div
         v-else-if="activeTab === 'favorites'"
-        class="flex flex-col h-full pl-16 pr-24 py-14 overflow-y-auto"
+        class="flex flex-col h-full pl-16 pr-24 py-14 phone:px-4 phone:py-6 overflow-y-auto"
         data-focus-group="favorites-view"
       >
-        <div class="flex items-center justify-between mb-8">
+        <div class="flex items-center justify-between mb-8 phone:mb-5 phone-portrait:flex-col phone-portrait:items-start phone-portrait:gap-y-4">
           <div>
-            <h1 class="text-tv-xl font-bold text-white tracking-tight">Minha lista</h1>
+            <h1 class="text-tv-xl font-bold text-white tracking-tight">Favoritos</h1>
             <p class="text-tv-sm text-neutral-400 mt-1">Seus títulos favoritos, em um só lugar.</p>
           </div>
           <div v-if="visibleQueue.length > 0" class="flex items-center gap-4">
             <button
               id="fav-play-all"
               type="button"
-              class="tv-btn tv-btn-primary !px-6 !py-2.5 text-tv-sm flex items-center gap-2"
+              class="tv-btn tv-btn-primary !px-6 !py-2.5 text-tv-sm flex items-center gap-2 whitespace-nowrap"
               @click="player.playFromCustomQueue(null, allowedByParental)"
             >
               <svg class="w-4 h-4 fill-black" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -606,7 +613,7 @@ onBeforeUnmount(() => {
             <button
               id="fav-clear"
               type="button"
-              class="tv-btn !px-5 !py-2.5 text-tv-sm text-neutral-400 hover:text-white"
+              class="tv-btn !px-5 !py-2.5 text-tv-sm text-neutral-400 hover:text-white whitespace-nowrap"
               @click="player.clearCustomQueue()"
             >
               Limpar Lista
@@ -627,7 +634,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Grade de Cards da Minha Lista -->
-        <div v-else class="grid grid-cols-4 gap-5">
+        <div v-else class="grid grid-cols-4 phone-portrait:grid-cols-2 gap-5 phone:gap-3">
           <div
             v-for="item in visibleQueue"
             :id="'fav-card-' + item.section + '-' + item.stream_id"
@@ -677,6 +684,20 @@ onBeforeUnmount(() => {
       >
         <!-- Hero Banner Destaque (Full-Bleed com vinheta lateral e inferior) -->
         <div class="relative w-full min-h-[31rem] px-16 pt-10 pb-14 phone-portrait:min-h-[34rem] phone-portrait:px-5 phone-portrait:pt-0 phone-portrait:pb-4 flex flex-col justify-end overflow-hidden">
+          <!-- Celular/tablet: busca dentro do destaque, rolando junto com ele -->
+          <button
+            v-if="handheld"
+            id="phone-search"
+            type="button"
+            class="tv-focusable absolute z-10 left-4 right-4 top-3 max-w-xl mx-auto h-11 flex items-center px-4 rounded-full bg-black/45 border border-white/15 text-neutral-200 phone:text-[0.95rem]"
+            @click="activeTab = 'search'"
+          >
+            <svg class="w-5 h-5 mr-2.5 stroke-current fill-none stroke-[2] shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="11" cy="11" r="7" />
+              <path d="M20 20l-3.5-3.5" />
+            </svg>
+            <span>Buscar filmes, séries e canais</span>
+          </button>
           <!-- Arte de fundo com vinheta cinematográfica -->
           <div class="absolute inset-0 pointer-events-none overflow-hidden">
             <img
@@ -763,17 +784,13 @@ onBeforeUnmount(() => {
                 id="hero-mylist"
                 type="button"
                 class="tv-focusable h-[3.2rem] px-6 rounded-lg tv-btn-glass font-medium text-tv-sm flex items-center gap-2.5 whitespace-nowrap phone-portrait:w-[3.2rem] phone-portrait:px-0 phone-portrait:justify-center phone-portrait:rounded-xl"
-                :aria-label="isHeroBookmarked ? 'Na minha lista' : 'Minha lista'"
+                :aria-label="isHeroBookmarked ? 'Nos favoritos' : 'Favoritos'"
                 @click="handleHeroBookmark"
               >
-                <svg v-if="isHeroBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <svg v-else class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span class="phone-portrait:hidden">{{ isHeroBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
+                <svg class="w-4 h-4 shrink-0" :class="isHeroBookmarked ? 'text-tv-accent' : ''" viewBox="0 0 24 24" :fill="isHeroBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
+              </svg>
+                <span class="phone-portrait:hidden">{{ isHeroBookmarked ? 'Nos favoritos' : 'Favoritos' }}</span>
               </button>
             </div>
           </div>

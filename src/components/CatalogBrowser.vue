@@ -31,7 +31,9 @@ const props = defineProps({
 const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
-const { isPhonePortrait } = useFormFactor()
+const emit = defineEmits(['search'])
+const { layout: formFactor, isPhonePortrait } = useFormFactor()
+const handheld = computed(() => formFactor.value !== 'tv')
 const parental = useParentalStore()
 const parentalOpen = ref(false)
 const pinFor = ref(null) // categoria bloqueada esperando o PIN
@@ -370,10 +372,11 @@ onBeforeUnmount(() => {
   <section class="flex flex-col h-full pl-10 phone:pl-0 pr-24 phone:pr-4 py-14 phone:py-4 phone-portrait:pr-0 phone-portrait:pt-2 phone-portrait:pb-0 overflow-hidden relative">
     <!-- Topo Fixo com Categorias Arredondadas -->
     <!-- z-20: abaixo do menu lateral (z-30), senão o título passa por cima do menu aberto -->
-    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 phone-portrait:items-start phone-portrait:pb-1 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
-      <div class="flex items-center gap-8 phone:gap-4 phone-portrait:flex-wrap phone-portrait:gap-y-1 min-w-0 flex-1">
+    <!-- Em pé o bloco da esquerda vira `contents`: título e botões dividem a 1ª linha e as categorias ganham a 2ª inteira. -->
+    <header class="sticky top-0 z-20 bg-[#0b0f0c]/90 py-3 px-6 phone:px-4 phone-portrait:flex-wrap phone-portrait:gap-y-2 phone-portrait:pb-1 flex items-center justify-between gap-4 border-b border-white/[0.06] shrink-0">
+      <div class="flex items-center gap-8 phone:gap-4 phone-portrait:contents min-w-0 flex-1">
         <!-- Margem no próprio logo (não gap): escondido na TV, ele não deixa espaço sobrando nas TVs sem flex-gap -->
-        <h1 class="shrink-0 text-2xl phone:text-xl font-black tracking-tight text-white flex items-center">
+        <h1 class="shrink-0 phone-portrait:flex-1 text-2xl phone:text-xl font-black tracking-tight text-white flex items-center">
           <BrandMark :size="1.4" class="text-tv-accent hidden phone:inline mr-2" />
           <span>{{ sectionTitle }}</span>
         </h1>
@@ -383,7 +386,7 @@ onBeforeUnmount(() => {
           v-if="categoryList.length > 0"
           data-focus-row="categories"
           data-scroll-x
-          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 phone-portrait:basis-full phone-portrait:px-0"
+          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 phone-portrait:basis-full phone-portrait:order-last phone-portrait:px-0"
         >
           <button
             v-for="(cat, index) in categoryList"
@@ -406,6 +409,22 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+
+      <!-- Celular/tablet: a busca mora aqui (a TV tem a Busca no menu lateral) -->
+      <button
+        v-if="handheld"
+        id="catalog-search"
+        type="button"
+        class="tv-focusable shrink-0 flex items-center px-3 py-2 rounded-lg bg-white/[0.06] border border-white/10 text-neutral-300"
+        title="Buscar"
+        aria-label="Buscar"
+        @click="emit('search')"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20 20l-3.5-3.5" />
+        </svg>
+      </button>
 
       <!-- Controle parental: bloquear (PIN) ou esconder categorias desta aba -->
       <button
@@ -562,15 +581,11 @@ onBeforeUnmount(() => {
               id="catalog-hero-mylist"
               type="button"
               class="tv-focusable h-11 w-11 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center border border-white/10 transition-colors"
-              :title="isFeaturedBookmarked ? 'Na minha lista' : 'Adicionar à minha lista'"
+              :title="isFeaturedBookmarked ? 'Nos favoritos' : 'Adicionar aos favoritos'"
               @click="handleToggleBookmark"
             >
-              <svg v-if="isFeaturedBookmarked" class="w-4 h-4 stroke-tv-accent" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
+              <svg class="w-4 h-4" :class="isFeaturedBookmarked ? 'text-tv-accent' : ''" viewBox="0 0 24 24" :fill="isFeaturedBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
               </svg>
             </button>
           </div>

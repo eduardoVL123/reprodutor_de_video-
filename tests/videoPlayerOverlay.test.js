@@ -264,7 +264,7 @@ describe('VideoPlayerOverlay — layout 2.0', () => {
     // Controles da interface
     expect(document.getElementById('osd-play-pause')).not.toBeNull()
     expect(document.getElementById('osd-queue').textContent).toContain('Episódios')
-    expect(document.getElementById('osd-bookmark').textContent).toContain('Minha lista')
+    expect(document.getElementById('osd-bookmark').textContent).toContain('Favoritos')
 
     wrapper.unmount()
   })
