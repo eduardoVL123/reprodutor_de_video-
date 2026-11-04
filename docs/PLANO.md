@@ -19,7 +19,6 @@ Passo a passo do console da Play: [`docs/lojas/GOOGLE-PLAY.md`](lojas/GOOGLE-PLA
       Downloader continua completo.
 - [x] `PRIVACY.md` com o controle parental; `docs/lojas/GOOGLE-PLAY.md` com as respostas do Play Console.
 - [x] Capturas de rascunho com a lista de demonstração: `docs/lojas/capturas/{celular,tablet,tv}-*.png`.
-- [x] Branch enviada ao GitHub (`fix/auditoria`, contém tudo).
 
 ## Fase 1 — Testar (você)
 APK de teste: `C:\dev\android\pulse-player-teste-debug.apk` (debug, sem licença nem pareamento).
@@ -30,6 +29,8 @@ APK de teste: `C:\dev\android\pulse-player-teste-debug.apk` (debug, sem licença
 - [ ] Anotar o que quebrar e me mandar (foto ajuda).
 
 ## Fase 2 — O que falta para enviar à Play (bloqueia o envio)
+- [ ] **Enviar ao GitHub** (você, no terminal — o Git pede login numa janela que eu não consigo responder):
+      `git push -u origin fix/auditoria`, depois abrir o PR para a `main`. O CI só roda em PR/push para a `main`.
 - [ ] **Decidir o pagamento**: a versão da Play não vende nada no app (ativação só pelo site/revenda). Risco de
       recusa baixo, não zero. Alternativa segura: faturamento da Google (15%, outra integração).
 - [ ] **Chave de publicação** (você): gerar fora do repo e cadastrar `PULSE_KEYSTORE_BASE64`,
