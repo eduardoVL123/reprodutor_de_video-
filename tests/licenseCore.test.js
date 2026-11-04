@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
@@ -244,6 +244,29 @@ describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
     const body = await res.json()
     expect(body.code).toMatch(/^[A-Z0-9]{8}$/)
     expect(body.sig).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
+  it('chave estragada (vazia, só BOM, ou JSON que não é chave) não derruba o /v1/access: responde sem assinatura', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (const [n, bad] of ['﻿', '﻿\r\n', 'não é json', '{"kty":"EC"}'].entries()) {
+      const db = openSqlite(':memory:')
+      await migrate(db)
+      const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 4), signingKey: bad })
+      const res = await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey: `c${n}`.repeat(16), platform: 'android', host: '' }) }), '10.0.0.3')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.code).toMatch(/^[A-Z0-9]{8}$/)
+      expect(body.sig).toBeUndefined()
+    }
+    expect(warn.mock.calls.flat().join(' ')).toMatch(/LICENSE_SIGNING_KEY/)
+    warn.mockRestore()
+  })
+
+  it('chave gravada em UTF-16 pelo PowerShell (FF FE + byte nulo em cada letra) também funciona', async () => {
+    const { cleanJwk } = await import('../server/license/license-sign.mjs')
+    const json = JSON.stringify({ kty: 'EC', crv: 'P-256', d: 'abc' })
+    const utf16AsUtf8 = '��' + [...json].map((c) => c + '\u0000').join('') + '\r\u0000\n\u0000'
+    expect(JSON.parse(cleanJwk(utf16AsUtf8))).toEqual({ kty: 'EC', crv: 'P-256', d: 'abc' })
   })
 
   it('assina o acesso para a chave do aparelho e a lista; a chave pública confere', async () => {

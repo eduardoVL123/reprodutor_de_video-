@@ -20,7 +20,7 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 - [ ] **Play App Signing**: aceite no console (a Google guarda a chave final; a sua vira chave de upload).
 - [ ] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL` (link "raw" de `docs/demo/pulse-demo.m3u`) e, se a licença estiver
       no ar, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
-- [ ] **Versão**: suba `versionCode` (hoje 3) a cada envio, em `android/app/build.gradle`.
+- [ ] **Versão**: suba `versionCode` (hoje 4) a cada envio, em `android/app/build.gradle`.
 
 ## 2. Configurar o app (Painel → "Configurar o app")
 

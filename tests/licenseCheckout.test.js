@@ -3,7 +3,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate, activationEndsAt, purgeExpired } from '../server/license/license-db.mjs'
 import { createLicenseHandler } from '../server/license/license-core.mjs'
-import { createMpClient, toAmount, MpError } from '../server/license/mp-client.mjs'
+import { createMpClient, toAmount, MpError, mpErrorDetail } from '../server/license/mp-client.mjs'
 import { findResellerByKey, createReseller } from '../server/license/license-resellers.mjs'
 
 /**
@@ -991,5 +991,20 @@ describe('revisão de segurança — limites no banco (valem entre isolates do W
       h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '10.8.8.8')
     for (let n = 0; n < 20; n++) expect((await hello(n % 2 ? handle : other, n)).status).toBe(200)
     expect((await hello(other, 99)).status).toBe(429)
+  })
+})
+
+describe('erro do Mercado Pago no log', () => {
+  it('guarda só a mensagem do erro, com e-mail e números longos mascarados', async () => {
+    const body = { message: 'Invalid users involved', error: 'bad_request', cause: [{ code: 3, description: 'payer_email teste@x.com invalid for 12345678909' }] }
+    const detail = mpErrorDetail(body)
+    expect(detail).toContain('Invalid users involved')
+    expect(detail).not.toContain('teste@x.com')
+    expect(detail).not.toContain('12345678909')
+    const mp = createMpClient({ accessToken: 't', fetch: async () => new Response(JSON.stringify(body), { status: 400 }) })
+    const err = await mp.createPreapproval({}).catch((e) => e)
+    expect(err).toBeInstanceOf(MpError)
+    expect(err.status).toBe(400)
+    expect(err.message).toContain('Invalid users involved')
   })
 })
