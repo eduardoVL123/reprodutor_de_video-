@@ -6,7 +6,7 @@
  * quem muda o pedido para 'paid' (UPDATE condicional) é o único que entrega.
  */
 import { readJsonBody, timingSafeEqualStr } from '../pair/pair-core.mjs'
-import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit, revokeActivationStatements } from './license-db.mjs'
 import { hashKey, createReseller, rotateKey, toBase64Url } from './license-resellers.mjs'
 import { DAY_MS, extendActivation } from './license-rules.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, MAX_CREDITS, creditTotal } from './pricing.mjs'
@@ -395,15 +395,35 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     if (claim.meta.changes !== 1 || row.status !== 'delivered') return
     const at = now()
     if (row.kind === 'device_annual') {
-      await db.prepare("UPDATE activations SET revoked_at = ? WHERE note = ? AND source = 'purchase' AND revoked_at IS NULL").bind(at, row.id).run()
+      const revoked = (await db.prepare("SELECT id, device_key FROM activations WHERE note = ? AND source = 'purchase' AND revoked_at IS NULL").bind(row.id).all()).results
+      for (const key of new Set(revoked.map((r) => r.device_key))) {
+        const ids = revoked.filter((r) => r.device_key === key).map((r) => r.id)
+        await db.batch(await revokeActivationStatements(db, key, ids, at))
+      }
     } else if (row.reseller_id) {
       const reseller = await db.prepare('SELECT credits FROM resellers WHERE id = ?').bind(row.reseller_id).first()
       const taken = Math.min(row.quantity, reseller ? reseller.credits : 0)
+      const short = taken < row.quantity
       await db.batch([
-        db.prepare('UPDATE resellers SET credits = credits - ?, active = CASE WHEN ? < ? THEN 0 ELSE active END WHERE id = ?').bind(taken, taken, row.quantity, row.reseller_id),
+        db.prepare('UPDATE resellers SET credits = credits - ?, active = CASE WHEN ? THEN 0 ELSE active END WHERE id = ?').bind(taken, short ? 1 : 0, row.reseller_id),
         db
           .prepare('INSERT INTO credit_movements (reseller_id, delta, kind, amount_cents, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
           .bind(row.reseller_id, -taken, 'refund', -row.amount_cents, `estorno do pedido ${row.id}`, DELIVERED_BY, at),
+        // Créditos do estorno já repassados (auditoria RFC-025, item 2): suspende quem recebeu repasse desta revenda desde
+        // o pagamento, e as revendas abaixo delas, para o dono resolver; senão os créditos estornados seguem gastáveis.
+        ...(short
+          ? [
+              db
+                .prepare(
+                  `WITH RECURSIVE hit(id) AS (
+                     SELECT counterpart_id FROM credit_movements
+                     WHERE reseller_id = ? AND kind = 'transfer_out' AND counterpart_id IS NOT NULL AND created_at >= ?
+                     UNION SELECT r.id FROM resellers r JOIN hit ON r.parent_id = hit.id)
+                   UPDATE resellers SET active = 0 WHERE id IN (SELECT id FROM hit)`,
+                )
+                .bind(row.reseller_id, row.paid_at || row.created_at),
+            ]
+          : []),
       ])
     }
     console.warn(`[checkout] pedido ${row.id}: estornado no Mercado Pago (${reason}); entrega desfeita, confira no painel`)
@@ -531,15 +551,15 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     const delivered = await db.prepare('SELECT 1 FROM mp_deliveries WHERE mp_ref = ?').bind(`authorized_payment:${charge.id}`).first()
     if (!delivered) return
     const at = now()
+    const last = await db
+      .prepare("SELECT id, device_key FROM activations WHERE note = ? AND source = 'subscription' AND revoked_at IS NULL ORDER BY id DESC LIMIT 1")
+      .bind(sub.id)
+      .first()
     try {
       await db.batch([
         db.prepare('INSERT INTO mp_deliveries (mp_ref, subscription_id, delivered_at) VALUES (?, ?, ?)').bind(`refund:authorized_payment:${charge.id}`, sub.id, at),
-        db
-          .prepare(
-            `UPDATE activations SET revoked_at = ? WHERE id = (SELECT id FROM activations WHERE note = ? AND source = 'subscription'
-             AND revoked_at IS NULL ORDER BY id DESC LIMIT 1)`,
-          )
-          .bind(at, sub.id),
+        // Revoga o ano da parcela e puxa para trás o que foi empilhado depois (auditoria RFC-025, item 1).
+        ...(last ? await revokeActivationStatements(db, last.device_key, [last.id], at) : []),
       ])
     } catch (err) {
       if (/UNIQUE constraint/i.test(String(err && err.message))) return // estorno já tratado

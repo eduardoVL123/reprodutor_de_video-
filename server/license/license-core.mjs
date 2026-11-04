@@ -20,8 +20,9 @@ import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 export const DEVICE_CODE_LENGTH = 8
 export const MAX_BODY_BYTES = 4096
 export const PLATFORMS = ['android', 'tizen', 'webos', 'web']
-// newDevicesPerDay: corta o ataque barato de criar aparelhos falsos para inflar os ativos de um parceiro.
-export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20 }
+// newDevicesPerDay (por rede) e newDevicesGlobalPerDay (serviço todo): cortam o ataque de criar aparelhos falsos para
+// inflar os ativos de um parceiro.
+export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20, newDevicesGlobalPerDay: 3000 }
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
 // Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
 const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
@@ -78,6 +79,12 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
       // No banco (não na memória do isolate): o limite vale para o serviço todo e sobrevive a reinícios.
       if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: limits.newDevicesPerDay, windowMs: DAY_MS, now: now() }))) {
         throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
+      }
+      // Teto do serviço todo (auditoria RFC-025, item 3): muitas redes juntas não inflam os ativos de um parceiro sem
+      // limite. shortcut: valor fixo; se o crescimento real chegar perto, subir aqui (ou ler de variável).
+      if (attempt === 0 && (await hitLimit(db, { bucket: 'deviceAll', key: '*', limit: limits.newDevicesGlobalPerDay, windowMs: DAY_MS, now: now() }))) {
+        console.warn('[licença] teto diário de aparelhos novos atingido: confira se é crescimento real ou ataque')
+        throw Object.assign(new Error('Muitos aparelhos novos hoje. Tente de novo mais tarde.'), { status: 429 })
       }
       const at = now()
       const code = generateCode(null, DEVICE_CODE_LENGTH)

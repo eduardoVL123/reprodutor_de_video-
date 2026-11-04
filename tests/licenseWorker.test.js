@@ -90,6 +90,26 @@ describe('Worker da licença', () => {
     expect((await post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' })).status).toBe(200)
   })
 
+  it('migração presa num pedido cancelado não trava os pedidos seguintes do isolate', async () => {
+    const env = mockEnv()
+    const realDb = env.DB
+    let stuck = true
+    env.DB = {
+      ...realDb,
+      prepare: (sql) => {
+        if (!stuck) return realDb.prepare(sql)
+        stuck = false
+        return { run: () => new Promise(() => {}) } // como o pedido cancelado: nunca termina
+      },
+    }
+    post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' }) // fica pendurado
+    const second = post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' })
+    const timeout = new Promise((resolve) => setTimeout(() => resolve('travou'), 2000))
+    const res = await Promise.race([second, timeout])
+    expect(res).not.toBe('travou')
+    expect(res.status).toBe(200)
+  })
+
   it('o limite de aparelhos novos usa o IP real do visitante (CF-Connecting-IP)', async () => {
     const env = mockEnv()
     for (let i = 0; i < 20; i++) await post(env, '/v1/access', { deviceKey: `${'b'.repeat(60)}${String(i).padStart(4, '0')}`, host: 'x.com' }, '9.9.9.9')

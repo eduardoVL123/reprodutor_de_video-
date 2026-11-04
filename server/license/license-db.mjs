@@ -201,6 +201,34 @@ export async function hitLimit(db, { bucket, key, limit, windowMs, now }) {
   return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
 }
 
+/**
+ * Comandos (para um db.batch) que revogam `revokeIds` do aparelho e puxam para trás as ativações empilhadas depois
+ * delas. Cada compra soma 12 meses a partir do fim vigente (extendActivation); sem refazer a fila, MAX(ends_at)
+ * continuaria contando o período estornado (auditoria RFC-025, item 1).
+ */
+export async function revokeActivationStatements(db, deviceKey, revokeIds, at) {
+  const revoke = new Set(revokeIds)
+  const rows = (
+    await db.prepare('SELECT id, starts_at, ends_at FROM activations WHERE device_key = ? AND revoked_at IS NULL ORDER BY id').bind(deviceKey).all()
+  ).results
+  const statements = []
+  let prevOld = 0
+  let prevNew = 0
+  for (const row of rows) {
+    // Quanto esta ativação somou ao fim que existia quando ela foi criada.
+    const own = Math.max(0, row.ends_at - Math.max(row.starts_at, prevOld))
+    prevOld = Math.max(prevOld, row.ends_at)
+    if (revoke.has(row.id)) {
+      statements.push(db.prepare('UPDATE activations SET revoked_at = ? WHERE id = ?').bind(at, row.id))
+      continue
+    }
+    const endsAt = Math.max(row.starts_at, prevNew) + own
+    prevNew = Math.max(prevNew, endsAt)
+    if (endsAt !== row.ends_at) statements.push(db.prepare('UPDATE activations SET ends_at = ? WHERE id = ?').bind(endsAt, row.id))
+  }
+  return statements
+}
+
 /** Segundos de espera se o bucket já chegou ao limite, sem contar mais uma (travas de "erros demais"); 0 = livre. */
 export async function lockedFor(db, { bucket, key, limit, windowMs, now }) {
   const row = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(bucket, key).first()
@@ -229,6 +257,7 @@ export async function purgeExpired(db, now) {
   await db
     .prepare(
       `DELETE FROM devices WHERE first_seen_at < ?
+       AND blocked_at IS NULL -- suspenso fica: apagado, voltaria sem bloqueio e com teste novo (auditoria RFC-025, item 4)
        AND device_key NOT IN (SELECT device_key FROM activations)
        AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)`,
     )

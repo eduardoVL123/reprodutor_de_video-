@@ -437,23 +437,29 @@ Cloudflare (§5), confirmar `payer_email` no teste do Mercado Pago (§3) e a aud
 
 4. Servidor parceiro **fica fora** da landing (dono, 2026-11-04; mantém a R2 da RFC-021).
 
-## Onde parou (2026-11-04)
-Feito (sem commit, branch `fix/auditoria`): etapas 2 a 8 no código, lint limpo, 1035 testes passando, site conferido
-no servidor local (`.claude/launch.json`, configuração "licenca-site").
+## Onde parou (2026-11-04, madrugada)
+No ar: commits `7392a60` (site) e `470f8e1` (correção do Access, com log do motivo da recusa), com push na branch
+`fix/auditoria` (PR #1). Deploy da versão `4736d8bd` feito pelo dono.
+
+Cloudflare: domínios `pulseplayer.com.br` e `dono.pulseplayer.com.br` no Worker `pulse-license`; equipe Zero Trust
+`shy-mountain-9579`; aplicação "Painel Pulse" com a policy "Só o dono" (One-time PIN); segredos `ACCESS_AUD`,
+`ACCESS_OWNER_EMAIL` e `LICENSE_REPORT_TOKEN` gravados.
+
+Conferido por curl: landing, `/enviar`, `/cliente`, redirecionamento de `/?codigo=`; `/admin` dá 404 em
+`pulseplayer.com.br` e no `workers.dev`; `dono.` leva ao login do Access.
+
+**Bloqueio atual**: depois do login, o painel dá 404. O log (`wrangler tail`) mostra
+`Access recusado: e-mail diferente de ACCESS_OWNER_EMAIL`, ou seja, o segredo foi gravado com outro texto. Correção
+(dono): `npx wrangler secret put ACCESS_OWNER_EMAIL --config server/license/wrangler.jsonc` com o e-mail exato da
+policy; não precisa de novo deploy.
 
 Falta, nesta ordem:
-1. **Cloudflare (dono)**, passo a passo no `server/license/README.md`, seção "Painel do dono na Cloudflare":
-   - [x] Workers & Pages → **pulse-license** (não o `pulse-pair`) → Domains → Add Domain: `pulseplayer.com.br` e
-         `dono.pulseplayer.com.br`.
-   - [x] Equipe criada: `shy-mountain-9579` (já em `wrangler.jsonc`). [ ] Zero Trust: login só One-time PIN, aplicação Self-hosted em `dono.pulseplayer.com.br`,
-         policy "Só o dono" (Allow, Emails = e-mail do dono). Feito em 2026-11-04 (AUD Tag obtida).
-   - [ ] Segredos no Worker: `ACCESS_AUD`, `ACCESS_OWNER_EMAIL`, `LICENSE_REPORT_TOKEN`; variável `ACCESS_TEAM`
-         em `wrangler.jsonc` (`vars`).
-2. [x] Segredos gravados, commit `7392a60` e deploy (versão `2bfb23b8`) em 2026-11-04.
-3. [x] (conferido por curl; falta você entrar uma vez com o código do e-mail) Testar em aba anônima: `dono.pulseplayer.com.br/admin/` pede o código do e-mail; `pulseplayer.com.br/admin/`
-       e `pulse-license.pulseplayer.workers.dev/admin/` dão 404.
-4. [ ] App: trocar `VITE_LICENSE_BASE_URL` para `https://pulseplayer.com.br` no próximo build (o `workers.dev` segue
-       funcionando para os apps já instalados).
-5. [ ] Confirmar `payer_email` no `GET /preapproval` com a conta de teste do Mercado Pago (§3).
-6. [ ] Entregar a chave de leitura ao sócio com o `API.md`.
-7. [ ] Etapa 9: auditoria com o site publicado.
+1. [ ] Regravar `ACCESS_OWNER_EMAIL` e entrar no painel (F5 em `dono.pulseplayer.com.br/admin/`).
+2. [ ] App: `VITE_LICENSE_BASE_URL` = `https://pulseplayer.com.br` no próximo build e `PULSE_LICENSE_BASE_URL` no
+       GitHub (o `workers.dev` segue funcionando para os apps já instalados).
+3. [ ] Regra de limite em `/v1/checkout` (Security → Security rules → Rate limiting rule).
+4. [ ] Confirmar `payer_email` no `GET /preapproval` com a conta de teste do Mercado Pago (§3).
+5. [ ] Entregar a chave de leitura ao sócio com o `API.md`.
+6. [ ] Etapa 9: auditoria com o site publicado. A de código (2026-11-04, full/standard) está em
+       `docs/rfc/RFC-025-auditoria.md` e `RFC-025-auditoria-pendencias.md`: 9 pistas a validar, nenhuma confirmada.
+7. [x] Itens 1 a 4 da auditoria corrigidos com testes (estorno com ativação empilhada, repasse de créditos estornados, teto geral de aparelhos novos, limpeza poupa suspenso). Sem commit nem deploy ainda.

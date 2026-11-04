@@ -1,9 +1,9 @@
 # Política de Privacidade — Pulse Player
 
-> **Rascunho técnico.** Preencha os campos entre `[colchetes]`, revise com seu jurídico e publique o texto
+> **Rascunho técnico.** Revise com seu jurídico e publique o texto
 > em uma URL pública: Samsung Seller Office, LG Seller Lounge e Google Play exigem o link no cadastro.
 
-Última atualização: [data]
+Última atualização: 4 de novembro de 2026
 
 ## O que o aplicativo é
 
@@ -49,7 +49,7 @@ demonstração do endereço publicado pelo desenvolvedor e reproduz vídeos de u
 ### Adicionar lista pelo celular (opcional)
 
 Quando a versão do aplicativo traz essa opção (a tela de login mostra "Use o seu celular"), o aplicativo conversa
-com o **serviço de pareamento** do desenvolvedor, em [endereço do serviço de pareamento]:
+com o **serviço de pareamento** do desenvolvedor, em `https://par.pulseplayer.com.br`:
 
 1. A TV pede um código curto e envia ao serviço uma **chave pública** gerada na hora. A chave privada fica só na
    memória da TV e nunca sai dela.
@@ -101,4 +101,4 @@ de entregar o aparelho e supervisionar o uso.
 
 ## Contato
 
-[nome do responsável] — [e-mail de contato]
+Eduardo Lopes Valerio — eduardo.lopes.valerio@hotmail.com

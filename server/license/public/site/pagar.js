@@ -356,7 +356,7 @@
     })
     $('card-note').textContent =
       type === 'aparelho'
-        ? 'No cartão, a assinatura renova sozinha todo ano (R$ 25). Para cancelar a renovação, fale com a gente pelo WhatsApp.'
+        ? 'No cartão, a assinatura renova sozinha todo ano (R$ 25). Para cancelar a renovação, use Minha TV no site (com o e-mail do pagamento).'
         : 'Pagamento à vista, em 1 parcela.'
 
     const saved = remembered()

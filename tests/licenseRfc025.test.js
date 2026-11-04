@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { openSqlite } from '../server/license/sqlite-d1.mjs'
-import { migrate } from '../server/license/license-db.mjs'
-import { createLicenseHandler } from '../server/license/license-core.mjs'
+import { migrate, purgeExpired } from '../server/license/license-db.mjs'
+import { createLicenseHandler, LIMITS } from '../server/license/license-core.mjs'
 import { API_FAIL_LIMIT } from '../server/license/license-api.mjs'
 
 /** RFC-025: site de vendas, área do cliente e rotas fechadas. */
@@ -204,5 +204,28 @@ describe('relatórios do sócio — GET /api/v1/reports/* (§7)', () => {
   it('10 chaves erradas travam a rede', async () => {
     for (let n = 0; n < 10; n++) expect((await req('GET', '/api/v1/reports/summary', { token: `errada${n}` })).status).toBe(401)
     expect((await req('GET', '/api/v1/reports/summary', { token: REPORT })).status).toBe(429)
+  })
+})
+
+describe('auditoria RFC-025: aparelhos novos e limpeza', () => {
+  it('item 3: teto diário de aparelhos novos no serviço todo, mesmo vindo de redes diferentes', async () => {
+    handle = createLicenseHandler({ db, now: () => clock, adminToken: ADMIN, limits: { ...LIMITS, newDevicesGlobalPerDay: 3 } })
+    const hi = (n) => req('POST', '/v1/hello', { body: { deviceKey: `${'g'.repeat(39)}${n}`, platform: 'android' }, ip: `10.50.${n}.1` })
+    for (const n of [1, 2, 3]) expect((await hi(n)).status).toBe(200)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await hi(4)).status).toBe(429)
+    vi.restoreAllMocks()
+    expect((await hi(1)).status).toBe(200) // aparelho que já existe não conta
+  })
+
+  it('item 4: a limpeza de 24 meses não apaga aparelho suspenso (voltaria sem bloqueio e com teste novo)', async () => {
+    const blocked = await hello('s'.repeat(40))
+    const free = await hello('f'.repeat(40))
+    await db.prepare('UPDATE devices SET blocked_at = ? WHERE code = ?').bind(clock, blocked).run()
+    clock += 800 * DAY
+    await purgeExpired(db, clock)
+    const left = (await db.prepare('SELECT code FROM devices').all()).results.map((r) => r.code)
+    expect(left).toEqual([blocked])
+    expect(left).not.toContain(free)
   })
 })

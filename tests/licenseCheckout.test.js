@@ -402,6 +402,49 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(await activationEndsAt(db, KEY)).toBeNull()
   })
 
+  it('estorno de um ano com outro empilhado depois: o fim volta a contar só o ano que ficou (auditoria RFC-025, item 1)', async () => {
+    const first = await deviceOrder()
+    pay(first.orderId)
+    await webhook(`ORD-${first.orderId}`)
+    const oneYear = await activationEndsAt(db, KEY)
+    const second = await deviceOrder()
+    pay(second.orderId)
+    await webhook(`ORD-${second.orderId}`, { requestId: 'segunda' })
+    expect(await activationEndsAt(db, KEY)).toBeGreaterThan(oneYear)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(first.orderId, { status: 'processed', status_detail: 'charged_back' })
+    await webhook(`ORD-${first.orderId}`, { requestId: 'chargeback-1' })
+    spy.mockRestore()
+    // O ano que ficou mantém a duração exata que somou (366 dias se cair em ano bissexto): até 1 dia de diferença.
+    expect(Math.abs((await activationEndsAt(db, KEY)) - oneYear)).toBeLessThanOrEqual(24 * 3600 * 1000)
+  })
+
+  it('estorno de créditos já repassados: suspende a revenda e quem recebeu o repasse, com as de baixo (auditoria RFC-025, item 2)', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const parent = await db.prepare('SELECT id FROM resellers').first()
+    const at = Date.now()
+    await db.batch([
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (900, ?, 'Filha', 'h900', 20, 1, ?)").bind(parent.id, at),
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (901, 900, 'Neta', 'h901', 0, 1, ?)").bind(at),
+      db.prepare("INSERT INTO resellers (id, parent_id, name, key_hash, credits, active, created_at) VALUES (902, ?, 'Outra filha', 'h902', 0, 1, ?)").bind(parent.id, at),
+      db.prepare('UPDATE resellers SET credits = 0 WHERE id = ?').bind(parent.id),
+      db.prepare("INSERT INTO credit_movements (reseller_id, delta, kind, counterpart_id, created_at) VALUES (?, -20, 'transfer_out', 900, ?)").bind(parent.id, at + 1),
+    ])
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    await webhook(`ORD-${orderId}`, { requestId: 'estorno' })
+    spy.mockRestore()
+    const active = (await db.prepare('SELECT id, active FROM resellers ORDER BY id').all()).results
+    expect(active).toEqual([
+      { id: parent.id, active: 0 },
+      { id: 900, active: 0 },
+      { id: 901, active: 0 },
+      { id: 902, active: 1 },
+    ])
+  })
+
   it('webhook perdido: a consulta da tela confirma no Mercado Pago, no máximo uma vez por minuto', async () => {
     const { orderId, viewSecret } = await deviceOrder()
     pay(orderId)

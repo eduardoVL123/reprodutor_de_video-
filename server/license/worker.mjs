@@ -24,7 +24,7 @@ const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=ut
 const SWEEP_EVERY_MS = 60 * 1000
 
 let handle = null
-let ready = null
+let migrated = false
 let lastSweep = 0
 let verifyOwner = null
 
@@ -81,14 +81,13 @@ export default {
       return withHeaders(res, TYPES[url.pathname.split('.').pop()] || 'text/html; charset=utf-8')
     }
 
-    if (!ready) {
-      // CREATE TABLE IF NOT EXISTS: uma vez por isolate; se falhar, a próxima chamada tenta de novo
-      ready = migrate(env.DB).catch((err) => {
-        ready = null
-        throw err
-      })
+    // CREATE TABLE IF NOT EXISTS até dar certo uma vez no isolate. Cada pedido espera a sua própria migração: uma
+    // promessa compartilhada nascida num pedido que foi cancelado nunca termina no Workers e travava todos os
+    // pedidos seguintes do isolate (visto em produção em 2026-11-04). Rodar duas juntas é seguro (IF NOT EXISTS).
+    if (!migrated) {
+      await migrate(env.DB)
+      migrated = true
     }
-    await ready
     if (!handle) {
       const mp = env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: env.MP_ACCESS_TOKEN }) : null
       if (env.LICENSE_ADMIN_TOKEN && env.LICENSE_ADMIN_TOKEN.length < 32) {
