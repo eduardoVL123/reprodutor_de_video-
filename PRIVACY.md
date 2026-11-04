@@ -94,10 +94,10 @@ podem ver o que está tocando na TV. Quem não toca em "Transmitir" não envia n
 
 O aplicativo não é destinado a crianças e não traz conteúdo próprio: o que aparece depende das listas cadastradas
 pelo usuário. Para proteger crianças, o aplicativo tem **controle parental**: categorias com nome de conteúdo adulto
-já começam **bloqueadas** (abrem só com um PIN, que começa como 0000 e pode ser trocado), e qualquer categoria pode ser
-bloqueada ou escondida por perfil (botão "Controle parental" nas abas de Filmes, Séries e Canais). Itens de
-categorias bloqueadas ou escondidas também não aparecem no Início nem na busca. Responsáveis devem trocar o PIN
-inicial e supervisionar o uso.
+já começam **bloqueadas** (abrem só com um PIN, criado no primeiro uso e que pode ser trocado), e qualquer categoria
+pode ser bloqueada ou escondida por perfil (botão "Controle parental" nas abas de Filmes, Séries e Canais). Itens de
+categorias bloqueadas ou escondidas também não aparecem no Início nem na busca. Responsáveis devem criar o PIN antes
+de entregar o aparelho e supervisionar o uso.
 
 ## Contato
 

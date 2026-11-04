@@ -8,11 +8,10 @@ import { storage } from '@/services/storage'
  *  - 'locked': o nome aparece com cadeado, mas os itens só abrem com o PIN (e ficam fora de "Todos", Início e busca);
  *  - 'hidden': some de tudo.
  * Sem escolha do usuário, categorias com nome adulto começam bloqueadas. O PIN vale para o aparelho (todos os
- * perfis); desbloquear com o PIN vale até fechar o app.
+ * perfis) e é criado no primeiro uso (não há PIN de fábrica); desbloquear com o PIN vale até fechar o app.
  */
 
 const PIN_KEY = 'parental:pin'
-export const DEFAULT_PIN = '0000'
 export const PIN_PATTERN = /^\d{4,8}$/
 const settingsKey = (profileId) => `parental:categories:${profileId || 'default'}`
 // Nomes de categoria que entram bloqueados por padrão (listas costumam usar estes termos para conteúdo adulto).
@@ -74,10 +73,25 @@ export const useParentalStore = defineStore('parental', () => {
     await storage.set(settingsKey(profileId), next).catch((err) => console.warn('[parental] Falha ao salvar:', err))
   }
 
+  /** Ainda não há PIN: o primeiro que o usuário digitar vira o PIN (não existe PIN de fábrica). */
+  const needsPin = () => !pinHash.value
+
+  async function savePin(pin) {
+    pinHash.value = await hashPin(pin)
+    await storage.set(PIN_KEY, pinHash.value)
+  }
+
+  /**
+   * Confere o PIN. Sem PIN criado, o PIN digitado (4 a 8 números) passa a ser o PIN do aparelho.
+   * @returns {Promise<boolean>}
+   */
   async function checkPin(pin) {
     if (!PIN_PATTERN.test(String(pin || ''))) return false
-    const expected = pinHash.value || (await hashPin(DEFAULT_PIN))
-    return (await hashPin(pin)) === expected
+    if (needsPin()) {
+      await savePin(pin)
+      return true
+    }
+    return (await hashPin(pin)) === pinHash.value
   }
 
   /** @returns {Promise<boolean>} PIN certo: a categoria abre até fechar o app. */
@@ -91,12 +105,9 @@ export const useParentalStore = defineStore('parental', () => {
   async function changePin(current, next) {
     if (!(await checkPin(current))) return 'PIN atual incorreto.'
     if (!PIN_PATTERN.test(String(next || ''))) return 'O novo PIN precisa ter de 4 a 8 números.'
-    pinHash.value = await hashPin(next)
-    await storage.set(PIN_KEY, pinHash.value)
+    await savePin(next)
     return ''
   }
 
-  const usingDefaultPin = () => !pinHash.value
-
-  return { settings, unlocked, load, statusOf, isLocked, blockedIds, setStatus, checkPin, unlock, changePin, usingDefaultPin }
+  return { settings, unlocked, load, statusOf, isLocked, blockedIds, setStatus, checkPin, unlock, changePin, needsPin }
 })

@@ -26,7 +26,7 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 
 | Pergunta | Resposta |
 |---|---|
-| Acesso ao app | "Todas ou algumas funcionalidades são restritas" → instruções: *"O app não traz conteúdo. Na tela de login, toque em 'Experimentar com vídeos de demonstração' (filmes Blender, CC BY). O PIN do controle parental é 0000."* |
+| Acesso ao app | "Todas ou algumas funcionalidades são restritas" → instruções: *"O app não traz conteúdo. Na tela de login, toque em 'Experimentar com vídeos de demonstração' (filmes Blender, CC BY). No controle parental, o primeiro PIN digitado (4 a 8 números) vira o PIN do aparelho."* |
 | Anúncios | Não contém anúncios. |
 | Classificação do conteúdo (IARC) | Categoria "Todos os outros tipos de app" / utilitário de mídia. Conteúdo gerado pelo usuário/acesso a conteúdo de terceiros: **sim** (listas do usuário). Violência, sexo etc. no próprio app: não. Informe que há controle parental. |
 | Público-alvo | **18+** (ou 16+). Não marque crianças: evita as regras da Família, que o app não cumpre por tocar listas de terceiros. |

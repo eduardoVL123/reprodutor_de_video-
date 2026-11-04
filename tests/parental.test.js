@@ -22,25 +22,28 @@ describe('parentalStore', () => {
     expect(parental.blockedIds('vod', CATS)).toEqual(['2'])
   })
 
-  it('PIN inicial 0000 desbloqueia até fechar o app; PIN errado não', async () => {
+  it('sem PIN de fábrica: o primeiro PIN digitado vira o PIN; depois só ele desbloqueia (até fechar o app)', async () => {
     const { useParentalStore } = await import('@/stores/parentalStore')
     const parental = useParentalStore()
     await parental.load('p1')
-    expect(await parental.unlock('vod', CATS[1], '1234')).toBe(false)
-    expect(parental.isLocked('vod', CATS[1])).toBe(true)
-    expect(await parental.unlock('vod', CATS[1], '0000')).toBe(true)
+    expect(parental.needsPin()).toBe(true)
+    expect(await parental.unlock('vod', CATS[1], '12')).toBe(false) // curto demais: não cria
+    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(true) // cria o PIN e desbloqueia
+    expect(parental.needsPin()).toBe(false)
     expect(parental.isLocked('vod', CATS[1])).toBe(false)
     expect(parental.blockedIds('vod', CATS)).toEqual([])
+    expect(await parental.checkPin('0000')).toBe(false)
   })
 
   it('trocar o PIN: precisa do atual, e o novo passa a valer', async () => {
     const { useParentalStore } = await import('@/stores/parentalStore')
     const parental = useParentalStore()
     await parental.load('p1')
+    await parental.checkPin('2580') // cria
     expect(await parental.changePin('9999', '4321')).toMatch(/incorreto/)
-    expect(await parental.changePin('0000', '12')).toMatch(/4 a 8/)
-    expect(await parental.changePin('0000', '4321')).toBe('')
-    expect(await parental.checkPin('0000')).toBe(false)
+    expect(await parental.changePin('2580', '12')).toMatch(/4 a 8/)
+    expect(await parental.changePin('2580', '4321')).toBe('')
+    expect(await parental.checkPin('2580')).toBe(false)
     expect(await parental.checkPin('4321')).toBe(true)
   })
 

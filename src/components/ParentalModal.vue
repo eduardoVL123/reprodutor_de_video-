@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import PinDialog from '@/components/PinDialog.vue'
-import { useParentalStore, DEFAULT_PIN } from '@/stores/parentalStore'
+import { useParentalStore } from '@/stores/parentalStore'
 import { registerBackHandler, pushFocusScope } from '@/utils/spatialNavigation'
 
 /**
@@ -25,7 +25,7 @@ const LABELS = { visible: 'Visível', locked: 'Bloqueada', hidden: 'Escondida' }
 const NEXT = { visible: 'locked', locked: 'hidden', hidden: 'visible' }
 const rows = computed(() => props.categories.map((c) => ({ category: c, status: parental.statusOf(props.section, c) })))
 const defaultPinHint = computed(() =>
-  parental.usingDefaultPin() ? `O PIN inicial é ${DEFAULT_PIN}. Troque por um só seu.` : '',
+  parental.needsPin() ? 'Crie um PIN de 4 a 8 números. Ele protege as categorias bloqueadas; guarde-o.' : '',
 )
 
 async function enterList(pin) {
