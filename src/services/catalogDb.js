@@ -124,6 +124,9 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   const chunkCount = Math.ceil(total / CHUNK_SIZE)
   const index = {}
   const searchIndex = new Array(total)
+  // Algo que só coube na memória: o resumo (meta) não vai para o disco, senão o próximo boot acha o catálogo
+  // "pronto" com buracos e nunca baixa de novo. Sem meta no disco, o próximo boot baixa a lista outra vez.
+  let incomplete = false
 
   for (let n = 0; n < chunkCount; n++) {
     const base = n * CHUNK_SIZE
@@ -155,6 +158,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     } catch (quotaErr) {
       console.warn(`[catalogDb] IndexedDB falhou ao persistir chunk ${n} (${quotaErr.message}). Mantendo em memória.`)
       memoryChunks.set(`${section}:${n}`, slice)
+      incomplete = true
     }
 
     if (onProgress) onProgress((n + 1) / chunkCount)
@@ -178,21 +182,23 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     await db.setItem(catKey(section), categories)
   } catch (_) {
     catCache.set(section, categories)
+    incomplete = true
   }
   try {
     await db.setItem(idxKey(section), index)
   } catch (_) {
     indexCache.set(section, index)
+    incomplete = true
   }
   try {
     await db.setItem(searchKey(section), searchIndex)
   } catch (err) {
     console.warn(`[catalogDb] Índice de busca de "${section}" mantido só em memória (${err && err.message}).`)
   }
-  try {
-    await db.setItem(metaKey(section), metaObj)
-  } catch (_) {
-    metaCache.set(section, metaObj)
+  if (!incomplete) {
+    try {
+      await db.setItem(metaKey(section), metaObj)
+    } catch (_) {}
   }
 
   metaCache.set(section, metaObj)

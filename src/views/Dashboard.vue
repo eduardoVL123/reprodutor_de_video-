@@ -241,7 +241,12 @@ async function loadSectionsInOrder(sections) {
 /**
  * Carrega as seções do catálogo e monta as fileiras do Início.
  */
+let showcaseRequest = 0
+
 async function loadCatalogShowcase({ reset = false } = {}) {
+  // Trocar de lista no meio da leitura: só a leitura mais nova grava as fileiras (senão aparecem itens da lista antiga).
+  const my = ++showcaseRequest
+  const stale = () => my !== showcaseRequest
   if (reset) {
     vodShowcase.value = []
     seriesShowcase.value = []
@@ -253,7 +258,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 20)
-    if (vodItems && vodItems.length > 0) {
+    if (!stale() && vodItems && vodItems.length > 0) {
       vodShowcase.value = vodItems.map((item) => ({
         stream_id: item.stream_id,
         name: item.name,
@@ -268,7 +273,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const seriesItems = await catalog.getItems('series', ALL_CATEGORIES, 0, 20)
-    if (seriesItems && seriesItems.length > 0) {
+    if (!stale() && seriesItems && seriesItems.length > 0) {
       seriesShowcase.value = seriesItems.map((item) => ({
         stream_id: item.stream_id || item.series_id,
         name: item.name,
@@ -283,7 +288,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 20)
-    if (liveItems && liveItems.length > 0) {
+    if (!stale() && liveItems && liveItems.length > 0) {
       liveShowcase.value = liveItems.map((item) => {
         return {
           stream_id: item.stream_id,

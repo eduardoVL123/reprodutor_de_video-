@@ -7,6 +7,29 @@ import { XtreamError, ERROR_CODES } from '@/services/xtreamApi'
  * persistindo diretamente no IndexedDB em chunks via catalogDb.
  */
 
+/** Hash curto e estável de um texto (djb2, base 36): ids sem pôr a URL (que pode carregar senha) dentro do id. */
+export function hashText(text) {
+  let h = 5381
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
+  return (h >>> 0).toString(36)
+}
+
+/** Primeira vírgula fora de aspas: `tvg-name="Ação, HD" group-title="Filmes, Ação",Rambo` separa antes de "Rambo". */
+function nameCommaIndex(line) {
+  let quote = ''
+  for (let i = 8; i < line.length; i++) {
+    const ch = line[i]
+    if (quote) {
+      if (ch === quote) quote = ''
+    } else if (ch === '"' || ch === "'") {
+      quote = ch
+    } else if (ch === ',') {
+      return i
+    }
+  }
+  return -1
+}
+
 function extractAttribute(attrString, attrName) {
   if (!attrString) return ''
   const regex = new RegExp(`${attrName}=(?:"([^"]*)"|'([^']*)'|([^\\s,]+))`, 'i')
@@ -26,6 +49,7 @@ export function parseM3u(text) {
   const liveCategoryMap = new Map()
   const vodCategoryMap = new Map()
 
+  const idCount = new Map() // mesma URL repetida na lista ganha sufixo
   let currentMeta = null
   let count = 0
 
@@ -34,7 +58,7 @@ export function parseM3u(text) {
     if (!line) continue
 
     if (line.startsWith('#EXTINF:')) {
-      const commaIdx = line.indexOf(',')
+      const commaIdx = nameCommaIndex(line)
       let attrPart = ''
       let namePart = ''
 
@@ -83,8 +107,12 @@ export function parseM3u(text) {
         const extMatch = url.match(/\.([a-zA-Z0-9]{3,4})(\?.*)?$/)
         const ext = extMatch ? extMatch[1].toLowerCase() : (isVod ? 'mp4' : 'm3u8')
 
+        // Id pelo endereço, não pela posição: o provedor pôr um canal no topo não pode trocar o histórico de todos.
+        const baseId = `m3u_${section}_${hashText(url)}`
+        const seen = idCount.get(baseId) || 0
+        idCount.set(baseId, seen + 1)
         const streamItem = {
-          stream_id: `m3u_${section}_${count}`,
+          stream_id: seen ? `${baseId}_${seen}` : baseId,
           num: count,
           name: currentMeta.name,
           stream_icon: currentMeta.logo,

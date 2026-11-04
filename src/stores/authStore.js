@@ -10,7 +10,7 @@ import {
   GENERIC_CONNECTION_ERROR,
   MISSING_CREDENTIALS_ERROR,
 } from '@/services/xtreamApi'
-import { importM3uCatalog } from '@/services/m3uParser'
+import { importM3uCatalog, hashText } from '@/services/m3uParser'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 
@@ -19,9 +19,7 @@ const SAVED_LISTS_KEY = 'auth:savedLists'
 
 /** Id estável da lista M3U, sem pôr a URL (que pode carregar um token) dentro do id. */
 function m3uListId(url) {
-  let h = 5381
-  for (let i = 0; i < url.length; i++) h = ((h << 5) + h + url.charCodeAt(i)) | 0
-  return `list_m3u_${(h >>> 0).toString(36)}`
+  return `list_m3u_${hashText(url)}`
 }
 
 function originOf(url) {

@@ -68,6 +68,8 @@ describe('catalogDb', () => {
 
     expect((await getItems('vod', ALL_CATEGORIES, 1500, 2)).map((i) => i.stream_id)).toEqual([1501, 1502])
     expect((await getItems('vod', ALL_CATEGORIES, 3998, 2)).map((i) => i.stream_id)).toEqual([3999, 4000])
+    // O resumo não vai para o disco: no próximo boot o catálogo conta como inexistente e é baixado de novo.
+    expect(data.has('meta:vod')).toBe(false)
   })
 
   it('clearCatalog remove tudo', async () => {

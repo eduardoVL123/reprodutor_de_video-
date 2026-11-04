@@ -377,6 +377,19 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(refunds).toEqual([{ delta: -5 }])
   })
 
+  it('estorno parcial (desconto, acerto) mantém os créditos e só avisa o dono', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'processed', status_detail: 'partially_refunded' })
+    await webhook(`ORD-${orderId}`, { requestId: 'parcial' })
+    expect(spy.mock.calls.flat().join(' ')).toMatch(/estorno parcial/)
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('delivered')
+    expect(await db.prepare('SELECT credits, active FROM resellers').first()).toEqual({ credits: 20, active: 1 })
+  })
+
   it('estorno da ativação do aparelho revoga o ano comprado', async () => {
     const { orderId } = await deviceOrder()
     pay(orderId)

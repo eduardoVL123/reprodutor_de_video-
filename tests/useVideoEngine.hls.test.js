@@ -82,7 +82,7 @@ async function startLiveAndPlay() {
     state.time = i
     await vi.advanceTimersByTimeAsync(1000)
   }
-  return { engine, hls }
+  return { engine, hls, state }
 }
 
 describe('useVideoEngine (HLS) — buffer secou no meio do canal', () => {
@@ -142,6 +142,22 @@ describe('useVideoEngine (HLS) — canal que não abre em nenhum formato', () =>
 
     expect(engine.error.value).not.toBe('')
     expect(engine.errorDetail.value).toContain('HTTP 404')
+    engine.destroyEngine()
+  })
+})
+
+describe('useVideoEngine (HLS) — canal aberto por horas (auditoria)', () => {
+  it('quedas de rede espaçadas, cada uma recuperada, não esgotam as tentativas', async () => {
+    const { engine, hls, state } = await startLiveAndPlay()
+    for (let drop = 0; drop < 5; drop++) {
+      hls.emit(EVENTS.ERROR, { fatal: true, type: 'networkError', details: 'fragLoadError' })
+      await vi.advanceTimersByTimeAsync(1000)
+      for (let s = 0; s < 40; s++) {
+        state.time += 1 // voltou a tocar por 40 s
+        await vi.advanceTimersByTimeAsync(1000)
+      }
+    }
+    expect(engine.error.value).toBe('')
     engine.destroyEngine()
   })
 })

@@ -149,3 +149,15 @@ describe('playerStore — histórico por lista', () => {
     expect(await storage.get('player:watchHistory:p1:A')).toHaveLength(1)
   })
 })
+
+describe('playerStore — série longa (auditoria)', () => {
+  it('episódio 350 de 400 toca o 350, com a fila em volta dele', async () => {
+    const { usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    const items = Array.from({ length: 400 }, (_, i) => ({ stream_id: 1000 + i, name: `E${i + 1}`, section: 'series', directUrl: `http://srv.test/${i}.mp4` }))
+    player.playPlaylist({ items, startIndex: 349 })
+    expect(player.currentItem.stream_id).toBe(1349)
+    expect(player.queue).toHaveLength(200)
+    expect(player.queue[player.queue.length - 1].stream_id).toBe(1399) // o resto da série segue depois dele
+  })
+})

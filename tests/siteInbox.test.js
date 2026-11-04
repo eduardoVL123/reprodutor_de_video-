@@ -98,6 +98,18 @@ describe('useSiteInbox', () => {
     expect(inbox.received.value).toBeNull()
   })
 
+  it('login falhou: a lista continua no servidor e o aviso fica para tentar de novo', async () => {
+    api.pullInbox.mockResolvedValue([{ id: 7, box: 'BOX' }])
+    keys.open.mockResolvedValue(LIST)
+    login.mockResolvedValueOnce(false)
+    const { inbox } = await mountInbox()
+    expect(await inbox.confirm()).toBe(false)
+    expect(api.ackInbox).not.toHaveBeenCalled()
+    expect(inbox.received.value).not.toBeNull()
+    expect(await inbox.confirm()).toBe(true)
+    expect(api.ackInbox).toHaveBeenCalledWith({ deviceKey: 'k'.repeat(64), ids: [7] })
+  })
+
   it('Descartar só apaga, sem entrar', async () => {
     api.pullInbox.mockResolvedValue([{ id: 7, box: 'BOX' }])
     keys.open.mockResolvedValue(LIST)

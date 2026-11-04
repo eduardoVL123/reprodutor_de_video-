@@ -37,7 +37,7 @@ const STUCK_DELIVERY_MS = 5 * 60 * 1000
 // depois some da tela e o expurgo diário a apaga do banco (license-db.mjs, purgeExpired).
 export const KEY_VISIBLE_MS = 60 * 60 * 1000
 // Status de estorno do Mercado Pago (pedido, pagamento ou parcela). shortcut: confirmar os nomes na etapa 7 (teste).
-const REVERSED = ['refunded', 'partially_refunded', 'charged_back']
+const REVERSED = ['refunded', 'charged_back']
 const KINDS = ['device_annual', 'credits']
 const METHODS = ['pix', 'card']
 const EMAIL = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/
@@ -359,6 +359,11 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     if (!row || (row.mp_order_id && row.mp_order_id !== String(order.id))) return
     if (REVERSED.includes(order.status) || REVERSED.includes(order.status_detail)) {
       await reverseOrder(row, `${order.status}/${order.status_detail}`)
+      return
+    }
+    // Devolução de parte do valor (desconto, acerto): a entrega continua; o dono decide no painel.
+    if (order.status === 'partially_refunded' || order.status_detail === 'partially_refunded') {
+      console.warn(`[checkout] pedido ${row.id}: estorno parcial no Mercado Pago; entrega mantida, confira no painel`)
       return
     }
     if (order.status === 'failed' || order.status === 'canceled') {

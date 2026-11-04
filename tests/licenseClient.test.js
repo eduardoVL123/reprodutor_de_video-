@@ -104,6 +104,25 @@ describe('identidade do aparelho', () => {
     delete window.PalmServiceBridge
   })
 
+  it('na LG, um boot em que o sistema demora não troca a chave já usada (cliente ativado continua ativado)', async () => {
+    window.PalmSystem = {}
+    let answers = true
+    window.PalmServiceBridge = class {
+      call() {
+        if (answers) setTimeout(() => this.onservicecallback(JSON.stringify({ idList: [{ idType: 'LGUDID', idValue: 'LG-UDID-1' }] })))
+      }
+    }
+    const first = await (await import('@/services/deviceIdentity')).getDeviceKey()
+    vi.resetModules()
+    answers = false // próximo boot: o sistema não responde a tempo
+    vi.useFakeTimers()
+    const pending = (await import('@/services/deviceIdentity')).getDeviceKey()
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(await pending).toBe(first)
+    delete window.PalmSystem
+    delete window.PalmServiceBridge
+  })
+
   it('na Samsung usa o DUID quando a API da TV está carregada', async () => {
     window.tizen = {}
     window.webapis = { productinfo: { getDuid: () => 'DUID-XYZ' } }

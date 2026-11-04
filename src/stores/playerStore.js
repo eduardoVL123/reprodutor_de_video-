@@ -411,9 +411,11 @@ export const usePlayerStore = defineStore('player', () => {
     if (!isOpen.value) rememberFocus()
     mode.value = section
     context.value = null
-    queue.value = plainList.slice(0, QUEUE_MAX)
+    // Fila limitada a QUEUE_MAX em volta do item escolhido (não do começo): o episódio 350 de uma novela é o 350.
+    const from = Math.max(0, Math.min(startIndex, plainList.length - QUEUE_MAX))
+    queue.value = plainList.slice(from, from + QUEUE_MAX)
     isOpen.value = true
-    const validIndex = Math.max(0, Math.min(startIndex, queue.value.length - 1))
+    const validIndex = Math.max(0, Math.min(startIndex - from, queue.value.length - 1))
     setCurrent(validIndex)
   }
 

@@ -1,7 +1,8 @@
 name: CI e APK Android
 
+# Só leitura por padrão: os jobs de teste rodam npm ci e o código do PR. Escrita só onde publica a release.
 permissions:
-  contents: write
+  contents: read
 
 on:
   push:
@@ -65,6 +66,8 @@ jobs:
 
   apk:
     name: APK Android
+    permissions:
+      contents: write # atualiza a release v2.0.0 (link fixo das TVs)
     needs: quality
     runs-on: ubuntu-latest
 

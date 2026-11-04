@@ -22,3 +22,27 @@ describe('parseM3u — filme ou canal ao vivo', () => {
     expect(parseM3u(list('Geral', 'http://h.test/a.mp4')).vodStreams).toHaveLength(1)
   })
 })
+
+describe('parseM3u — auditoria', () => {
+  it('vírgula dentro de atributo não corta o nome nem perde o grupo', () => {
+    const text = '#EXTM3U\n#EXTINF:-1 tvg-name="Ação, HD" group-title="Filmes, Ação",Rambo\nhttp://h.test/rambo.mp4\n'
+    const [item] = parseM3u(text).vodStreams
+    expect(item.name).toBe('Rambo')
+    expect(parseM3u(text).vodCategories[0].category_name).toBe('Filmes, Ação')
+  })
+
+  it('o id vem do endereço: um canal novo no topo não muda o id dos outros', () => {
+    const a = '#EXTM3U\n#EXTINF:-1,Canal A\nhttp://h.test/a.m3u8\n'
+    const withNewOnTop = '#EXTM3U\n#EXTINF:-1,Novo\nhttp://h.test/novo.m3u8\n#EXTINF:-1,Canal A\nhttp://h.test/a.m3u8\n'
+    const before = parseM3u(a).liveStreams[0].stream_id
+    const after = parseM3u(withNewOnTop).liveStreams.find((s) => s.name === 'Canal A').stream_id
+    expect(after).toBe(before)
+    expect(before).not.toContain('h.test') // a URL (que pode ter senha) não vai para o id
+  })
+
+  it('a mesma URL repetida ganha ids diferentes', () => {
+    const text = '#EXTM3U\n#EXTINF:-1,A\nhttp://h.test/x.m3u8\n#EXTINF:-1,B\nhttp://h.test/x.m3u8\n'
+    const ids = parseM3u(text).liveStreams.map((s) => s.stream_id)
+    expect(new Set(ids).size).toBe(2)
+  })
+})
