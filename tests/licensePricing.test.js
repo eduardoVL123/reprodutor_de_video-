@@ -33,7 +33,8 @@ describe('créditos do revendedor (R1)', () => {
 
   it('o mínimo é 10: abaixo disso, ou quantidade inválida, não há preço', () => {
     expect(MIN_CREDITS).toBe(10)
-    for (const qty of [9, 0, -5, 10.5, NaN, '20']) expect(creditTotal(qty)).toBeNull()
+    for (const qty of [9, 0, -5, 10.5, NaN, '20', 100001, 1e21]) expect(creditTotal(qty)).toBeNull()
+    expect(creditTotal(100000)).toBe(100000 * 500)
   })
 })
 

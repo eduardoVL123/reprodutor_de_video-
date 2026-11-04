@@ -1,4 +1,5 @@
 import { licenseSignedText } from '../../server/license/license-rules.mjs'
+import { fromBase64Url } from '@/services/pairingCrypto'
 
 /**
  * Confere a assinatura do servidor na resposta de acesso (server/license/license-sign.mjs): sem ela, um proxy ou um
@@ -20,14 +21,6 @@ function subtle() {
 /** A assinatura é exigida neste aparelho? */
 export function isSignatureRequired() {
   return !!publicKeyText() && !!subtle()
-}
-
-function fromBase64Url(text) {
-  const b64 = String(text).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64 + '='.repeat((4 - (b64.length % 4)) % 4))
-  const bytes = new Uint8Array(raw.length)
-  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i)
-  return bytes
 }
 
 function importKey() {

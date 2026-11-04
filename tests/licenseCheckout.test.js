@@ -716,6 +716,21 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(0)
   })
 
+  it('cancelar assinatura já cancelada no Mercado Pago: acerta aqui em vez de dar erro para sempre', async () => {
+    const sub = await subscribe()
+    preapprovals.get(sub.preId).status = 'cancelled' // o cliente cancelou direto no Mercado Pago
+    const reply = subscriptionReply
+    mpReply = (url, init = {}) => (init.method === 'PUT' ? { status: 400, body: { message: 'already cancelled' } } : reply(url, init))
+    const res = await admin('POST', `/admin/api/subscriptions/${sub.orderId}/cancel`)
+    expect(res.status).toBe(200)
+    expect(res.body.status).toBe('cancelled')
+
+    // Ainda ativa lá e o PUT falhou: continua sendo erro (nada é marcado à toa).
+    const other = await subscribe()
+    const failed = await admin('POST', `/admin/api/subscriptions/${other.orderId}/cancel`)
+    expect(failed.status).toBe(502)
+  })
+
   it('painel do dono: lista as assinaturas e cancela a renovação no Mercado Pago', async () => {
     const sub = await subscribe()
     const list = await admin('GET', '/admin/api/subscriptions')

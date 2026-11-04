@@ -9,7 +9,7 @@ import { readJsonBody } from '../pair/pair-core.mjs'
 import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
 import { hashKey, createReseller, rotateKey, toBase64Url } from './license-resellers.mjs'
 import { DAY_MS, extendActivation } from './license-rules.mjs'
-import { DEVICE_ANNUAL_PRICE, creditTotal } from './pricing.mjs'
+import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, MAX_CREDITS, creditTotal } from './pricing.mjs'
 import { MpError, toAmount } from './mp-client.mjs'
 
 export const PIX_TTL_MS = 30 * 60 * 1000
@@ -172,7 +172,7 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
       return { ...base, deviceCode: device.code, quantity: 1, amountCents: DEVICE_ANNUAL_PRICE }
     }
     const amountCents = creditTotal(body.quantity)
-    if (amountCents === null) throw new CheckoutError(400, 'A compra mínima é de 10 créditos.')
+    if (amountCents === null) throw new CheckoutError(400, `Compre de ${MIN_CREDITS} a ${MAX_CREDITS.toLocaleString('pt-BR')} créditos.`)
     if (resellerId) return { ...base, resellerId, quantity: body.quantity, amountCents }
     const name = text(body.name, MAX_NAME)
     const contact = text(body.contact, MAX_CONTACT)
@@ -652,7 +652,11 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
         await mp.cancelPreapproval(sub.mp_preapproval_id)
       } catch (err) {
         if (!(err instanceof MpError)) throw err
-        throw new CheckoutError(502, 'Não foi possível cancelar no Mercado Pago agora. Tente de novo.')
+        // Já cancelada lá (pelo cliente ou pelo próprio Mercado Pago): o PUT é recusado; basta acertar aqui.
+        const remote = await mp.getPreapproval(sub.mp_preapproval_id).catch(() => null)
+        if (!remote || remote.status !== 'cancelled') {
+          throw new CheckoutError(502, 'Não foi possível cancelar no Mercado Pago agora. Tente de novo.')
+        }
       }
       await db.prepare("UPDATE subscriptions SET status = 'cancelled', cancelled_at = ? WHERE id = ?").bind(now(), id).run()
     }
