@@ -229,6 +229,13 @@ defineExpose({ open, close })
         </button>
       </header>
 
+      <!-- RFC-018: o código do aparelho serve para assinar, para Minha TV no site e para o suporte. No topo: no fim da
+           tela ele ficava escondido embaixo do formulário no celular. -->
+      <p v-if="license.code" id="device-code" class="mt-4 text-tv-sm text-neutral-300 phone:mt-3">
+        Código do aparelho: <span class="font-mono font-bold tracking-widest text-tv-accent">{{ license.code }}</span>
+        <span class="block text-tv-xs text-neutral-500">Use para assinar e em Minha TV no site.</span>
+      </p>
+
       <!-- Mensagem de erro -->
       <div
         v-if="formError"
@@ -470,10 +477,6 @@ defineExpose({ open, close })
         </div>
       </div>
 
-      <!-- RFC-018: o código do aparelho serve para pagar a ativação e para o suporte -->
-      <p v-if="license.code" id="device-code" class="px-10 pb-2 text-tv-xs text-neutral-500 phone:px-0 phone:pt-3">
-        Código do aparelho: <span class="font-mono tracking-widest text-neutral-300">{{ license.code }}</span>
-      </p>
       <!-- RFC-021: lista enviada pelo site chega aqui também (a TV confirma antes) -->
       <div class="px-10 pb-6 phone:px-0 phone:pb-0">
         <SiteInboxPrompt @done="onPairDone" />
