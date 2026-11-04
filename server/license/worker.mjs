@@ -47,7 +47,15 @@ async function ownerGate(request, env) {
       headers: { ...LICENSE_HEADERS, 'Content-Type': 'application/json; charset=utf-8' },
     })
   }
-  if (!verifyOwner) verifyOwner = createAccessVerifier({ team: env.ACCESS_TEAM, aud: env.ACCESS_AUD, ownerEmail: env.ACCESS_OWNER_EMAIL })
+  if (!verifyOwner) {
+    verifyOwner = createAccessVerifier({
+      team: env.ACCESS_TEAM,
+      aud: env.ACCESS_AUD,
+      ownerEmail: env.ACCESS_OWNER_EMAIL,
+      // Visível em `wrangler tail`: diz por que o painel recusou (sem mostrar segredos).
+      onReject: (reason) => console.warn(`[painel] Access recusado: ${reason}`),
+    })
+  }
   return (await verifyOwner(request.headers.get('Cf-Access-Jwt-Assertion'))) ? null : notFound()
 }
 

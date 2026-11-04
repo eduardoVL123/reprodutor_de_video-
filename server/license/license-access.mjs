@@ -18,8 +18,10 @@ export const accessIssuer = (team) => `https://${team.includes('.') ? team : `${
  * Cria o conferidor. `fetchImpl` e `now` são injetáveis nos testes.
  * Devolve `verify(token)` → true só se tudo bater.
  */
-export function createAccessVerifier({ team, aud, ownerEmail, fetchImpl = (...args) => fetch(...args), now = Date.now }) {
-  const issuer = accessIssuer(team)
+export function createAccessVerifier({ team, aud, ownerEmail, fetchImpl = (...args) => fetch(...args), now = Date.now, onReject = () => {} }) {
+  // Segredos colados no terminal podem vir com espaço ou quebra de linha.
+  const issuer = accessIssuer(String(team || '').trim())
+  aud = String(aud || '').trim()
   const owner = String(ownerEmail || '').trim().toLowerCase()
   let keys = new Map()
   let fetchedAt = 0
@@ -45,27 +47,37 @@ export function createAccessVerifier({ team, aud, ownerEmail, fetchImpl = (...ar
     return keys.get(kid) || null
   }
 
-  return async function verify(token) {
-    if (!owner || !aud || typeof token !== 'string') return false
+  /** Motivo da recusa (sem valores secretos) para o log; null = aceito. */
+  async function check(token) {
+    if (!owner || !aud) return 'configuração incompleta'
+    if (typeof token !== 'string' || !token) return 'sem cabeçalho Cf-Access-Jwt-Assertion'
     const parts = token.split('.')
-    if (parts.length !== 3) return false
+    if (parts.length !== 3) return 'token mal formado'
+    const header = decodeJson(parts[0])
+    if (header.alg !== 'RS256') return `algoritmo ${header.alg}`
+    const key = await keyFor(header.kid)
+    if (!key) return 'chave (kid) desconhecida'
+    const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
+    if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromB64Url(parts[2]), signed))) return 'assinatura inválida'
+    const claims = decodeJson(parts[1])
+    const seconds = now() / 1000
+    const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
+    if (!audiences.includes(aud)) return 'aud diferente de ACCESS_AUD'
+    if (claims.iss !== issuer) return `emissor ${claims.iss} diferente de ${issuer}`
+    if (typeof claims.exp !== 'number' || claims.exp <= seconds) return 'token vencido'
+    if (typeof claims.nbf === 'number' && claims.nbf > seconds + 60) return 'token ainda não vale'
+    if (String(claims.email || '').trim().toLowerCase() !== owner) return 'e-mail diferente de ACCESS_OWNER_EMAIL'
+    return null
+  }
+
+  return async function verify(token) {
+    let reason
     try {
-      const header = decodeJson(parts[0])
-      if (header.alg !== 'RS256') return false
-      const key = await keyFor(header.kid)
-      if (!key) return false
-      const signed = new TextEncoder().encode(`${parts[0]}.${parts[1]}`)
-      if (!(await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, fromB64Url(parts[2]), signed))) return false
-      const claims = decodeJson(parts[1])
-      const seconds = now() / 1000
-      const audiences = Array.isArray(claims.aud) ? claims.aud : [claims.aud]
-      if (!audiences.includes(aud)) return false
-      if (claims.iss !== issuer) return false
-      if (typeof claims.exp !== 'number' || claims.exp <= seconds) return false
-      if (typeof claims.nbf === 'number' && claims.nbf > seconds + 60) return false
-      return String(claims.email || '').toLowerCase() === owner
-    } catch {
-      return false
+      reason = await check(token)
+    } catch (err) {
+      reason = `erro: ${err && err.message}`
     }
+    if (reason) onReject(reason)
+    return !reason
   }
 }

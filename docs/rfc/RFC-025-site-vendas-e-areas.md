@@ -449,8 +449,8 @@ Falta, nesta ordem:
          policy "Só o dono" (Allow, Emails = e-mail do dono). Feito em 2026-11-04 (AUD Tag obtida).
    - [ ] Segredos no Worker: `ACCESS_AUD`, `ACCESS_OWNER_EMAIL`, `LICENSE_REPORT_TOKEN`; variável `ACCESS_TEAM`
          em `wrangler.jsonc` (`vars`).
-2. [ ] Commit e deploy (`npm run license:deploy`). Antes do deploy o painel no ar ainda é o antigo (só token).
-3. [ ] Testar em aba anônima: `dono.pulseplayer.com.br/admin/` pede o código do e-mail; `pulseplayer.com.br/admin/`
+2. [x] Segredos gravados, commit `7392a60` e deploy (versão `2bfb23b8`) em 2026-11-04.
+3. [x] (conferido por curl; falta você entrar uma vez com o código do e-mail) Testar em aba anônima: `dono.pulseplayer.com.br/admin/` pede o código do e-mail; `pulseplayer.com.br/admin/`
        e `pulse-license.pulseplayer.workers.dev/admin/` dão 404.
 4. [ ] App: trocar `VITE_LICENSE_BASE_URL` para `https://pulseplayer.com.br` no próximo build (o `workers.dev` segue
        funcionando para os apps já instalados).

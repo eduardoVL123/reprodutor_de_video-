@@ -127,6 +127,13 @@ describe('Worker da licença', () => {
     for (const jwt of cases) expect((await get('/admin/api/partners', { ...token, 'Cf-Access-Jwt-Assertion': jwt })).status).toBe(404)
   })
 
+  it('painel do dono: segredos colados com espaço ou quebra de linha ainda funcionam', async () => {
+    const access = await makeAccess()
+    const env = mockEnv({ ACCESS_TEAM: ' pulse ', ACCESS_AUD: 'aud-do-painel\r\n', ACCESS_OWNER_EMAIL: ' DONO@exemplo.com\n' })
+    const res = await worker.fetch(new Request('https://licenca.test/admin/', { headers: { 'Cf-Access-Jwt-Assertion': await access.token() } }), env)
+    expect(res.status).toBe(200)
+  })
+
   it('painel do dono: sem o Access configurado fica desligado (503)', async () => {
     const res = await worker.fetch(new Request('https://licenca.test/admin/api/partners', { headers: { Authorization: 'Bearer segredo-do-painel' } }), mockEnv())
     expect(res.status).toBe(503)
