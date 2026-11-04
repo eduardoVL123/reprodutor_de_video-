@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Pulse Player — site de vendas e área do cliente</title>
+<!--
+  RFC-025 (revisão 2026-11-04): tema claro pedido pelo dono — creme e verdes de floresta/sálvia.
+  Marca (RFC-015) segue valendo: limão #B8F000 só dentro da faixa verde do herói (símbolo e código da TV), nunca
+  sobre o creme; no topo claro o símbolo vai em verde-floresta. Preços de server/license/pricing.mjs (no site real vêm
+  de /v1/site-config). Fontes do sistema (a CSP do site não libera fontes externas). Abrir direto no navegador.
+  Elemento memorável: a TV desenhada com o código de 8 letras — é o que o cliente usa no site inteiro.
+-->
+<style>
+  :root {
+    --paper: #f7f5f0; --sand: #ebe6dc; --card: #ffffff; --forest: #1e462b; --moss: #142e1c;
+    --sage: #8fb392; --sage-light: #b5ceb7; --taupe: #5c5a54; --lime: #b8f000; --line: #d9d3c6; --alert: #9a3b2b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0 }
+  body { background: #d8d3c8; color: var(--moss); font-family: 'Segoe UI Variable Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; padding: 32px 28px 60px }
+  .doc-title { font-size: 22px; font-weight: 700; margin-bottom: 6px }
+  .doc-lead, .note { color: #3f3d38; font-size: 14px; line-height: 1.6; max-width: 80ch }
+  .group { margin-top: 44px }
+  .group > h2 { font-size: 17px; margin-bottom: 4px }
+  .row { display: flex; flex-wrap: wrap; gap: 28px; align-items: flex-start; margin-top: 16px }
+  .cap { color: #3f3d38; font-size: 13px; margin-top: 10px; max-width: 390px; line-height: 1.5 }
+
+  .desk { width: 1200px; background: var(--paper); border-radius: 12px; overflow: hidden; box-shadow: 0 24px 60px rgba(20, 46, 28, .25); zoom: .72 }
+  .phone { width: 390px; min-height: 844px; background: var(--paper); border-radius: 40px; overflow: hidden; box-shadow: 0 0 0 10px #1b1d1a, 0 24px 60px rgba(20, 46, 28, .3); font-size: 16px }
+
+  h1, h2, h3, .display { font-family: 'Segoe UI Variable Display', 'Segoe UI', Roboto, sans-serif; letter-spacing: -.02em }
+
+  /* Topo claro */
+  .nav { display: flex; align-items: center; justify-content: space-between; padding: 20px 56px; background: var(--paper) }
+  .phone .nav { padding: 50px 20px 14px }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; color: var(--forest); letter-spacing: -.01em }
+  .logo svg { width: 30px; height: 30px }
+  .logo svg path { fill: var(--forest) }
+  .links { display: flex; gap: 32px; color: var(--taupe); font-size: 16px }
+  .links .on { color: var(--moss); font-weight: 600 }
+
+  .btn { display: inline-block; border-radius: 10px; padding: 14px 22px; font-weight: 650; font-size: 16px; text-decoration: none; border: 0; text-align: center }
+  .btn.primary { background: var(--forest); color: #fff }
+  .btn.second { background: var(--sage); color: var(--moss) }
+  .btn.quiet { background: transparent; color: var(--moss); box-shadow: inset 0 0 0 1.5px var(--moss) }
+  .btn.on-forest { background: var(--paper); color: var(--forest) }
+  .btn.ghost-forest { background: transparent; color: #fff; box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .55) }
+  .btn.sm { padding: 9px 16px; font-size: 14px }
+  .btn.block { display: block; width: 100% }
+
+  /* Herói: faixa verde, único lugar com limão */
+  .hero { background: var(--forest); color: #fff; padding: 64px 56px 72px; display: flex; gap: 56px; align-items: center; border-radius: 0 0 28px 28px }
+  .hero h1 { font-size: 56px; line-height: 1.04; font-weight: 700; max-width: 12ch; text-wrap: balance }
+  .hero p { color: #d7e3d6; font-size: 19px; line-height: 1.55; margin: 20px 0 30px; max-width: 40ch }
+  .hero .ctas { display: flex; gap: 12px; flex-wrap: wrap }
+  .phone .hero { flex-direction: column; padding: 28px 20px 30px; gap: 26px; align-items: stretch; border-radius: 0 0 22px 22px }
+  .phone .hero h1 { font-size: 36px }
+  .phone .hero p { font-size: 17px; margin: 14px 0 20px }
+  .phone .hero .ctas { flex-direction: column }
+
+  .tv { flex: 1.1 }
+  .tv-screen { background: #0b0f0c; border-radius: 14px; padding: 34px 30px; box-shadow: 0 0 0 10px #10140f, 0 30px 50px rgba(0, 0, 0, .35); display: flex; flex-direction: column; align-items: center; gap: 14px }
+  .tv-screen .mark { width: 46px; height: 46px }
+  .tv-screen .mark path { fill: var(--lime) }
+  .tv-screen .hint { color: #a3ae9f; font-size: 15px }
+  .tv-screen .code { font-family: Consolas, 'Cascadia Mono', monospace; font-size: 46px; letter-spacing: .26em; color: var(--lime); padding-left: .26em }
+  .tv-screen .sub { color: #a3ae9f; font-size: 13px }
+  .tv-foot { width: 120px; height: 10px; margin: 14px auto 0; background: #10140f; border-radius: 0 0 8px 8px }
+  .phone .tv-screen { padding: 22px 16px; box-shadow: 0 0 0 7px #10140f }
+  .phone .tv-screen .code { font-size: 30px }
+
+  section.blk { padding: 64px 56px }
+  section.blk.sand { background: var(--sand) }
+  .phone section.blk { padding: 36px 20px }
+  section.blk > h2 { font-size: 36px; font-weight: 700; margin-bottom: 10px }
+  .phone section.blk > h2 { font-size: 26px }
+  .lede { color: var(--taupe); font-size: 18px; line-height: 1.55; max-width: 56ch; margin-bottom: 32px }
+  .phone .lede { font-size: 16px; margin-bottom: 22px }
+
+  /* Planos: um protagonista, o resto em apoio */
+  .plans { display: flex; gap: 28px; align-items: stretch }
+  .phone .plans { flex-direction: column; gap: 18px }
+  .plan-main { flex: 1.25; background: var(--card); border-radius: 22px; padding: 36px; box-shadow: 0 1px 0 var(--line), 0 18px 40px rgba(20, 46, 28, .08) }
+  .phone .plan-main { padding: 26px }
+  .plan-main h3 { font-size: 22px; color: var(--forest) }
+  .amount { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px }
+  .amount b { font-size: 72px; line-height: 1; font-weight: 750; letter-spacing: -.04em }
+  .phone .amount b { font-size: 56px }
+  .amount span { color: var(--taupe); font-size: 18px }
+  .plan-main ul { list-style: none; margin: 18px 0 26px; color: var(--moss); font-size: 17px; line-height: 2 }
+  .plan-main li::before { content: ''; display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--sage); margin-right: 12px; vertical-align: 2px }
+  .side { flex: 1; display: flex; flex-direction: column; gap: 22px }
+  .resell { background: var(--sand); border-radius: 18px; padding: 28px }
+  .phone .resell { padding: 22px }
+  .resell h3, .partner h3 { font-size: 20px; margin-bottom: 4px }
+  .resell p, .partner p { color: var(--taupe); font-size: 15px; line-height: 1.5 }
+  table.tiers { width: 100%; border-collapse: collapse; font-size: 15px; margin: 14px 0 18px; font-variant-numeric: tabular-nums }
+  table.tiers td { padding: 7px 0; border-bottom: 1px solid var(--line); color: var(--taupe) }
+  table.tiers td:last-child { text-align: right; color: var(--moss); font-weight: 600 }
+  .partner { border-radius: 18px; padding: 24px 28px; box-shadow: inset 0 0 0 1.5px var(--line); display: flex; justify-content: space-between; align-items: center; gap: 16px }
+  .phone .partner { flex-direction: column; align-items: stretch; padding: 22px }
+
+  /* Passos (sequência real) */
+  .steps { display: flex; gap: 40px; counter-reset: s; list-style: none }
+  .phone .steps { flex-direction: column; gap: 22px }
+  .steps li { flex: 1; color: var(--taupe); font-size: 16px; line-height: 1.55; counter-increment: s }
+  .steps li::before { content: counter(s); display: block; font-size: 44px; font-weight: 750; color: var(--sage); line-height: 1; margin-bottom: 10px }
+  .steps b { display: block; color: var(--moss); font-size: 19px; margin-bottom: 4px }
+
+  /* Baixar por aparelho */
+  .dl { display: flex; gap: 20px }
+  .phone .dl { flex-direction: column; gap: 14px }
+  .dl > div { flex: 1; border-radius: 16px; padding: 22px; background: var(--paper); box-shadow: inset 0 0 0 1.5px var(--line) }
+  .dl > div.you { background: var(--card); box-shadow: inset 0 0 0 2px var(--forest) }
+  .dl .you-tag { display: inline-block; font-size: 13px; font-weight: 650; color: var(--moss); background: var(--sage-light); border-radius: 6px; padding: 3px 8px; margin-bottom: 10px }
+  .dl h3 { font-size: 18px; margin-bottom: 6px }
+  .dl p { color: var(--taupe); font-size: 15px; line-height: 1.5; margin-bottom: 14px }
+  .dl code { font-family: Consolas, monospace; color: var(--moss); background: var(--sand); padding: 1px 6px; border-radius: 4px }
+  .dl .soon { color: var(--taupe); font-size: 14px; font-style: italic }
+
+  details { border-bottom: 1px solid var(--line); padding: 18px 0; max-width: 70ch }
+  summary { font-weight: 600; font-size: 17px; cursor: pointer; list-style: none }
+  summary::after { content: '+'; float: right; color: var(--forest); font-size: 22px; line-height: 1 }
+  details[open] summary::after { content: '–' }
+  details p { color: var(--taupe); font-size: 16px; line-height: 1.6; margin-top: 10px }
+
+  footer { padding: 34px 56px 40px; background: var(--sand); color: var(--taupe); font-size: 14px; line-height: 1.6; display: flex; justify-content: space-between; gap: 24px }
+  .phone footer { flex-direction: column; padding: 26px 20px 36px }
+  footer nav { display: flex; gap: 22px }
+  footer a { color: var(--moss); text-decoration: underline; text-underline-offset: 3px }
+
+  /* Área do cliente */
+  .wrap { padding: 22px 20px 30px }
+  .wrap h1 { font-size: 30px; font-weight: 700; margin-bottom: 6px }
+  .wrap .lede { font-size: 16px; margin-bottom: 20px }
+  label { display: block; font-size: 15px; color: var(--moss); font-weight: 600; margin-bottom: 8px }
+  .input { width: 100%; background: var(--card); border-radius: 10px; padding: 14px 16px; font-family: Consolas, monospace; font-size: 26px; letter-spacing: .26em; color: var(--moss); box-shadow: inset 0 0 0 1.5px var(--line); margin-bottom: 12px }
+  .input.text { font-family: inherit; font-size: 17px; letter-spacing: 0 }
+  .input:focus-visible, .input.focus { outline: 3px solid var(--sage); outline-offset: 2px; box-shadow: inset 0 0 0 1.5px var(--forest) }
+  .result { background: var(--card); border-radius: 18px; padding: 22px; margin-top: 22px; box-shadow: 0 1px 0 var(--line), 0 12px 30px rgba(20, 46, 28, .07) }
+  .state { display: inline-block; font-size: 14px; font-weight: 650; border-radius: 6px; padding: 3px 9px; margin-bottom: 12px }
+  .state.ok { background: var(--sage); color: var(--moss) }
+  .state.trial { background: var(--sage-light); color: var(--moss) }
+  .state.none { background: var(--sand); color: var(--alert) }
+  .big { font-size: 24px; font-weight: 700; line-height: 1.25; margin-bottom: 6px }
+  .muted { color: var(--taupe); font-size: 15px; line-height: 1.55 }
+  .stack { display: flex; flex-direction: column; gap: 10px; margin-top: 18px }
+  .linkish { color: var(--moss); font-size: 15px; text-decoration: underline; text-underline-offset: 3px; margin-top: 14px; display: inline-block }
+  .divider { height: 1px; background: var(--line); margin: 18px 0 }
+</style>
+</head>
+<body>
+  <h1 class="doc-title">Pulse Player — site de vendas e área do cliente (RFC-025, tema claro)</h1>
+  <p class="doc-lead">Creme e verdes (paleta do dono). O limão da marca só aparece dentro da faixa verde do topo, na
+    TV desenhada. Preços atuais de <code>pricing.mjs</code>. Sem imagens externas, sem marcas de terceiros, sem
+    promessa de conteúdo.</p>
+
+  <!-- ===================== LANDING DESKTOP ===================== -->
+  <div class="group">
+    <h2>1. Landing de venda — computador (1200 px, reduzida)</h2>
+    <p class="note">"Enviar lista" fica no topo para quem chega pela dica da TV. O plano do aparelho é o protagonista; a revenda
+      fica ao lado, em apoio (parceria fica fora do site: regra R2 da RFC-021). "Seu aparelho" em Baixar é marcado pelo navegador de quem abre.</p>
+    <div class="row">
+      <div class="desk">
+        <div class="nav">
+          <div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div>
+          <div class="links"><span class="on">Planos</span><span>Minha TV</span><span>Revendas</span><span>Enviar lista</span></div>
+          <a class="btn primary sm">Assinar</a>
+        </div>
+        <div class="hero">
+          <div>
+            <h1>Sua lista na TV, organizada</h1>
+            <p>Você usa a sua própria lista. O Pulse Player organiza tudo com capas, busca e perfis para a família, na Android TV, em TV box e no celular.</p>
+            <div class="ctas"><a class="btn on-forest">Assinar meu aparelho</a><a class="btn ghost-forest">Testar 7 dias grátis</a></div>
+          </div>
+          <div class="tv">
+            <div class="tv-screen">
+              <svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>
+              <span class="hint">Código deste aparelho</span>
+              <span class="code">ABCD2345</span>
+              <span class="sub">Teste grátis até 10/11</span>
+            </div>
+            <div class="tv-foot"></div>
+          </div>
+        </div>
+
+        <section class="blk">
+          <h2>Um preço, sem mensalidade</h2>
+          <p class="lede">Pague uma vez por ano por aparelho. Pix ou cartão; no cartão renova sozinho e você cancela quando quiser em Minha TV.</p>
+          <div class="plans">
+            <div class="plan-main">
+              <h3>Aparelho</h3>
+              <div class="amount"><b>R$ 25</b><span>por ano</span></div>
+              <ul><li>1 aparelho, com a sua lista</li><li>7 dias de teste antes de pagar</li><li>Pix ou cartão</li><li>Ativa na hora, sem cadastro</li></ul>
+              <a class="btn primary">Assinar meu aparelho</a>
+            </div>
+            <div class="side">
+              <div class="resell">
+                <h3>Revenda</h3>
+                <p>Compre créditos e ative as TVs dos seus clientes. Cada crédito vale 1 ano.</p>
+                <table class="tiers">
+                  <tr><td>10 a 19 créditos</td><td>R$ 10,00 cada</td></tr>
+                  <tr><td>20 a 50</td><td>R$ 9,00</td></tr>
+                  <tr><td>51 a 99</td><td>R$ 8,00</td></tr>
+                  <tr><td>100 a 499</td><td>R$ 7,00</td></tr>
+                  <tr><td>500 a 999</td><td>R$ 6,00</td></tr>
+                  <tr><td>1.000 ou mais</td><td>R$ 5,00</td></tr>
+                </table>
+                <a class="btn second">Comprar créditos</a>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="blk sand">
+          <h2>Como funciona</h2>
+          <p class="lede">Do download à TV ativa em poucos minutos.</p>
+          <ol class="steps">
+            <li><b>Instale</b>Baixe o Pulse Player e coloque a sua lista.</li>
+            <li><b>Veja o código</b>A TV mostra um código de 8 letras. Os 7 primeiros dias são grátis.</li>
+            <li><b>Assine</b>Pague com Pix ou cartão e toque em "Já paguei, verificar" na TV.</li>
+          </ol>
+        </section>
+
+        <section class="blk">
+          <h2>Baixar</h2>
+          <p class="lede">Escolha onde vai usar.</p>
+          <div class="dl">
+            <div class="you">
+              <span class="you-tag">Seu aparelho</span>
+              <h3>Android TV e TV box</h3>
+              <p>Na TV, abra o app Downloader e digite <code>pulseplayer.com.br/apk</code>.</p>
+              <a class="btn primary sm">Baixar o APK</a>
+            </div>
+            <div>
+              <h3>Celular Android</h3>
+              <p>Pela Google Play, ou pelo APK enquanto a loja não libera.</p>
+              <a class="btn second sm">Abrir na Google Play</a>
+            </div>
+            <div>
+              <h3>Samsung e LG</h3>
+              <p>Versões para as TVs Samsung e LG estão a caminho.</p>
+              <span class="soon">Em breve</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="blk sand">
+          <h2>Perguntas frequentes</h2>
+          <details open><summary>O Pulse Player vem com algum conteúdo?</summary><p>Não. É só o reprodutor. Você usa a lista que já tem; nenhum conteúdo é fornecido ou vendido aqui.</p></details>
+          <details><summary>Renova sozinho?</summary><p>No cartão, sim, uma vez por ano. No Pix, você renova quando quiser em Minha TV.</p></details>
+          <details><summary>Como cancelo a renovação?</summary><p>Em Minha TV, com o código da TV e o e-mail usado no pagamento.</p></details>
+          <details><summary>Troquei de TV. E agora?</summary><p>Fale com o suporte pelo WhatsApp com os dois códigos.</p></details>
+        </section>
+
+        <footer>
+          <div style="max-width:60ch">Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo.</div>
+          <nav><a>WhatsApp</a><a>Privacidade</a><a>Área da revenda</a></nav>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== LANDING CELULAR ===================== -->
+  <div class="group">
+    <h2>2. Landing — celular (390 px)</h2>
+    <p class="note">Mesma ordem, uma coluna. No topo só "Assinar"; os outros links descem para o rodapé. Aqui "Seu aparelho" seria o celular Android.</p>
+    <div class="row">
+      <div>
+        <div class="phone">
+          <div class="nav"><div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div><a class="btn primary sm">Assinar</a></div>
+          <div class="hero">
+            <div>
+              <h1>Sua lista na TV, organizada</h1>
+              <p>Você usa a sua própria lista. Capas, busca e perfis na Android TV, em TV box e no celular.</p>
+              <div class="ctas"><a class="btn on-forest">Assinar meu aparelho</a><a class="btn ghost-forest">Testar 7 dias grátis</a></div>
+            </div>
+            <div class="tv"><div class="tv-screen"><span class="hint">Código deste aparelho</span><span class="code">ABCD2345</span></div></div>
+          </div>
+          <section class="blk">
+            <h2>Um preço, sem mensalidade</h2>
+            <div class="plans">
+              <div class="plan-main"><h3>Aparelho</h3><div class="amount"><b>R$ 25</b><span>por ano</span></div><a class="btn primary block">Assinar meu aparelho</a></div>
+            </div>
+          </section>
+        </div>
+        <p class="cap">Herói e o plano principal. Abaixo seguem revenda, como funciona, baixar, perguntas e rodapé.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== ÁREA DO CLIENTE ===================== -->
+  <div class="group">
+    <h2>3. Minha TV (/cliente) — sem conta, pelo código da TV</h2>
+    <p class="note">Mostra só o estado e a data. Código inexistente, vencido ou suspenso dão <b>a mesma</b> tela. Cancelar a
+      renovação pede o e-mail usado no pagamento.</p>
+    <div class="row">
+      <div>
+        <div class="phone">
+          <div class="nav"><div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div><a class="btn quiet sm">Planos</a></div>
+          <div class="wrap">
+            <h1>Minha TV</h1>
+            <p class="lede">Veja até quando o seu aparelho está ativo, renove ou cancele a renovação.</p>
+            <label for="c1">Código que aparece na TV</label>
+            <div class="input" id="c1">ABCD2345</div>
+            <a class="btn primary block">Consultar</a>
+            <div class="result">
+              <span class="state ok">Ativo</span>
+              <div class="big">Ativo até 3 de novembro de 2027</div>
+              <p class="muted">Renova sozinho no cartão.</p>
+              <div class="stack"><a class="btn second block">Renovar mais 1 ano</a><a class="btn quiet block">Falar com o suporte</a></div>
+              <a class="linkish">Cancelar renovação automática</a>
+            </div>
+          </div>
+        </div>
+        <p class="cap"><b>Ativo, com cartão.</b> "Cancelar renovação" só aparece quando há renovação no cartão.</p>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="nav"><div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div><a class="btn quiet sm">Planos</a></div>
+          <div class="wrap">
+            <h1>Cancelar renovação</h1>
+            <p class="lede">Código <b style="font-family:Consolas,monospace;letter-spacing:.12em">ABCD2345</b>. Seu aparelho continua ativo até 3 de novembro de 2027; só a próxima cobrança deixa de acontecer.</p>
+            <label for="c2">E-mail usado no pagamento</label>
+            <div class="input text focus" id="c2">maria@exemplo.com</div>
+            <a class="btn primary block">Cancelar renovação</a>
+            <a class="btn quiet block" style="margin-top:10px">Voltar</a>
+            <div class="divider"></div>
+            <span class="state ok">Renovação cancelada</span>
+            <p class="muted">Seu aparelho segue ativo até 3 de novembro de 2027. Para voltar a renovar, assine de novo antes dessa data.</p>
+            <div class="divider"></div>
+            <p class="muted" style="color:var(--alert)">Este e-mail não é o do pagamento. Confira e tente de novo, ou fale com o suporte.</p>
+          </div>
+        </div>
+        <p class="cap"><b>Cancelar.</b> Formulário e, abaixo, as duas respostas possíveis (sucesso e e-mail errado). Depois de 5 tentativas no dia: "Muitas tentativas".</p>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="nav"><div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div><a class="btn quiet sm">Planos</a></div>
+          <div class="wrap">
+            <h1>Minha TV</h1>
+            <p class="lede">Veja até quando o seu aparelho está ativo, renove ou cancele a renovação.</p>
+            <label for="c3">Código que aparece na TV</label>
+            <div class="input" id="c3">KMNP3478</div>
+            <a class="btn primary block">Consultar</a>
+            <div class="result">
+              <span class="state trial">Teste grátis</span>
+              <div class="big">Teste até 10 de novembro de 2026</div>
+              <p class="muted">Assine para continuar usando depois do teste.</p>
+              <div class="stack"><a class="btn primary block">Assinar por R$ 25 ao ano</a><a class="btn quiet block">Falar com o suporte</a></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap"><b>Em teste.</b> A ação principal vira "Assinar".</p>
+      </div>
+
+      <div>
+        <div class="phone">
+          <div class="nav"><div class="logo"><svg viewBox="0 0 256 256" aria-hidden="true"><path d="M56 122V64a14 14 0 0 1 21-12l121 70h-52l-9 16-30-52-21 36Z"/><path d="M56 134h37l14-24 30 52 16-28h45L77 204a14 14 0 0 1-21-12Z"/></svg>Pulse Player</div><a class="btn quiet sm">Planos</a></div>
+          <div class="wrap">
+            <h1>Minha TV</h1>
+            <p class="lede">Veja até quando o seu aparelho está ativo, renove ou cancele a renovação.</p>
+            <label for="c4">Código que aparece na TV</label>
+            <div class="input" id="c4">ZZZZ9999</div>
+            <a class="btn primary block">Consultar</a>
+            <div class="result">
+              <span class="state none">Sem ativação</span>
+              <div class="big">Não há ativação para este código</div>
+              <p class="muted">Confira o código na tela da TV (8 letras e números). Se você já pagou, fale com o suporte.</p>
+              <div class="stack"><a class="btn primary block">Assinar por R$ 25 ao ano</a><a class="btn quiet block">Falar com o suporte</a></div>
+            </div>
+          </div>
+        </div>
+        <p class="cap"><b>Sem ativação, código não encontrado ou suspenso.</b> Uma tela só, de propósito.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="group">
+    <h2>4. /enviar (destino da dica do app das lojas)</h2>
+    <p class="note">A página "Mande sua lista para a TV" de hoje, no tema claro, com o topo reduzido (marca + Ajuda): sem
+      preço e sem botão de compra, para o app da Google Play não levar a pagamento.</p>
+  </div>
+</body>
+</html>

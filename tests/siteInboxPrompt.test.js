@@ -41,7 +41,7 @@ async function setup({ received = null, code = 'ABCD2345', confirmResult = true 
 describe('dica do site', () => {
   it('mostra o endereço do site e o código do aparelho', async () => {
     await setup()
-    expect(wrapper.find('#site-hint').text()).toContain('pulse-license.test')
+    expect(wrapper.find('#site-hint').text()).toContain('pulse-license.test/enviar')
     expect(wrapper.find('#site-hint').text()).toContain('ABCD2345')
   })
 
@@ -99,7 +99,7 @@ describe('dica do site no celular (RFC-023)', () => {
     vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => true }))
     await setup()
     await wrapper.find('#site-open').trigger('click')
-    expect(openExternal).toHaveBeenCalledWith('https://pulse-license.test/?codigo=ABCD2345')
+    expect(openExternal).toHaveBeenCalledWith('https://pulse-license.test/enviar?codigo=ABCD2345')
     wrapper.unmount()
     wrapper = null
     document.body.innerHTML = ''

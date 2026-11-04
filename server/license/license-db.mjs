@@ -201,6 +201,13 @@ export async function hitLimit(db, { bucket, key, limit, windowMs, now }) {
   return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
 }
 
+/** Segundos de espera se o bucket já chegou ao limite, sem contar mais uma (travas de "erros demais"); 0 = livre. */
+export async function lockedFor(db, { bucket, key, limit, windowMs, now }) {
+  const row = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(bucket, key).first()
+  if (!row || row.count < limit || now - row.window_start >= windowMs) return 0
+  return Math.max(1, Math.ceil((row.window_start + windowMs - now) / 1000))
+}
+
 /** Guarda prometida na PRIVACY.md: 24 meses. */
 export const RETENTION_MS = 730 * 24 * 3600 * 1000
 

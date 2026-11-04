@@ -5,7 +5,7 @@
  * Entrega (G15/G16): só depois de assinatura válida + consulta da order na API + valor/moeda/referência conferidos;
  * quem muda o pedido para 'paid' (UPDATE condicional) é o único que entrega.
  */
-import { readJsonBody } from '../pair/pair-core.mjs'
+import { readJsonBody, timingSafeEqualStr } from '../pair/pair-core.mjs'
 import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
 import { hashKey, createReseller, rotateKey, toBase64Url } from './license-resellers.mjs'
 import { DAY_MS, extendActivation } from './license-rules.mjs'
@@ -663,6 +663,35 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     return publicSubscription(await db.prepare('SELECT * FROM subscriptions WHERE id = ?').bind(id).first())
   }
 
+  /**
+   * Cliente cancela a renovação pelo site (RFC-025 §3): prova de posse é o e-mail do pagamento, que o Mercado Pago
+   * guarda na assinatura (payer_email). Cancela as renovações abertas do código cujo e-mail confere.
+   * shortcut: confirmar no teste com a conta de teste do MP que GET /preapproval traz payer_email; se não vier,
+   * guardar o hash do e-mail em subscriptions na criação (subscribe).
+   */
+  async function cancelForPayer(code, email) {
+    const subs = (await db.prepare("SELECT * FROM subscriptions WHERE device_code = ? AND status <> 'cancelled'").bind(code).all()).results
+    if (!subs.length) throw new CheckoutError(404, 'Este código não tem renovação automática.')
+    if (!mp) throw new CheckoutError(503, 'Não foi possível cancelar agora. Fale com o suporte pelo WhatsApp.')
+    const typed = String(email || '').trim().toLowerCase()
+    let cancelled = 0
+    for (const sub of subs) {
+      let remote
+      try {
+        remote = await mp.getPreapproval(sub.mp_preapproval_id)
+      } catch (err) {
+        if (!(err instanceof MpError)) throw err
+        throw new CheckoutError(502, 'Não foi possível consultar o pagamento agora. Tente de novo em instantes.')
+      }
+      const payer = String((remote && remote.payer_email) || '').trim().toLowerCase()
+      if (!payer || !timingSafeEqualStr(payer, typed)) continue
+      await cancelSubscription(sub.id)
+      cancelled++
+    }
+    if (!cancelled) throw new CheckoutError(403, 'Este e-mail não é o do pagamento. Confira e tente de novo, ou fale com o suporte.')
+    return { cancelled: true }
+  }
+
   async function handleCheckout(request, url, ip) {
     try {
       if (url.pathname === WEBHOOK_PATH) {
@@ -693,5 +722,7 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
   handleCheckout.cancelSubscription = cancelSubscription
   handleCheckout.listOrders = listOrders
   handleCheckout.reprocessOrder = reprocessOrder
+  // Área do cliente (license-customer.mjs).
+  handleCheckout.cancelForPayer = cancelForPayer
   return handleCheckout
 }

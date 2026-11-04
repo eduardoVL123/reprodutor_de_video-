@@ -28,7 +28,8 @@ export function plansPageUrl(code) {
 
 /** Site "Enviar lista" com o código do aparelho já preenchido (RFC-021/023); vazio sem o serviço ou sem código. */
 export function sendListPageUrl(code) {
-  return baseUrl() && code ? `${baseUrl()}/?codigo=${encodeURIComponent(code)}` : ''
+  // RFC-025: /enviar não mostra preço nem compra (o app das lojas não pode levar a pagamento); / virou a landing.
+  return baseUrl() && code ? `${baseUrl()}/enviar?codigo=${encodeURIComponent(code)}` : ''
 }
 
 /** POST com tempo limite por Promise.race (TVs com Chromium < 66 não têm AbortController). */

@@ -1,4 +1,4 @@
-/* Site do Pulse Player (RFC-021): enviar lista cifrada para a TV, assinar o aparelho e comprar créditos (pagamento em /pagar). */
+/* Site do Pulse Player (RFC-021/025): landing de venda, Minha TV, enviar lista cifrada para a TV, assinar o aparelho e comprar créditos (pagamento em /pagar). */
 ;(function () {
   const $ = (id) => document.getElementById(id)
   const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // igual ao serviço de licença (sem 0/O/1/I/L)
@@ -145,6 +145,112 @@
     })
   }
 
+  // Landing (RFC-025 §2): preços do servidor e o download certo para quem abriu o site
+  /** 'phone' (celular Android), 'soon' (TVs Samsung/LG) ou 'tv' (Android TV, TV box, computador e o resto). */
+  function deviceKind(ua) {
+    if (/Tizen|Web0S|webOS|SMART-TV|NetCast/i.test(ua)) return 'soon'
+    if (/Android/i.test(ua) && /Mobile/i.test(ua)) return 'phone'
+    return 'tv'
+  }
+
+  function setupLanding() {
+    if (config) {
+      $('device-price').textContent = brl(config.devicePriceCents).replace(/,00$/, '')
+      renderTiers()
+      if (config.playUrl) {
+        $('phone-link').href = config.playUrl
+        $('phone-link').textContent = 'Abrir na Google Play'
+        $('phone-note').textContent = 'Instale pela Google Play.'
+      }
+    }
+    $('apk-address').textContent = `${location.host}/apk`
+    const yours = document.querySelector(`.download[data-device="${deviceKind(navigator.userAgent)}"]`)
+    if (yours) yours.classList.add('is-yours')
+  }
+
+  // Minha TV (RFC-025 §3): estado do aparelho pelo código e cancelamento da renovação com o e-mail do pagamento
+  let clientCode = ''
+  const longDate = (ms) => new Date(ms).toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+
+  function showStatus(code, data) {
+    const subscribe = config ? `Assinar por ${brl(config.devicePriceCents)} ao ano` : 'Assinar'
+    const views = {
+      active: ['Ativo', `Ativo até ${longDate(data.until)}`, data.renews ? 'Renova sozinho no cartão.' : 'Renove quando quiser, com Pix ou cartão.', 'Renovar mais 1 ano', 'button secondary'],
+      trial: ['Teste grátis', `Teste até ${longDate(data.until)}`, 'Assine para continuar usando depois do teste.', subscribe, 'button'],
+      none: ['Sem ativação', 'Não há ativação para este código', 'Confira o código na tela da TV (8 letras e números). Se você já pagou, fale com o suporte.', subscribe, 'button'],
+    }
+    const [badge, title, detail, action, cls] = views[data.state] || views.none
+    $('status-badge').textContent = badge
+    $('status-badge').className = `state state-${views[data.state] ? data.state : 'none'}`
+    $('status-title').textContent = title
+    $('status-detail').textContent = detail
+    $('status-renew').textContent = action
+    $('status-renew').className = cls
+    $('status-renew').href = `/pagar?tipo=aparelho&codigo=${code}`
+    const support = whatsapp(`Olá! O código da minha TV é ${code}.`)
+    $('status-support').hidden = !support
+    if (support) $('status-support').href = support
+    $('cancel-open').hidden = !(data.state === 'active' && data.renews)
+    $('cancel-form').hidden = true
+    $('cancel-msg').textContent = ''
+    $('cancel-email').disabled = false
+    $('cancel-form').querySelector('button').hidden = false
+    $('status-result').hidden = false
+  }
+
+  async function lookup(e) {
+    e.preventDefault()
+    const code = normalizeCode($('status-code').value)
+    if (code.length !== CODE_LENGTH) return status('status-msg', 'Digite os 8 caracteres do código que aparece na TV.')
+    const button = $('status-form').querySelector('button')
+    button.disabled = true
+    try {
+      const res = await fetch('/v1/device-status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })
+      const data = await readJson(res)
+      if (!res.ok) return status('status-msg', data.error || 'Não foi possível consultar agora. Tente de novo.')
+      $('status-msg').textContent = ''
+      clientCode = code
+      showStatus(code, data)
+    } catch (_) {
+      status('status-msg', 'Sem conexão. Confira a internet e tente de novo.')
+    } finally {
+      button.disabled = false
+    }
+  }
+
+  async function cancelRenewal(e) {
+    e.preventDefault()
+    const email = $('cancel-email').value.trim()
+    if (!email.includes('@')) return status('cancel-msg', 'Informe o e-mail usado no pagamento.')
+    const button = $('cancel-form').querySelector('button')
+    button.disabled = true
+    try {
+      const res = await fetch('/v1/subscription/cancel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: clientCode, email }) })
+      const data = await readJson(res)
+      if (!res.ok) return status('cancel-msg', data.error || 'Não foi possível cancelar agora. Tente de novo.')
+      status('cancel-msg', 'Renovação cancelada. O aparelho continua ativo até o fim do período pago.', true)
+      $('status-detail').textContent = 'Renovação automática cancelada.'
+      $('cancel-open').hidden = true
+      $('cancel-email').disabled = true
+      button.hidden = true
+    } catch (_) {
+      status('cancel-msg', 'Sem conexão. Confira a internet e tente de novo.')
+    } finally {
+      button.disabled = false
+    }
+  }
+
+  function setupClient() {
+    keepCodeClean($('status-code'))
+    $('status-code').value = normalizeCode(new URLSearchParams(location.search).get('codigo'))
+    $('status-form').addEventListener('submit', lookup)
+    $('cancel-open').addEventListener('click', () => {
+      $('cancel-form').hidden = false
+      $('cancel-email').focus()
+    })
+    $('cancel-form').addEventListener('submit', cancelRenewal)
+  }
+
   async function start() {
     try {
       config = await (await fetch('/v1/site-config')).json()
@@ -156,6 +262,8 @@
       $('support-link').hidden = false
     }
     for (const id of ['code', 'sub-code']) if ($(id)) keepCodeClean($(id))
+    if ($('landing')) setupLanding()
+    if ($('status-form')) setupClient()
     if ($('send-form')) {
       $('send-form').addEventListener('submit', sendList)
       // O app no celular abre o site com o código do aparelho (RFC-023): já preenchido, falta só a lista.

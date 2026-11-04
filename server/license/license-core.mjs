@@ -13,6 +13,8 @@ import { createAdminRoutes } from './license-admin.mjs'
 import { createApiRoutes } from './license-api.mjs'
 import { createInboxRoutes, validPub } from './license-inbox.mjs'
 import { createCheckoutRoutes, WEBHOOK_PATH } from './license-checkout.mjs'
+import { createCustomerRoutes } from './license-customer.mjs'
+import { createReportRoutes } from './license-reports.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
@@ -23,13 +25,30 @@ export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20 }
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
 // Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
 const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
+/** Cabeçalhos de toda resposta do serviço de licença (RFC-025 §6); o pulse-pair segue com os seus. */
+export const LICENSE_HEADERS = {
+  ...SECURITY_HEADERS,
+  'Strict-Transport-Security': 'max-age=31536000',
+  'X-Frame-Options': 'DENY',
+  'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), usb=()',
+}
+/** Páginas HTML: além dos de cima, isola a janela de quem abriu o site. */
+export const PAGE_HEADERS = { ...LICENSE_HEADERS, 'Cross-Origin-Opener-Policy': 'same-origin' }
 export const APK_URL = 'https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk'
 const PLANS_ROUTE =new RegExp(`^/a/([${CODE_ALPHABET}]{${DEVICE_CODE_LENGTH}})$`)
 
 export function json(status, body, extra = {}) {
   return new Response(JSON.stringify(body), {
     status,
-    headers: { 'Content-Type': 'application/json; charset=utf-8', ...SECURITY_HEADERS, ...LICENSE_CORS, ...extra },
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...LICENSE_HEADERS, ...LICENSE_CORS, ...extra },
+  })
+}
+
+/** Mesma resposta sem CORS: o painel do dono é da mesma origem e outros sites não devem lê-lo (RFC-025 §5). */
+export function privateJson(status, body, extra = {}) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { 'Content-Type': 'application/json; charset=utf-8', ...LICENSE_HEADERS, ...extra },
   })
 }
 
@@ -41,13 +60,15 @@ const fail = (status, error, extra) => json(status, { error }, extra)
  * `mpPublicKey`: chave pública do Mercado Pago (MP_PUBLIC_KEY), entregue à tela /pagar em /v1/mp-config.
  * `signingKey`: chave privada (JWK) que assina /v1/access (LICENSE_SIGNING_KEY); vazio = respostas sem assinatura.
  */
-export function createLicenseHandler({ db, now = Date.now, adminToken = '', contactUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
+export function createLicenseHandler({ db, now = Date.now, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
   const limiter = createLimiter(now)
   const sign = createSigner(signingKey)
   const handleCheckout = createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret: mpWebhookSecret })
-  const handleAdmin = createAdminRoutes({ db, now, adminToken, json, checkout: handleCheckout })
+  const handleAdmin = createAdminRoutes({ db, now, adminToken, json: privateJson, checkout: handleCheckout })
   const handleApi = createApiRoutes({ db, now, json, limiter, checkout: handleCheckout })
   const handleInbox = createInboxRoutes({ db, now, json, limiter })
+  const handleCustomer = createCustomerRoutes({ db, now, json, limiter, checkout: handleCheckout })
+  const handleReports = createReportRoutes({ db, now, json: privateJson, reportToken })
 
   /** Aparelho da chave; cria com 7 dias de teste na primeira vez (reinstalar acha o mesmo). */
   async function ensureDevice(deviceKey, platform, ip) {
@@ -123,23 +144,28 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
   async function handle(request, rawIp = '') {
     const ip = networkKey(rawIp)
     const url = new URL(request.url)
+    if (url.pathname.startsWith('/admin/api/')) {
+      return request.method === 'OPTIONS' ? new Response(null, { status: 404, headers: LICENSE_HEADERS }) : handleAdmin(request, url, ip)
+    }
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: { ...LICENSE_CORS } })
-    if (url.pathname.startsWith('/admin/api/')) return handleAdmin(request, url, ip)
-    if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url)
+    if (url.pathname.startsWith('/api/v1/reports/')) return handleReports(request, url, ip)
+    if (url.pathname.startsWith('/api/v1/')) return handleApi(request, url, ip)
     if (url.pathname.startsWith('/v1/inbox')) return handleInbox(request, url, ip)
+    const customer = await handleCustomer(request, url, ip)
+    if (customer) return customer
     if (url.pathname === '/v1/checkout' || url.pathname.startsWith('/v1/checkout/') || url.pathname === WEBHOOK_PATH) {
       return handleCheckout(request, url, ip)
     }
     // Endereço curto para o app Downloader da TV: digitar <site>/apk em vez do link do GitHub (que mostrava o
     // nome do usuário do GitHub na tela). Leva ao APK assinado da release fixa.
     if (request.method === 'GET' && url.pathname === '/apk') {
-      return new Response(null, { status: 302, headers: { ...SECURITY_HEADERS, Location: APK_URL, 'Cache-Control': 'no-store' } })
+      return new Response(null, { status: 302, headers: { ...LICENSE_HEADERS, Location: APK_URL, 'Cache-Control': 'no-store' } })
     }
     // RFC-021: o QR da tela de ativação abre a aba Assinar do site com o código preenchido.
     const plans = request.method === 'GET' && url.pathname.match(PLANS_ROUTE)
-    if (plans) return new Response(null, { status: 302, headers: { ...SECURITY_HEADERS, Location: `/assinar?codigo=${plans[1]}` } })
+    if (plans) return new Response(null, { status: 302, headers: { ...LICENSE_HEADERS, Location: `/assinar?codigo=${plans[1]}` } })
     if (request.method === 'GET' && url.pathname === '/v1/site-config') {
-      return json(200, { payments: !!mp, contactUrl, devicePriceCents: DEVICE_ANNUAL_PRICE, minCredits: MIN_CREDITS, creditTiers: CREDIT_TIERS })
+      return json(200, { payments: !!mp, contactUrl, playUrl, devicePriceCents: DEVICE_ANNUAL_PRICE, minCredits: MIN_CREDITS, creditTiers: CREDIT_TIERS })
     }
     // RFC-020: chave pública do cartão só para a tela /pagar; sem ela o cartão fica indisponível (o Pix continua).
     if (request.method === 'GET' && url.pathname === '/v1/mp-config') {

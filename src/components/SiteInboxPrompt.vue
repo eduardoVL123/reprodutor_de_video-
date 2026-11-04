@@ -17,7 +17,9 @@ const inbox = useSiteInbox()
 const license = useLicenseStore()
 const { received, connecting } = inbox
 const rootEl = ref(null)
-const siteHost = String(import.meta.env.VITE_LICENSE_BASE_URL || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+const siteBase = String(import.meta.env.VITE_LICENSE_BASE_URL || '').replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+// RFC-025: a raiz do site é a landing com preços; a dica leva direto à página de enviar lista.
+const siteHost = siteBase ? `${siteBase}/enviar` : ''
 const showHint = computed(() => !!(siteHost && license.code))
 const onPhone = isPhone()
 let popScope = null

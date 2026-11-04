@@ -84,7 +84,7 @@ describe('BottomNav', () => {
     let { wrapper, platform } = await mountNav({ base: 'https://licenca.test', code: 'QDU5NXY7' })
     await wrapper.find('#bnav-more').trigger('click')
     await wrapper.find('#more-site').trigger('click')
-    expect(platform.openExternal).toHaveBeenCalledWith('https://licenca.test/?codigo=QDU5NXY7')
+    expect(platform.openExternal).toHaveBeenCalledWith('https://licenca.test/enviar?codigo=QDU5NXY7')
     wrapper.unmount()
 
     vi.resetModules()

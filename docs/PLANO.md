@@ -6,12 +6,12 @@ Ordem sugerida de cima para baixo. Passo a passo do Play Console: [`docs/lojas/G
 ## 1. Site de vendas e áreas restritas (próximo trabalho)
 RFC em escrita (chat separado): landing de venda de planos, área do cliente, painel da revenda e painel do dono,
 sem nenhuma rota de dados aberta.
-- [ ] RFC do site aprovada.
-- [ ] Landing de venda: planos e preços em destaque, perguntas frequentes, chamadas para comprar.
-- [ ] Área do cliente pelo código do aparelho (sem conta): até quando está ativado, renovar, suporte.
+- [x] RFC do site aprovada (RFC-025, 2026-11-04). Código pronto, sem commit; o que falta está no fim da RFC-025.
+- [x] (código, sem commit) Landing de venda: planos e preços em destaque, perguntas frequentes, chamadas para comprar.
+- [x] (código, sem commit) Área do cliente pelo código do aparelho (sem conta): até quando está ativado, renovar, suporte.
 - [ ] Painel da revenda: continua com a chave longa por enquanto (decisão de 2026-11-03).
 - [ ] Painel do dono atrás do Cloudflare Access (só o seu e-mail entra; a tela nem abre para os outros).
-- [ ] Documentação da API para o sócio fazer automações (o que cada rota faz, como pedir uma chave própria).
+- [x] (código, sem commit) Documentação da API para o sócio fazer automações (o que cada rota faz, como pedir uma chave própria).
 - [ ] Auditoria de segurança focada no site, no fim.
 
 ## 2. Google Play (bloqueia o envio)
