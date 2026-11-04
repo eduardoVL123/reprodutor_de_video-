@@ -10,6 +10,8 @@ import {
   saveSection,
   getItems as dbGetItems,
   clearCatalog,
+  setHiddenCategories,
+  visibleCount,
 } from '@/services/catalogDb'
 
 // Listas grandes (50.000+ itens) podem demorar bem mais que um login.
@@ -36,6 +38,15 @@ export const useCatalogStore = defineStore('catalog', () => {
   const categories = shallowRef({ live: [], vod: [], series: [] }) // já inclui a entrada "Todos"
   const totals = shallowRef({ live: 0, vod: 0, series: 0 })
   const counts = shallowRef({ live: {}, vod: {}, series: {} })
+  // Controle parental: categorias fora de "Todos" e da busca (escondidas + bloqueadas sem PIN), por seção.
+  const hiddenIds = { live: [], vod: [], series: [] }
+  const visibleTotals = shallowRef({ live: null, vod: null, series: null }) // null = sem filtro
+  // Quem decide o que fica fora (parentalStore). Chamado ao publicar a lista, antes do Início ler os itens:
+  // assim nada de uma categoria bloqueada aparece nem por um instante.
+  let hiddenResolver = null
+  const setHiddenResolver = (fn) => {
+    hiddenResolver = fn
+  }
 
   const inflight = {}
   let m3uImport = null // download + importação da playlist, compartilhado pelas 3 seções
@@ -117,6 +128,20 @@ export const useCatalogStore = defineStore('catalog', () => {
     categories.value = { ...categories.value, [section]: list }
     totals.value = { ...totals.value, [section]: meta.count }
     counts.value = { ...counts.value, [section]: meta.counts }
+    if (hiddenResolver) hiddenIds[section] = hiddenResolver(section, list).map(String)
+    await refreshVisible(section)
+  }
+
+  async function refreshVisible(section) {
+    setHiddenCategories(section, hiddenIds[section])
+    const n = await visibleCount(section)
+    visibleTotals.value = { ...visibleTotals.value, [section]: n }
+  }
+
+  /** Aplica as categorias fora da vista (parentalStore). Recalcula a contagem de "Todos". */
+  function setHidden(section, ids) {
+    hiddenIds[section] = (ids || []).map(String)
+    return refreshVisible(section)
   }
 
   async function doLoad(section, force) {
@@ -189,7 +214,9 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   // ---------- Leitura em janelas (nunca reativa) ----------
   function countFor(section, categoryId = ALL_CATEGORIES) {
-    return categoryId === ALL_CATEGORIES ? totals.value[section] : counts.value[section][String(categoryId)] || 0
+    if (categoryId !== ALL_CATEGORIES) return counts.value[section][String(categoryId)] || 0
+    const visible = visibleTotals.value[section]
+    return visible === null || visible === undefined ? totals.value[section] : visible
   }
 
   const getItems = (section, categoryId, start, count) => dbGetItems(section, categoryId, start, count)
@@ -206,6 +233,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     categories.value = { live: [], vod: [], series: [] }
     totals.value = { live: 0, vod: 0, series: 0 }
     counts.value = { live: {}, vod: {}, series: {} }
+    visibleTotals.value = { live: null, vod: null, series: null }
     await clearCatalog()
   }
 
@@ -219,6 +247,9 @@ export const useCatalogStore = defineStore('catalog', () => {
     refreshSection,
     countFor,
     getItems,
+    setHidden,
+    setHiddenResolver,
+    visibleTotals,
     resetCatalogState,
   }
 })

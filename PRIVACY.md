@@ -19,6 +19,7 @@ responsável por eles.
 | Catálogo (nomes, categorias, capas) baixado da lista do usuário | Mostrar canais, filmes e séries | Somente no aparelho |
 | Perfis, favoritos, histórico de reprodução e buscas recentes | Funções do app por perfil | Somente no aparelho |
 | Aceite do aviso legal (data e versão) | Comprovar o consentimento | Somente no aparelho |
+| Controle parental: PIN (guardado como resumo criptográfico, nunca o número) e o estado de cada categoria por perfil (visível, bloqueada ou escondida) | Bloquear ou esconder categorias, inclusive as de conteúdo adulto | Somente no aparelho |
 | **Opcional, só se o usuário escolher "adicionar pelo celular":** a lista que ele cola no celular (endereço, usuário, senha e apelido), cifrada | Levar a lista do celular para a TV sem digitar no controle | Cifrada de ponta a ponta no celular; o serviço de pareamento guarda **só o texto cifrado**, na memória, por até 10 minutos (60 segundos depois que o celular envia) e o apaga assim que a TV o lê. Nunca em disco. |
 | **Opcional, mesmo caso:** endereço de rede (IP) de quem usa o serviço de pareamento | Limitar abuso (muitas tentativas seguidas) | Contador na memória do serviço, por até 1 minuto; não é gravado em arquivo pelo serviço |
 | **Opcional, só se o usuário enviar a lista pelo site:** a lista (endereço, usuário, senha e apelido), cifrada no navegador para a chave da TV | Levar a lista para a TV sem digitar no controle | A lista enviada pelo site é cifrada no navegador; o serviço de licença guarda **só o texto cifrado**, que não consegue abrir, por até **7 dias**, e o apaga assim que a TV o recebe. A TV pergunta antes de adicionar. |
@@ -91,8 +92,12 @@ podem ver o que está tocando na TV. Quem não toca em "Transmitir" não envia n
 
 ## Crianças
 
-O aplicativo não tem restrição de conteúdo por faixa etária: o conteúdo depende inteiramente das listas
-cadastradas pelo usuário. Responsáveis devem supervisionar o uso.
+O aplicativo não é destinado a crianças e não traz conteúdo próprio: o que aparece depende das listas cadastradas
+pelo usuário. Para proteger crianças, o aplicativo tem **controle parental**: categorias com nome de conteúdo adulto
+já começam **bloqueadas** (abrem só com um PIN, que começa como 0000 e pode ser trocado), e qualquer categoria pode ser
+bloqueada ou escondida por perfil (botão "Controle parental" nas abas de Filmes, Séries e Canais). Itens de
+categorias bloqueadas ou escondidas também não aparecem no Início nem na busca. Responsáveis devem trocar o PIN
+inicial e supervisionar o uso.
 
 ## Contato
 

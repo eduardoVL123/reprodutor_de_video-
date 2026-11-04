@@ -8,6 +8,7 @@ import { useProfileStore } from '@/stores/profileStore'
 import SideMenu from '@/components/SideMenu.vue'
 import BottomNav from '@/components/BottomNav.vue'
 import { useFormFactor } from '@/composables/useFormFactor'
+import { useParentalFilter } from '@/composables/useParentalFilter'
 import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
@@ -304,6 +305,9 @@ async function loadCatalogShowcase({ reset = false } = {}) {
     }
   } catch (_) {}
 }
+
+// Controle parental: categoria escondida/bloqueada some do Início assim que muda.
+useParentalFilter(() => loadCatalogShowcase())
 
 watch(
   () => [catalog.status.vod.state, catalog.status.series.state, catalog.status.live.state],

@@ -26,9 +26,9 @@ Siga as fases em ordem; dentro de cada fase a ordem é a sugerida. Marque `[x]` 
 Apps que tocam listas de IPTV são recusados com frequência. O que conta: não parecer pirataria e cumprir as regras
 de conteúdo e de pagamento.
 
-- [ ] **Controle parental** (item novo 1): senha (PIN) para abrir categorias/canais adultos, com opção de trocar
+- [x] **Controle parental** (item novo 1): senha (PIN) para abrir categorias/canais adultos, com opção de trocar
       o PIN. Precisa de RFC curta: como marcar o que é adulto (nome da categoria tipo "XXX/Adulto" + marcação manual).
-- [ ] **Esconder categorias** (item novo 3): na lista de categorias, escolher quais não aparecem (por perfil).
+- [x] **Esconder categorias** (item novo 3): na lista de categorias, escolher quais não aparecem (por perfil).
       Junto com o controle parental: é o jeito de tirar o conteúdo adulto da tela.
 - [ ] **Lista de demonstração legal** para o revisor (`docs/demo`, `VITE_DEMO_PLAYLIST_URL`): só conteúdo com
       licença livre. O revisor da Google entra com ela; sem isso, recusa por "não foi possível testar".

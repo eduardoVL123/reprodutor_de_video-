@@ -59,8 +59,49 @@ function categoriesOf(item) {
   return unique.length ? unique : ['none']
 }
 
+// ---------- Categorias fora da vista (controle parental / escondidas) ----------
+// Valem para "Todos", Início, busca e zapping: quem lê o catálogo por aqui nunca vê esses itens.
+const hiddenBySection = new Map() // seção => Set de category_id
+const visibleCache = new Map() // seção => { list: posições visíveis, blocked: Uint8Array } (null = sem filtro)
+
+/** Define as categorias que não aparecem na seção. Item em várias categorias some se qualquer uma estiver fora. */
+export function setHiddenCategories(section, ids) {
+  hiddenBySection.set(section, new Set((ids || []).map(String)))
+  visibleCache.delete(section)
+}
+
+async function visibility(section, meta) {
+  const hidden = hiddenBySection.get(section)
+  if (!hidden || !hidden.size) return null
+  if (visibleCache.has(section)) return visibleCache.get(section)
+  const index = await getIndex(section)
+  const blocked = new Uint8Array(meta.count)
+  hidden.forEach((id) => (index[id] || []).forEach((p) => (blocked[p] = 1)))
+  const list = []
+  for (let p = 0; p < meta.count; p++) if (!blocked[p]) list.push(p)
+  const result = { list, blocked }
+  visibleCache.set(section, result)
+  return result
+}
+
+/** Quantos itens "Todos" mostra com o filtro atual (null = sem filtro: vale o total do catálogo). */
+export async function visibleCount(section) {
+  const meta = await getMeta(section)
+  if (!meta) return null
+  const v = await visibility(section, meta)
+  return v ? v.list.length : null
+}
+
+/** Posições globais fora da vista (para a busca descartar); null = nada escondido. */
+export async function blockedPositions(section) {
+  const meta = await getMeta(section)
+  const v = meta ? await visibility(section, meta) : null
+  return v ? v.blocked : null
+}
+
 function resetCaches(section) {
   generation++
+  visibleCache.delete(section)
   metaCache.delete(section)
   indexCache.delete(section)
   catCache.delete(section)
@@ -249,9 +290,14 @@ export async function getItems(section, categoryId, start, count) {
 
   let positions
   if (categoryId === ALL_CATEGORIES) {
-    const end = Math.min(start + count, meta.count)
-    positions = []
-    for (let p = start; p < end; p++) positions.push(p)
+    const v = await visibility(section, meta)
+    if (v) {
+      positions = v.list.slice(start, start + count)
+    } else {
+      const end = Math.min(start + count, meta.count)
+      positions = []
+      for (let p = start; p < end; p++) positions.push(p)
+    }
   } else {
     const list = (await getIndex(section))[String(categoryId)] || []
     positions = list.slice(start, start + count)
@@ -350,4 +396,5 @@ export async function clearCatalog() {
   searchCache.clear()
   chunkCache.clear()
   memoryChunks.clear()
+  visibleCache.clear() // os ids de categoria da próxima lista são outros
 }

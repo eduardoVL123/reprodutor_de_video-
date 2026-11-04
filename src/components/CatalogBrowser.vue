@@ -7,6 +7,9 @@ import BrandMark from '@/components/BrandMark.vue'
 import GridView from '@/components/GridView.vue'
 import GridItem from '@/components/GridItem.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
+import PinDialog from '@/components/PinDialog.vue'
+import ParentalModal from '@/components/ParentalModal.vue'
+import { useParentalStore } from '@/stores/parentalStore'
 import { ALL_CATEGORIES } from '@/services/catalogDb'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
 import { pickArtwork } from '@/utils/artwork'
@@ -29,13 +32,21 @@ const auth = useAuthStore()
 const catalog = useCatalogStore()
 const player = usePlayerStore()
 const { isPhonePortrait } = useFormFactor()
+const parental = useParentalStore()
+const parentalOpen = ref(false)
+const pinFor = ref(null) // categoria bloqueada esperando o PIN
 
 const activeCategory = ref(ALL_CATEGORIES)
 const detailsTarget = ref(null)
 
 const isLive = computed(() => props.section === 'live')
 const state = computed(() => catalog.status[props.section])
-const categoryList = computed(() => catalog.categories[props.section] || [])
+// Escondidas (controle parental) nem aparecem; bloqueadas aparecem com cadeado e pedem o PIN.
+const categoryList = computed(() =>
+  (catalog.categories[props.section] || []).filter((c) => parental.statusOf(props.section, c) !== 'hidden'),
+)
+const isLockedCategory = (cat) => cat.category_id !== ALL_CATEGORIES && parental.isLocked(props.section, cat)
+const managedCategories = computed(() => (catalog.categories[props.section] || []).filter((c) => c.category_id !== ALL_CATEGORIES))
 
 const sectionTitle = computed(() => {
   if (props.section === 'live') return 'TV ao vivo'
@@ -189,7 +200,7 @@ async function loadCategoryRows() {
   }
 
   // "Todos": uma fileira por categoria principal
-  const catsToLoad = categoryList.value.filter((c) => c.category_id !== ALL_CATEGORIES).slice(0, 12)
+  const catsToLoad = categoryList.value.filter((c) => c.category_id !== ALL_CATEGORIES && !isLockedCategory(c)).slice(0, 12)
   for (const cat of catsToLoad) {
     const items = await catalog.getItems(props.section, cat.category_id, 0, 15)
     if (items && items.length > 0) {
@@ -242,8 +253,20 @@ async function loadFeaturedInfo(it) {
   } catch (_) {}
 }
 
+async function unlockCategory(pin) {
+  const cat = pinFor.value
+  if (!(await parental.unlock(props.section, cat, pin))) return 'PIN incorreto.'
+  pinFor.value = null
+  chooseCategory(cat)
+  return true
+}
+
 async function chooseCategory(cat) {
   if (!cat) return
+  if (isLockedCategory(cat)) {
+    pinFor.value = cat
+    return
+  }
   activeCategory.value = cat.category_id
   await loadCategoryRows()
   await nextTick()
@@ -276,6 +299,14 @@ async function focusActiveCategory() {
   const el = document.getElementById(targetId) || document.getElementById('cat-0')
   if (el) el.focus()
 }
+
+// Mudou no controle parental (ou desbloqueou com PIN): as fileiras de "Todos" saem/entram na hora.
+watch(
+  () => [parental.settings, parental.unlocked],
+  () => {
+    if (state.value.state === 'ready') loadCategoryRows()
+  },
+)
 
 watch(
   () => state.value.state,
@@ -365,12 +396,30 @@ onBeforeUnmount(() => {
             ]"
             :data-grid-index="index"
             :data-focus-active="activeCategory === cat.category_id ? 'true' : null"
+            :aria-label="isLockedCategory(cat) ? `${cat.category_name} (bloqueada)` : null"
             @click="chooseCategory(cat)"
           >
-            {{ cat.category_name }}
+            <span v-if="isLockedCategory(cat)" aria-hidden="true" class="mr-1.5">&#128274;</span>
+            <span>{{ cat.category_name }}</span>
           </button>
         </div>
       </div>
+
+      <!-- Controle parental: bloquear (PIN) ou esconder categorias desta aba -->
+      <button
+        v-if="state.state === 'ready'"
+        id="catalog-parental"
+        type="button"
+        class="tv-focusable shrink-0 flex items-center gap-2 px-4 phone:px-3 py-2 rounded-lg bg-white/[0.06] hover:bg-white/15 border border-white/10 text-neutral-300 hover:text-white text-sm phone:text-xs font-medium transition-colors"
+        title="Controle parental"
+        @click="parentalOpen = true"
+      >
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="5" y="11" width="14" height="10" rx="2" />
+          <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+        </svg>
+        <span class="inline phone-portrait:hidden">Controle parental</span>
+      </button>
 
       <!-- Botão Atualizar Lista -->
       <button
@@ -701,6 +750,15 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </div>
+
+    <PinDialog
+      v-if="pinFor"
+      title="Categoria bloqueada"
+      :hint="`Digite o PIN para abrir ${pinFor.category_name}.`"
+      :submit="unlockCategory"
+      @cancel="pinFor = null"
+    />
+    <ParentalModal v-if="parentalOpen" :section="section" :categories="managedCategories" @close="parentalOpen = false" />
 
     <!-- Modal de Detalhes da Mídia -->
     <MediaDetailsModal

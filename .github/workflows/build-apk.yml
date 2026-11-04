@@ -134,7 +134,8 @@ jobs:
             echo "available=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: APK e AAB release
+      # APK para o Downloader: versão completa (mostra preço e QR de pagamento na tela de ativação).
+      - name: APK release
         if: steps.release_key.outputs.available == 'true'
         working-directory: android
         env:
@@ -142,7 +143,29 @@ jobs:
           PULSE_KEYSTORE_PASSWORD: ${{ secrets.PULSE_KEYSTORE_PASSWORD }}
           PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
           PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease bundleRelease
+        run: ./gradlew assembleRelease
+
+      # AAB para a Google Play: versão das lojas (sem preço nem pagamento dentro do app — regra de faturamento da
+      # Play; RFC-018 D4). Mesmo build web, só com VITE_LICENSE_STORE_BUILD=1.
+      - name: Build web da loja
+        if: steps.release_key.outputs.available == 'true'
+        run: npm run build && npx cap sync android
+        env:
+          VITE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
+          VITE_PAIR_BASE_URL: ${{ vars.PULSE_PAIR_BASE_URL }}
+          VITE_LICENSE_BASE_URL: ${{ vars.PULSE_LICENSE_BASE_URL }}
+          VITE_LICENSE_PUBLIC_KEY: ${{ vars.PULSE_LICENSE_PUBLIC_KEY }}
+          VITE_LICENSE_STORE_BUILD: '1'
+
+      - name: AAB release (Google Play)
+        if: steps.release_key.outputs.available == 'true'
+        working-directory: android
+        env:
+          PULSE_KEYSTORE_FILE: ${{ runner.temp }}/pulse-release.jks
+          PULSE_KEYSTORE_PASSWORD: ${{ secrets.PULSE_KEYSTORE_PASSWORD }}
+          PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
+          PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
+        run: ./gradlew bundleRelease
 
       - name: Enviar release
         if: steps.release_key.outputs.available == 'true'
