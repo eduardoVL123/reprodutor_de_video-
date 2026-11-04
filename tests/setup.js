@@ -17,6 +17,9 @@ window.HTMLMediaElement.prototype.play = vi.fn(() => Promise.resolve())
 // Os testes importam o código sob teste dinamicamente (`await import(...)`) depois disso.
 beforeEach(() => {
   globalThis.indexedDB = new IDBFactory()
+  // O storage cai para o localStorage quando o IndexedDB demora a abrir (CI mais lento): sem limpar, a lista salva de
+  // um teste aparecia no seguinte e cada rodada quebrava um teste diferente do authStore (2026-11-04).
+  localStorage.clear()
   vi.resetModules()
   // Um .env.local de quem desenvolve não pode ligar o pareamento (RFC-016) nos testes que não o pedem.
   vi.stubEnv('VITE_PAIR_BASE_URL', '')

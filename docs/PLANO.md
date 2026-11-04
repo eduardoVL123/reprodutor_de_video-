@@ -41,6 +41,10 @@ sem nenhuma rota de dados aberta.
 - [ ] Testar o APK desta última versão no celular, no tablet e na Android TV (celular já testado antes, estava bem).
 - [ ] Aba de canais com layout novo (definir com mockup).
 - [ ] Mostrar a quantidade de conteúdos (por categoria e no total da aba).
+- [ ] **Otimização (TV)**: um testador relatou o app "um pouco pesado" na TV (2026-11-04). Medir antes de mexer
+      (tempo de abertura, rolagem das fileiras e da grade, memória com listas grandes) e atacar o que pesar mais.
+- [ ] **Escalabilidade**: app e servidor aguentarem muitos aparelhos e listas grandes (catálogo em IndexedDB em blocos,
+      limites e custo do D1/Workers por aparelho ativo, consultas do painel com milhares de aparelhos).
 
 ## 5. Outras lojas (depois)
 - [ ] Samsung, LG e PC (Microsoft Store, RFC-024).

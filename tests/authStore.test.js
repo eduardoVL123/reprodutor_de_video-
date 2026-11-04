@@ -16,6 +16,9 @@ async function setup() {
     username,
     password,
   }))
+  // O mock do teste anterior às vezes sobrevivia no CI (cada rodada quebrava um teste diferente): tira antes de pôr.
+  vi.doUnmock('@/services/xtreamApi')
+  vi.resetModules()
   vi.doMock('@/services/xtreamApi', async (importOriginal) => ({
     ...(await importOriginal()),
     authenticate,
@@ -87,7 +90,10 @@ describe('authStore — listas M3U', () => {
 
   async function setupM3u(m3uText) {
     const fetchM3uText = vi.fn(async () => ({ text: PLAYLIST, finalUrl: TOKEN_URL }))
-    vi.doMock('@/services/xtreamApi', async (importOriginal) => ({
+    // O mock do teste anterior às vezes sobrevivia no CI (cada rodada quebrava um teste diferente): tira antes de pôr.
+  vi.doUnmock('@/services/xtreamApi')
+  vi.resetModules()
+  vi.doMock('@/services/xtreamApi', async (importOriginal) => ({
       ...(await importOriginal()),
       fetchM3uText,
       resolveShortInput: vi.fn(async () => ({

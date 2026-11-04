@@ -86,6 +86,47 @@ curl -X POST https://pulse-license.pulseplayer.workers.dev/api/v1/activations \
 Regras: cada revenda só vê as próprias ativações, o próprio extrato e as revendas diretas dela. Créditos só descem
 (de quem está acima para quem está abaixo) e não vencem. Crédito gasto não volta se a ativação for revogada.
 
+## Colocar a lista do cliente na TV automaticamente
+O cliente manda o **código do aparelho** (8 letras e números que aparecem no app, em Gerenciador de Listas) e o seu
+sistema coloca a lista na TV dele, sem ninguém digitar no controle. É o mesmo caminho da página
+`pulseplayer.com.br/enviar`, feito por programa. **Não precisa de chave** e não gasta crédito.
+
+A senha do cliente **nunca passa pelo servidor do Pulse Player em texto aberto**: o seu sistema cifra a lista com a
+chave pública da TV e o servidor só guarda o texto cifrado até a TV buscar. Na TV aparece "Adicionar esta lista?" e
+o cliente confirma.
+
+**Jeito mais fácil:** use o script pronto [`scripts/enviar-lista.mjs`](../../scripts/enviar-lista.mjs). É um arquivo só,
+sem dependências, para Node 18 ou mais novo. Copie para o seu sistema.
+
+```bash
+# Servidor Xtream (endereço + usuário + senha)
+node enviar-lista.mjs --codigo ABCD2345 --url http://servidor.com:8080 --usuario joao --senha 1234 --nome "Sala"
+# Link M3U
+node enviar-lista.mjs --codigo ABCD2345 --url "http://servidor.com/get.php?username=joao&password=1234&type=m3u"
+```
+
+Dentro do seu código (Node):
+
+```js
+import { enviarLista } from './enviar-lista.mjs'
+await enviarLista({ codigo: 'ABCD2345', url: 'http://servidor.com:8080', usuario: 'joao', senha: '1234', nome: 'Sala' })
+```
+
+Erros que o script devolve: código inválido (não são 8 caracteres do alfabeto), "Código não encontrado" (a TV ainda não
+abriu o Pulse Player com internet) e "Muitas tentativas" (limite por rede; espere um pouco).
+
+**Para fazer em outra linguagem** (as duas chamadas que o script faz):
+
+| Passo | Chamada | O que faz |
+|---|---|---|
+| 1 | `GET /v1/inbox/{código}/key` | Devolve `{ pub }`: a chave pública da TV (P-256, base64url) |
+| 2 | `POST /v1/inbox/{código}` com `{ "box": "..." }` | Entrega a lista cifrada; a TV busca e pergunta ao cliente |
+
+O `box` é base64url de: chave pública efêmera P-256 do seu lado (65 bytes, formato raw) + iv (12 bytes) +
+AES-GCM do JSON `{ "dns", "username", "password", "label" }`. A chave AES-256 vem de ECDH(efêmera, chave da TV) e o
+código da TV vai como dado autenticado adicional (AAD). Até 2000 caracteres de JSON. Limites: 30 consultas de chave e
+10 envios por minuto por rede; a TV guarda no máximo 3 listas pendentes, por 7 dias.
+
 ## Relatórios (chave de leitura, RFC-025)
 Para quem acompanha os números do Pulse Player sem poder mudar nada. A chave é outra, entregue pelo dono, e só
 serve para **ler** estas três rotas. Ela não funciona no painel do dono nem nas rotas de revenda acima.

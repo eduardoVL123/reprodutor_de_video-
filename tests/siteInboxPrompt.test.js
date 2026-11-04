@@ -15,7 +15,7 @@ afterEach(() => {
   vi.resetModules()
 })
 
-async function setup({ received = null, code = 'ABCD2345', confirmResult = true } = {}) {
+async function setup({ received = null, code = 'ABCD2345', confirmResult = true, props = {} } = {}) {
   vi.stubEnv('VITE_LICENSE_BASE_URL', 'https://pulse-license.test')
   const inbox = {
     received: ref(received),
@@ -24,7 +24,8 @@ async function setup({ received = null, code = 'ABCD2345', confirmResult = true 
     discard: vi.fn(async () => {}),
     check: vi.fn(async () => {}),
   }
-  vi.doMock('@/composables/useSiteInbox', () => ({ useSiteInbox: () => inbox }))
+  const useSiteInbox = vi.fn(() => inbox)
+  vi.doMock('@/composables/useSiteInbox', () => ({ useSiteInbox }))
   setActivePinia(createPinia())
   const { useLicenseStore } = await import('@/stores/licenseStore')
   const license = useLicenseStore()
@@ -33,9 +34,9 @@ async function setup({ received = null, code = 'ABCD2345', confirmResult = true 
   const nav = await import('@/utils/spatialNavigation')
   nav.initSpatialNavigation()
   const { default: SiteInboxPrompt } = await import('@/components/SiteInboxPrompt.vue')
-  wrapper = mount(SiteInboxPrompt, { attachTo: document.body })
+  wrapper = mount(SiteInboxPrompt, { attachTo: document.body, props })
   await flushPromises()
-  return { inbox, license }
+  return { inbox, license, useSiteInbox }
 }
 
 describe('dica do site', () => {
@@ -68,6 +69,22 @@ describe('dica do site', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+})
+
+describe('uma pergunta só, em qualquer tela (RFC-025)', () => {
+  it('Gerenciador de Listas (dialog=false): mostra o código mas não procura listas nem mostra a pergunta', async () => {
+    const { useSiteInbox } = await setup({ props: { dialog: false } })
+    expect(useSiteInbox).not.toHaveBeenCalled()
+    expect(wrapper.find('#site-hint').text()).toContain('ABCD2345')
+    expect(wrapper.find('#site-inbox-dialog').exists()).toBe(false)
+  })
+
+  it('Dashboard (hint=false): procura e pergunta, sem repetir a dica do código', async () => {
+    const { useSiteInbox } = await setup({ props: { hint: false }, received: { host: 'servidor.test', label: 'Sala' } })
+    expect(useSiteInbox).toHaveBeenCalledTimes(1)
+    expect(wrapper.find('#site-hint').exists()).toBe(false)
+    expect(wrapper.find('#site-inbox-dialog').exists()).toBe(true)
   })
 })
 

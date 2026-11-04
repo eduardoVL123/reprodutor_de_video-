@@ -154,6 +154,15 @@ describe('Worker da licença', () => {
     expect(res.status).toBe(200)
   })
 
+  it('token do painel gravado em UTF-16 pelo PowerShell (BOM + byte nulo) ainda confere', async () => {
+    const access = await makeAccess()
+    const utf16 = '��' + [...'segredo-do-painel'].map((c) => c + '\u0000').join('') + '\r\u0000\n\u0000'
+    const env = mockEnv({ ...access.env, LICENSE_ADMIN_TOKEN: utf16 })
+    const jwt = await access.token()
+    const res = await worker.fetch(new Request('https://licenca.test/admin/api/partners', { headers: { 'Cf-Access-Jwt-Assertion': jwt, Authorization: 'Bearer segredo-do-painel' } }), env)
+    expect(res.status).toBe(200)
+  })
+
   it('painel do dono: sem o Access configurado fica desligado (503)', async () => {
     const res = await worker.fetch(new Request('https://licenca.test/admin/api/partners', { headers: { Authorization: 'Bearer segredo-do-painel' } }), mockEnv())
     expect(res.status).toBe(503)
