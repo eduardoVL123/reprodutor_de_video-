@@ -23,7 +23,8 @@ export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20 }
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
 // Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
 const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
-const PLANS_ROUTE = new RegExp(`^/a/([${CODE_ALPHABET}]{${DEVICE_CODE_LENGTH}})$`)
+export const APK_URL = 'https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk'
+const PLANS_ROUTE =new RegExp(`^/a/([${CODE_ALPHABET}]{${DEVICE_CODE_LENGTH}})$`)
 
 export function json(status, body, extra = {}) {
   return new Response(JSON.stringify(body), {
@@ -128,6 +129,11 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', cont
     if (url.pathname.startsWith('/v1/inbox')) return handleInbox(request, url, ip)
     if (url.pathname === '/v1/checkout' || url.pathname.startsWith('/v1/checkout/') || url.pathname === WEBHOOK_PATH) {
       return handleCheckout(request, url, ip)
+    }
+    // Endereço curto para o app Downloader da TV: digitar <site>/apk em vez do link do GitHub (que mostrava o
+    // nome do usuário do GitHub na tela). Leva ao APK assinado da release fixa.
+    if (request.method === 'GET' && url.pathname === '/apk') {
+      return new Response(null, { status: 302, headers: { ...SECURITY_HEADERS, Location: APK_URL, 'Cache-Control': 'no-store' } })
     }
     // RFC-021: o QR da tela de ativação abre a aba Assinar do site com o código preenchido.
     const plans = request.method === 'GET' && url.pathname.match(PLANS_ROUTE)

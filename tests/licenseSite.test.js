@@ -20,6 +20,13 @@ describe('núcleo — rotas do site', () => {
     handle = createLicenseHandler({ db, adminToken: 'x', contactUrl: 'https://wa.me/5516992791692' })
   })
 
+  it('/apk (endereço curto do Downloader) leva ao APK da release fixa', async () => {
+    const { APK_URL } = await import('../server/license/license-core.mjs')
+    const res = await handle(new Request('http://site.test/apk'), '1.1.1.1')
+    expect(res.status).toBe(302)
+    expect(res.headers.get('Location')).toBe(APK_URL)
+  })
+
   it('o QR da TV (/a/CÓDIGO) leva para Assinar com o código preenchido', async () => {
     const res = await handle(new Request('http://site.test/a/ABCD2345'), '1.1.1.1')
     expect(res.status).toBe(302)

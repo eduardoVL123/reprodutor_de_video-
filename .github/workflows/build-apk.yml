@@ -196,7 +196,7 @@ jobs:
             **Como instalar na Smart TV com o app Downloader:**
             1. Abra o app **Downloader** na sua Android TV ou Fire TV.
             2. Digite a URL direta do APK:
-               `https://github.com/eduardoVL123/reprodutor_de_video-/releases/download/v2.0.0/pulse-player.apk`
+               `${{ vars.PULSE_LICENSE_BASE_URL }}/apk` (endereço curto do site; leva a este APK)
             3. Baixe, instale e abra o aplicativo!
           files: pulse-player.apk
           prerelease: false

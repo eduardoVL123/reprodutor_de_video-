@@ -187,8 +187,15 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     clock = brt(2026, 4, 5)
     await post('/v1/entry', { deviceKey: old, host: 'velho.com' })
     await db.prepare('INSERT INTO activations (device_key, starts_at, ends_at, source) VALUES (?, ?, ?, ?)').bind(old, clock, clock + 1000, 'manual').run()
+    const order = (id, at) =>
+      db
+        .prepare("INSERT INTO orders (id, kind, method, buyer_name, quantity, amount_cents, status, view_secret_hash, created_at, expires_at) VALUES (?, 'credits', 'pix', 'Zé', 10, 10000, 'delivered', 'h', ?, ?)")
+        .bind(id, at, at)
+        .run()
+    await order('velho', clock)
 
     clock += RETENTION_MS + 24 * 3600e3
+    await order('novo', clock)
     const fresh = 'n'.repeat(64)
     await post('/v1/hello', { deviceKey: fresh, platform: 'web' })
     await purgeExpired(db, clock)
@@ -197,6 +204,7 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     expect(await count('partner_cycle_entries')).toBe(0)
     expect(await count('activations')).toBe(0)
     expect((await db.prepare('SELECT device_key FROM devices').all()).results.map((r) => r.device_key)).toEqual([fresh])
+    expect((await db.prepare('SELECT id FROM orders').all()).results.map((r) => r.id)).toEqual(['novo']) // pedidos também
   })
 })
 

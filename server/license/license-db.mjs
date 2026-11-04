@@ -214,8 +214,9 @@ export async function purgeExpired(db, now) {
     .prepare("UPDATE orders SET delivery = json_remove(delivery, '$.resellerKey', '$.keyUntil') WHERE json_extract(delivery, '$.keyUntil') < ?")
     .bind(now)
     .run()
-  // Nome e contato do comprador seguem a mesma guarda de 24 meses; o pedido fica (contabilidade), anônimo.
-  await db.prepare('UPDATE orders SET buyer_name = NULL, buyer_contact = NULL WHERE created_at < ? AND buyer_name IS NOT NULL').bind(cutoff).run()
+  // Pedidos seguem a mesma guarda de 24 meses (decisão do dono, 2026-11-03): somem inteiros, com nome e contato.
+  // A assinatura não depende do pedido de adesão (só o atualiza se ele existir), então renovações seguem valendo.
+  await db.prepare('DELETE FROM orders WHERE created_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM partner_cycle_entries WHERE last_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db
