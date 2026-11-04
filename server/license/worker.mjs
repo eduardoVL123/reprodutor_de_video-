@@ -88,20 +88,23 @@ export default {
       migrated = true
     }
     if (!handle) {
-      const mp = env.MP_ACCESS_TOKEN ? createMpClient({ accessToken: env.MP_ACCESS_TOKEN }) : null
-      if (env.LICENSE_ADMIN_TOKEN && env.LICENSE_ADMIN_TOKEN.length < 32) {
+      // Segredos colados no terminal podem vir com BOM/espaço/quebra de linha (o BOM na LICENSE_SIGNING_KEY derrubou o
+      // /v1/access em 2026-11-04): limpa todos ao ler.
+      const v = (name) => String(env[name] || '').trim()
+      const mp = v('MP_ACCESS_TOKEN') ? createMpClient({ accessToken: v('MP_ACCESS_TOKEN') }) : null
+      if (v('LICENSE_ADMIN_TOKEN') && v('LICENSE_ADMIN_TOKEN').length < 32) {
         console.warn('[licença] LICENSE_ADMIN_TOKEN curto: use 32+ caracteres aleatórios (README, "Painel do dono").')
       }
       handle = createLicenseHandler({
         db: env.DB,
-        adminToken: env.LICENSE_ADMIN_TOKEN || '',
-        reportToken: env.LICENSE_REPORT_TOKEN || '',
-        contactUrl: env.LICENSE_CONTACT_URL || '',
-        playUrl: env.PLAY_URL || '',
+        adminToken: v('LICENSE_ADMIN_TOKEN'),
+        reportToken: v('LICENSE_REPORT_TOKEN'),
+        contactUrl: v('LICENSE_CONTACT_URL'),
+        playUrl: v('PLAY_URL'),
         mp,
-        mpWebhookSecret: env.MP_WEBHOOK_SECRET || '',
-        mpPublicKey: env.MP_PUBLIC_KEY || '',
-        signingKey: env.LICENSE_SIGNING_KEY || '',
+        mpWebhookSecret: v('MP_WEBHOOK_SECRET'),
+        mpPublicKey: v('MP_PUBLIC_KEY'),
+        signingKey: v('LICENSE_SIGNING_KEY'),
       })
     }
     if (Date.now() - lastSweep > SWEEP_EVERY_MS) {

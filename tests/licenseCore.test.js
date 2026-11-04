@@ -233,6 +233,19 @@ describe('licença — aparelhos novos por IP (fraude contra parceiro)', () => {
 })
 
 describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
+  it('chave gravada pelo PowerShell (BOM no início e quebra de linha no fim) ainda assina, sem 500', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const priv = '﻿' + JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)) + '\r\n'
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 4), signingKey: priv })
+    const res = await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey: 'b'.repeat(32), platform: 'android', host: '' }) }), '10.0.0.2')
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.code).toMatch(/^[A-Z0-9]{8}$/)
+    expect(body.sig).toMatch(/^[A-Za-z0-9_-]+$/)
+  })
+
   it('assina o acesso para a chave do aparelho e a lista; a chave pública confere', async () => {
     const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
     const priv = JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey))
