@@ -90,7 +90,9 @@ export default {
     if (!handle) {
       // Segredos colados no terminal podem vir com BOM/espaço/quebra de linha (o BOM na LICENSE_SIGNING_KEY derrubou o
       // /v1/access em 2026-11-04): limpa todos ao ler.
-      const v = (name) => String(env[name] || '').trim()
+      // \u0000 = UTF-16 do pipe do PowerShell; \uFEFF/\uFFFD/\uFFFE = BOM e o lixo que ele vira.
+      // eslint-disable-next-line no-control-regex -- o byte nulo é justamente o que precisa sair
+      const v = (name) => String(env[name] || '').replace(/[\u0000\uFEFF\uFFFD\uFFFE]/g, '').trim()
       const mp = v('MP_ACCESS_TOKEN') ? createMpClient({ accessToken: v('MP_ACCESS_TOKEN') }) : null
       if (v('LICENSE_ADMIN_TOKEN') && v('LICENSE_ADMIN_TOKEN').length < 32) {
         console.warn('[licença] LICENSE_ADMIN_TOKEN curto: use 32+ caracteres aleatórios (README, "Painel do dono").')
