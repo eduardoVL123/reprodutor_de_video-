@@ -45,11 +45,29 @@ describe('dica do site', () => {
     expect(wrapper.find('#site-hint').text()).toContain('ABCD2345')
   })
 
-  it('sem código ainda: registra o aparelho e procura de novo', async () => {
+  it('sem código ainda: registra o aparelho e procura a lista quando o código chega', async () => {
     const { license, inbox } = await setup({ code: '' })
-    expect(license.announce).toHaveBeenCalled()
-    expect(inbox.check).toHaveBeenCalled()
+    expect(license.announce).toHaveBeenCalledTimes(1)
     expect(wrapper.find('#site-hint').exists()).toBe(false)
+    expect(inbox.check).not.toHaveBeenCalled() // sem código não há caixa de entrada para olhar
+  })
+
+  it('serviço fora do ar ao abrir a tela: tenta de novo e o código aparece quando o serviço volta', async () => {
+    vi.useFakeTimers()
+    try {
+      const { license, inbox } = await setup({ code: '' })
+      expect(wrapper.find('#site-hint').exists()).toBe(false)
+      license.announce.mockImplementation(async () => {
+        license.code = 'QDU5NXY7'
+      })
+      await vi.advanceTimersByTimeAsync(5000)
+      await flushPromises()
+      expect(license.announce).toHaveBeenCalledTimes(2)
+      expect(wrapper.find('#site-hint').text()).toContain('QDU5NXY7')
+      expect(inbox.check).toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 

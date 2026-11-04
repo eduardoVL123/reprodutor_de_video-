@@ -22,7 +22,18 @@ const siteBase = String(import.meta.env.VITE_LICENSE_BASE_URL || '').replace(/^h
 const siteHost = siteBase ? `${siteBase}/enviar` : ''
 const showHint = computed(() => !!(siteHost && license.code))
 const onPhone = isPhone()
+// Sem internet ou serviço fora do ar ao abrir a tela: tenta de novo, senão o código nunca aparece nesta tela.
+const ANNOUNCE_RETRY_MS = [5000, 15000, 30000, 60000]
 let popScope = null
+let retryTimer = null
+let alive = true
+
+async function announceUntilCode(attempt = 0) {
+  await license.announce() // TV sem lista: registra e publica a chave para o site poder enviar
+  if (!alive) return
+  if (license.code) return inbox.check()
+  if (attempt < ANNOUNCE_RETRY_MS.length) retryTimer = setTimeout(() => announceUntilCode(attempt + 1), ANNOUNCE_RETRY_MS[attempt])
+}
 
 watch(received, async (value) => {
   if (popScope) popScope()
@@ -38,10 +49,7 @@ async function accept() {
 }
 
 onMounted(async () => {
-  if (!license.code) {
-    await license.announce() // TV sem lista: registra e publica a chave para o site poder enviar
-    inbox.check()
-  }
+  if (!license.code) await announceUntilCode()
   if (received.value) {
     await nextTick()
     popScope = pushFocusScope(rootEl.value)
@@ -49,6 +57,8 @@ onMounted(async () => {
   }
 })
 onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(retryTimer)
   if (popScope) popScope()
 })
 </script>

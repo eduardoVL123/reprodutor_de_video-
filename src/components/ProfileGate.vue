@@ -112,7 +112,7 @@ onBeforeUnmount(release)
         :id="'profile-card-' + p.id"
         :key="p.id"
         type="button"
-        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none"
+        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none phone-portrait:w-[7.5rem]"
         @click="select(p.id)"
       >
         <div
@@ -133,7 +133,7 @@ onBeforeUnmount(release)
         v-if="profileStore.canAddProfile"
         id="btn-add-profile-card"
         type="button"
-        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none"
+        class="tv-focusable group flex flex-col items-center gap-4 cursor-pointer outline-none phone-portrait:w-[7.5rem]"
         @click="openAdd"
       >
         <div class="w-[9.5rem] h-[9.5rem] phone-portrait:w-[5.5rem] phone-portrait:h-[5.5rem] rounded-xl flex items-center justify-center border-2 border-dashed border-white/20 group-focus:border-white transition-colors bg-white/[0.03]">
