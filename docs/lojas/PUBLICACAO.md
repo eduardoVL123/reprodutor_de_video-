@@ -9,15 +9,15 @@ Guia do que enviar e do que testar antes. Fontes: [checklist comum Samsung](http
 
 | Item | Como | Situação |
 |---|---|---|
-| Política de privacidade com link público | Preencha data e contato em [`PRIVACY.md`](../../PRIVACY.md); depois do push o link do arquivo no GitHub já serve | falta preencher |
+| Política de privacidade com link público | [`PRIVACY.md`](../../PRIVACY.md) publicado em `https://pulseplayer.com.br/privacidade`, com data e contato; o app tem o link em Conta → Política de privacidade | pronto (2026-11-05) |
 | Lista de demonstração para o revisor | Publique [`docs/demo/pulse-demo.m3u`](../demo/pulse-demo.m3u) (link "raw" do GitHub) e gere o build com `VITE_DEMO_PLAYLIST_URL` (CI: variável `PULSE_DEMO_PLAYLIST_URL`) | pronto (link raw publicado; variável criada em 26/10/2026) |
-| Serviço de pareamento pelo celular (opcional, RFC-016) | Publicar [`server/pair`](../../server/pair/README.md#publicar) com HTTPS (`server/pair/deploy`) e gerar o build com `VITE_PAIR_BASE_URL` (CI: variável `PULSE_PAIR_BASE_URL`); sem isso o build não oferece o pareamento e nada nesta linha se aplica. Antes de enviar, preencha em [`PRIVACY.md`](../../PRIVACY.md) o endereço do serviço e o prazo de registros do provedor de hospedagem | falta |
-| Declarar o serviço de pareamento nos formulários das lojas | Seção 7 | falta |
-| Serviço de licença (opcional, RFC-018: teste de 7 dias e ativação) | Só com `VITE_LICENSE_BASE_URL` no build (CI: `PULSE_LICENSE_BASE_URL`). Declarar nos formulários de dados (Google Play "Segurança dos dados", Samsung, LG): **identificador do aparelho** (hash do ANDROID_ID / DUID Samsung via privilégio público `productinfo` / LGUDID, que a LG exige com consentimento — dado pelo aviso inicial), domínio da lista e datas de uso, guarda de 24 meses. Nas lojas, gerar com `VITE_LICENSE_STORE_BUILD=1` (sem preço nem QR de pagamento; RFC-018 D4) e validar a política de pagamentos de cada loja antes de enviar | falta |
+| Serviço de pareamento pelo celular (opcional, RFC-016) | Publicar [`server/pair`](../../server/pair/README.md#publicar) com HTTPS (`server/pair/deploy`) e gerar o build com `VITE_PAIR_BASE_URL` (CI: variável `PULSE_PAIR_BASE_URL`); sem isso o build não oferece o pareamento e nada nesta linha se aplica. Antes de enviar, preencha em [`PRIVACY.md`](../../PRIVACY.md) o endereço do serviço e o prazo de registros do provedor de hospedagem | pronto: no ar em `par.pulseplayer.com.br` (Cloudflare), variável `PULSE_PAIR_BASE_URL` no CI e endereço na política |
+| Declarar o serviço de pareamento nos formulários das lojas | Seção 7 | Google Play: respostas em [`GOOGLE-PLAY.md`](GOOGLE-PLAY.md) seção 3 · Samsung e LG: falta |
+| Serviço de licença (opcional, RFC-018: teste de 7 dias e ativação) | Só com `VITE_LICENSE_BASE_URL` no build (CI: `PULSE_LICENSE_BASE_URL`). Declarar nos formulários de dados (Google Play "Segurança dos dados", Samsung, LG): **identificador do aparelho** (hash do ANDROID_ID / DUID Samsung via privilégio público `productinfo` / LGUDID, que a LG exige com consentimento — dado pelo aviso inicial), domínio da lista e datas de uso, guarda de 24 meses. Nas lojas, gerar com `VITE_LICENSE_STORE_BUILD=1` (sem preço nem QR de pagamento; RFC-018 D4) e validar a política de pagamentos de cada loja antes de enviar. A lista de demonstração nunca é bloqueada pela licença (o revisor reabre o app depois dos 7 dias) | Google Play: pronto (AAB do CI com `VITE_LICENSE_STORE_BUILD=1`, sem venda no app; respostas em `GOOGLE-PLAY.md` seção 3) · Samsung e LG: falta |
 | Certificado Samsung | `PULSE_TIZEN_PACKAGE_ID` + perfil de certificado no Tizen Studio | falta |
 | Questionário da LG (App Self Checklist) | Baixe o arquivo oficial no link acima e preencha com a seção 5; sem ele a LG recusa antes do teste | falta |
-| Teste em TV real ou emulador | Roteiro da seção 6 | falta |
-| Capturas de tela 1920×1080 | [`capturas/`](capturas) (servidor de teste com fotos livres; troque se a loja pedir outro tamanho) | pronto |
+| Teste em TV real ou emulador | Roteiro da seção 6 | celular testado em 2026-11-05; tablet e Android TV: falta |
+| Capturas de tela | [`capturas/`](capturas) tem as de TV 1920×1080 (servidor de teste com fotos livres). Para a Play faltam as finais com a lista de uso geral ([`docs/demo/README.md`](../demo/README.md)): celular em pé, tablet e Android TV, incluindo o controle parental e o player tocando | falta (Play) |
 
 ## 2. Textos da loja
 
@@ -25,38 +25,53 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 
 **Nome:** Pulse Player
 
-**Resumo (pt-BR):** Reprodutor de vídeo para as suas próprias listas de reprodução.
+**Resumo (pt-BR, até 80 caracteres):** Reprodutor de vídeo para as suas próprias listas M3U e servidores de mídia.
 
 **Descrição (pt-BR):**
-> Pulse Player é um reprodutor de vídeo para TV. Ele não inclui nenhum conteúdo: você informa o endereço de uma
-> lista de reprodução (M3U) ou de um servidor de mídia que você já tem, e o Pulse Player organiza e reproduz.
+> Pulse Player é um reprodutor de vídeo para celular, tablet e TV. Ele não inclui nenhum conteúdo: você informa o
+> endereço de uma lista de reprodução (M3U) ou de um servidor de mídia que você já tem, e o Pulse Player organiza e
+> reproduz.
 >
-> • Canais, filmes e séries em fileiras, com busca
+> Serve para quem já tem os próprios vídeos e canais: canais internos de hotel, vídeos da recepção, treinamentos da
+> empresa, aulas gravadas, transmissões de eventos ou o acervo da família.
+>
+> • Ao vivo, filmes e séries em fileiras, com busca
 > • Continuar assistindo e próximo episódio automático
-> • Perfis e Minha lista
-> • Navegação feita para o controle remoto
+> • Perfis e Favoritos
+> • Controle parental com PIN: bloqueie ou esconda categorias por perfil
+> • Adicione sua lista pelo celular, sem digitar no controle
+> • Transmita do celular para a TV (Chromecast)
+> • Navegação feita para o controle remoto e para o toque
 >
-> Você é responsável pelas listas que adiciona. O Pulse Player não fornece, hospeda nem vende conteúdo.
+> Você é responsável pelas listas que adiciona. O Pulse Player não fornece, hospeda, vende nem recomenda conteúdo.
 
-*Só em builds com o pareamento (seção 7), acrescente à lista de destaques:* "• Adicione sua lista pelo celular, sem digitar no controle".
+*Se um build sair sem o pareamento (seção 7), tire da lista o item "Adicione sua lista pelo celular".*
 
-**Summary (en):** Video player for your own playlists.
+**Summary (en, up to 80 characters):** Video player for your own M3U playlists and media servers.
 
 **Description (en):**
-> Pulse Player is a video player for TV. It does not include any content: you enter the address of a playlist (M3U)
-> or media server you already have, and Pulse Player organizes and plays it.
+> Pulse Player is a video player for phones, tablets and TV. It does not include any content: you enter the address
+> of a playlist (M3U) or media server you already have, and Pulse Player organizes and plays it.
+>
+> It is made for people who already have their own videos and channels: in-house hotel channels, waiting-room
+> videos, company training, recorded classes, live event streams or the family video library.
 >
 > • Live, movies and series in rows, with search • Continue watching and automatic next episode
-> • Profiles and My list • Navigation designed for the remote control
+> • Profiles and Favorites • Parental control with PIN: lock or hide categories per profile
+> • Add your playlist from your phone, no typing with the remote • Cast from your phone to the TV (Chromecast)
+> • Navigation designed for the remote control and for touch
 >
-> You are responsible for the playlists you add. Pulse Player does not provide, host or sell content.
+> You are responsible for the playlists you add. Pulse Player does not provide, host, sell or recommend content.
 
 ## 3. Informações de teste (campo para o revisor)
 
 > The app contains no content. To test it, press **"Experimentar com vídeos de demonstração"** on the login screen
 > (or enter the demo playlist URL in the first field, user and password empty). It loads royalty-free Blender
-> Foundation films (CC BY) and public test streams. Back on the home screen asks "Sair do Pulse Player?";
-> "Sair" closes the app.
+> Foundation films (CC BY) and public test streams. The demo playlist never requires activation, so it keeps working
+> after the 7-day trial. Back on the home screen asks "Sair do Pulse Player?"; "Sair" closes the app.
+>
+> Parental control: the first PIN you type (4 to 8 digits) becomes the device PIN; categories with adult names start
+> locked. On phones and tablets, the privacy policy link is under **Conta → Política de privacidade**.
 
 *Só em builds com o pareamento, acrescente:*
 
@@ -122,7 +137,7 @@ atual de cada loja e com o seu jurídico antes de enviar**, porque as regras e o
 
 | Onde | O que declarar |
 |---|---|
-| Política de privacidade (todas as lojas) | O link público de [`PRIVACY.md`](../../PRIVACY.md) já descreve o serviço; preencha o endereço do serviço e o prazo de registros do provedor de hospedagem (campos entre colchetes). |
+| Política de privacidade (todas as lojas) | `https://pulseplayer.com.br/privacidade` ([`PRIVACY.md`](../../PRIVACY.md)) já descreve o serviço, com o endereço `par.pulseplayer.com.br` e os prazos de guarda. |
 | Google Play, "Segurança dos dados" (Data safety) | O app envia ao serviço, só se o usuário escolher o pareamento, a lista e as credenciais **cifradas de ponta a ponta** (o desenvolvedor não tem a chave) e o IP, só em memória, por até 1 minuto. Não há conta, anúncios nem análise de uso. Confira na ajuda do Google Play como ele trata dado cifrado de ponta a ponta e processamento efêmero antes de marcar "coleta" ou "não coleta". |
 | Samsung Seller Office e LG Seller Lounge | Se o formulário perguntar sobre servidores externos ou coleta de dados, informe o endereço do serviço e que ele é opcional, usado só para o pareamento, sem armazenar dado legível. O revisor não precisa dele (seção 3). |
 | Ficha da loja | Pode citar "adicione sua lista pelo celular" (seção 2). Não prometa conteúdo nem use "IPTV". |
