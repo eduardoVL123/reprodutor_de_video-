@@ -10,17 +10,17 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 | "Facilita acesso a conteúdo sem licença" | Não traz conteúdo nem lista; aviso legal no primeiro acesso; descrição fala só em "suas próprias listas"; capturas só com a lista de demonstração (Blender, CC BY). Nada de logos de canais, filmes ou marcas na ficha. |
 | "Revisor não conseguiu testar" | Lista de demonstração (`docs/demo`) no botão do login e nas instruções de acesso abaixo. |
 | Conteúdo sexual acessível sem barreira | **Controle parental**: categorias com nome adulto começam bloqueadas (PIN), e qualquer categoria pode ser bloqueada ou escondida por perfil. Itens bloqueados não aparecem no Início nem na busca. |
-| Pagamento fora do faturamento da Google | O AAB da Play é gerado com `VITE_LICENSE_STORE_BUILD=1`: sem preço, sem QR e sem link de pagamento dentro do app (a tela de ativação diz "fale com seu fornecedor"). O CI já faz isso. |
-| Política de privacidade ausente ou genérica | [`PRIVACY.md`](../../PRIVACY.md), específica deste app (falta preencher contato e data). |
+| Pagamento fora do faturamento da Google | O AAB da Play é gerado com `VITE_LICENSE_STORE_BUILD=1`: sem preço, sem QR e sem link de pagamento dentro do app (a tela de ativação diz só "use o código abaixo para ativar este aparelho", sem citar vendedor). O CI já faz isso. |
+| Política de privacidade ausente ou genérica | [`PRIVACY.md`](../../PRIVACY.md), específica deste app, publicada em `https://pulseplayer.com.br/privacidade` e com link dentro do app (Conta → Política de privacidade). |
 
 ## 1. Antes de criar o app no console
 
-- [ ] **Chave de publicação**: gere fora do repositório e cadastre `PULSE_KEYSTORE_BASE64`, `PULSE_KEYSTORE_PASSWORD`,
-      `PULSE_KEY_ALIAS`, `PULSE_KEY_PASSWORD` nos Secrets do GitHub. O CI passa a gerar o AAB assinado.
+- [x] **Chave de publicação**: gerada fora do repositório; `PULSE_KEYSTORE_BASE64`, `PULSE_KEYSTORE_PASSWORD`,
+      `PULSE_KEY_ALIAS`, `PULSE_KEY_PASSWORD` nos Secrets do GitHub. O CI gera o AAB assinado.
 - [ ] **Play App Signing**: aceite no console (a Google guarda a chave final; a sua vira chave de upload).
-- [ ] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL` (link "raw" de `docs/demo/pulse-demo.m3u`) e, se a licença estiver
-      no ar, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
-- [ ] **Versão**: suba `versionCode` (hoje 4) a cada envio, em `android/app/build.gradle`.
+- [x] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
+- [ ] **Versão**: suba `versionCode` (hoje 4) a cada envio, em `android/app/build.gradle`. O AAB de 2026-11-05 ainda
+      usa o 4: se o console recusar por versão repetida, suba para 5 e gere de novo.
 
 ## 2. Configurar o app (Painel → "Configurar o app")
 
@@ -33,7 +33,7 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 | App de notícias | Não. |
 | Apps governamentais / financeiros / saúde | Não. |
 | Segurança dos dados | Ver seção 3. |
-| Política de privacidade | Link público do `PRIVACY.md` (depois do push o link do GitHub serve). |
+| Política de privacidade | `https://pulseplayer.com.br/privacidade` (o mesmo link aparece no app, em Conta). |
 
 ## 3. Segurança dos dados (Data safety)
 
