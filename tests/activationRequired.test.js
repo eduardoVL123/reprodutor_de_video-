@@ -70,8 +70,8 @@ describe('tela de ativação', () => {
     const wrapper = await mountScreen({ storeBuild: '1' })
     expect(wrapper.find('#activation-qr').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/R\$|licenca\.test/)
-    expect(wrapper.text()).toContain('fornecedor')
-    expect(wrapper.text()).not.toMatch(/paguei|assinar/i)
+    expect(wrapper.text()).toContain('Use o código abaixo para ativar')
+    expect(wrapper.text()).not.toMatch(/paguei|assinar|fornecedor|revenda/i) // nada que leve a pagamento ou a vendedor
     expect(wrapper.find('#activation-retry').text()).toBe('Verificar ativação')
     expect(wrapper.find('#activation-code').text()).toBe('QDU5NXY7')
     wrapper.unmount()

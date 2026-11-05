@@ -95,7 +95,7 @@ onBeforeUnmount(() => {
             Escaneie o QR code ou abra <span class="text-white font-semibold">{{ displayUrl }}</span> e veja os planos.
           </p>
           <p v-else class="mt-2 text-tv-sm text-neutral-300 leading-relaxed">
-            Fale com seu fornecedor e informe o código abaixo.
+            Use o código abaixo para ativar este aparelho.
           </p>
         </template>
 

@@ -84,6 +84,8 @@ describe('AccountScreen', () => {
     expect(platform.openExternal).toHaveBeenCalledWith('https://licenca.test/a/QDU5NXY7')
     await wrapper.find('#acc-site').trigger('click')
     expect(platform.openExternal).toHaveBeenCalledWith('https://licenca.test/enviar?codigo=QDU5NXY7')
+    await wrapper.find('#acc-privacy').trigger('click') // a Play exige a política acessível dentro do app
+    expect(platform.openExternal).toHaveBeenCalledWith('https://licenca.test/privacidade')
     wrapper.unmount()
   })
 
