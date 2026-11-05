@@ -2,7 +2,7 @@
  * Montagem das URLs de stream do Xtream Codes (módulo puro, sem estado).
  *
  *   live:   <base>/live/<user>/<pass>/<stream_id>.m3u8   (fallback: .ts)
- *   vod:    <base>/movie/<user>/<pass>/<stream_id>.<ext> (fallback: direct_source, http ou mp4)
+ *   vod:    <base>/movie/<user>/<pass>/<stream_id>.<ext> (fallback: direct_source, mp4 ou m3u8, mesma base)
  *   series: <base>/series/<user>/<pass>/<stream_id>.<ext>
  *
  * SEGURANÇA: as URLs contêm usuário e senha. Elas NUNCA devem ser exibidas puras na UI.
@@ -47,13 +47,12 @@ export function buildStreamUrl({ apiBase, credentials, section, item } = {}) {
   const pass = encodeURIComponent(String(password))
   const id = encodeURIComponent(String(streamId))
 
+  // O alternativo fica no mesmo esquema da lista: rebaixar https para http mandaria usuário e senha sem cifra
+  // (xtreamApi só rebaixa em falha de transporte; erro de decodificação do vídeo não é motivo).
   if (section === 'live') {
-    const isHttps = base.startsWith('https://')
     return {
       primaryUrl: `${base}/live/${user}/${pass}/${id}.m3u8`,
-      fallbackUrl: isHttps
-        ? `${base.replace(/^https:\/\//i, 'http://')}/live/${user}/${pass}/${id}.m3u8`
-        : `${base}/live/${user}/${pass}/${id}.ts`,
+      fallbackUrl: `${base}/live/${user}/${pass}/${id}.ts`,
       isHls: true,
       containerExtension: 'm3u8',
     }
@@ -71,10 +70,6 @@ export function buildStreamUrl({ apiBase, credentials, section, item } = {}) {
 
     if (item.direct_source && /^https?:\/\//i.test(item.direct_source)) {
       fallbackUrl = String(item.direct_source)
-    } else if (primaryUrl.startsWith('https://')) {
-      const httpBase = base.replace(/^https:\/\//i, 'http://')
-      const targetExt = ext === 'mkv' || ext === 'avi' ? 'mp4' : ext
-      fallbackUrl = `${httpBase}/${sectionPath}/${user}/${pass}/${id}.${targetExt}`
     } else if (ext === 'mkv' || ext === 'avi') {
       fallbackUrl = `${base}/${sectionPath}/${user}/${pass}/${id}.mp4`
     } else {

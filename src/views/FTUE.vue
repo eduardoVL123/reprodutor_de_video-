@@ -43,8 +43,8 @@ const terms = [
     text: 'Você é o único responsável pelos endereços, credenciais e conteúdos que inserir e reproduzir, incluindo a legalidade e os direitos de uso.',
   },
   {
-    title: 'Sem vínculo com provedores',
-    text: 'Não temos relação com provedores de conteúdo de terceiros e não oferecemos suporte a nenhum serviço de transmissão.',
+    title: 'Sem conteúdo nosso',
+    text: 'Não fornecemos, vendemos nem recomendamos canais, filmes ou listas, e não damos suporte ao conteúdo de serviços de terceiros.',
   },
   {
     title: 'Privacidade',

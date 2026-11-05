@@ -71,3 +71,15 @@ describe('parseM3u — lista grande', () => {
     expect(ran).toBe(true)
   })
 })
+
+describe('parseM3u — id do grupo', () => {
+  it('fornecedor reordena a lista: cada grupo mantém o mesmo id (o controle parental não muda de grupo)', async () => {
+    const entry = (group, n) => `#EXTINF:-1 group-title="${group}",Canal ${n}\nhttp://h.test/live/u/p/${n}.m3u8\n`
+    const idOf = (r, group) => r.liveCategories.find((c) => c.category_name === group).category_id
+    const before = await parseM3u(`#EXTM3U\n${entry('Esportes', 1)}${entry('Hot Club', 2)}`)
+    const after = await parseM3u(`#EXTM3U\n${entry('Novidades', 3)}${entry('Esportes', 1)}${entry('Hot Club', 2)}`)
+    expect(idOf(after, 'Hot Club')).toBe(idOf(before, 'Hot Club'))
+    expect(idOf(after, 'Esportes')).toBe(idOf(before, 'Esportes'))
+    expect(idOf(after, 'Novidades')).not.toBe(idOf(before, 'Esportes'))
+  })
+})

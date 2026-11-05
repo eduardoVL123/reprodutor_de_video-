@@ -596,7 +596,15 @@ export function useVideoEngine() {
     })
 
     instance.on(Hls.Events.ERROR, (_evt, data) => {
-      if (my !== token || hls !== instance || !data || !data.fatal) return
+      if (my !== token || hls !== instance || !data) return
+      // Lista do canal com 404: o provedor tirou o canal do ar (ex.: jogo que acabou). Esperar as novas tentativas
+      // (~13 s) ou o formato alternativo não muda nada; avisa na hora com a mensagem de canal sem transmissão.
+      if (data.details === 'manifestLoadError' && data.response && data.response.code === 404) {
+        fail(my, 'hls manifest 404', 'HLS Network Error: manifestLoadError (HTTP 404)', desc.primaryUrl, desc.containerExtension || 'm3u8')
+        error.value = NO_SIGNAL_ERROR
+        return
+      }
+      if (!data.fatal) return
       const reason = `hls ${data.type}/${data.details}`
       let diagDetail = `HLS ${data.type}: ${data.details}`
 

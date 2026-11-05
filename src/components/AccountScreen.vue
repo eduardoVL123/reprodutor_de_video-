@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { PROFILE_COLORS, avatarTextColor } from '@/stores/profileStore'
 import { useLicenseStore } from '@/stores/licenseStore'
-import { isLicenseEnabled, isStoreBuild, plansPageUrl, sendListPageUrl } from '@/services/licenseApi'
+import { isLicenseEnabled, isStoreBuild, plansPageUrl, privacyPageUrl, sendListPageUrl } from '@/services/licenseApi'
 import { canExitApp, exitApp, openExternal } from '@/services/platform'
 
 /**
@@ -21,6 +21,7 @@ const licensed = isLicenseEnabled()
 const showExit = canExitApp()
 const profileColor = computed(() => props.profile.color || PROFILE_COLORS[0])
 const siteUrl = computed(() => sendListPageUrl(license.code))
+const privacyUrl = privacyPageUrl()
 const renewUrl = computed(() => (licensed && !isStoreBuild() && license.code ? plansPageUrl(license.code) : ''))
 
 const fmtDate = (ms) => new Date(ms).toLocaleDateString('pt-BR')
@@ -31,7 +32,7 @@ const status = computed(() => {
     case 'activated':
       return { text: 'Ativado', detail: license.activationEndsAt ? `até ${fmtDate(license.activationEndsAt)}` : 'sem data de fim', ok: true }
     case 'partner':
-      return { text: 'Liberado', detail: 'pela sua lista', ok: true }
+      return { text: 'Liberado', detail: '', ok: true }
     case 'blocked':
     case 'suspended':
       return { text: 'Bloqueado', detail: 'ative o aparelho para voltar a assistir', ok: false }
@@ -106,6 +107,13 @@ const status = computed(() => {
             <span>Enviar lista pelo site</span>
           </button>
         </template>
+      </section>
+
+      <section v-if="privacyUrl" class="acc-card mt-6">
+        <button id="acc-privacy" type="button" class="acc-row tv-focusable" @click="openExternal(privacyUrl)">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.4 8.3-8 9-4.6-.7-8-4.5-8-9V6z" /></svg>
+          <span>Política de privacidade</span>
+        </button>
       </section>
 
       <section v-if="showExit" class="acc-card mt-6">

@@ -16,6 +16,8 @@ async function mountHome(states) {
   const { useCatalogStore } = await import('@/stores/catalogStore')
   const catalog = useCatalogStore()
   const refreshSection = vi.spyOn(catalog, 'refreshSection').mockResolvedValue()
+  // Sem carga real em segundo plano: ela lia o cache do banco de teste e mudava estados no meio do teste (instável).
+  vi.spyOn(catalog, 'loadSection').mockResolvedValue()
   Object.keys(states).forEach((s) => Object.assign(catalog.status[s], states[s]))
   const { default: Dashboard } = await import('@/views/Dashboard.vue')
   const wrapper = mount(Dashboard, {
@@ -23,7 +25,7 @@ async function mountHome(states) {
     attachTo: document.body,
   })
   await flushPromises()
-  return { wrapper, refreshSection }
+  return { wrapper, refreshSection, pinia }
 }
 
 const ERROR = { state: 'error', error: 'Falha de conexão com o servidor.' }
@@ -63,14 +65,65 @@ describe('Dashboard — início com a lista que não carregou', () => {
   })
 })
 
+describe('Dashboard — uma seção baixando por vez', () => {
+  it('lista nova: Filmes, Séries e Canais nunca baixam juntos, mesmo com o Início pedido duas vezes', async () => {
+    vi.resetModules()
+    vi.doMock('@/services/platform', () => ({
+      exitApp: vi.fn(),
+      onAppBackground: vi.fn(() => vi.fn()),
+      onAppForeground: vi.fn(() => vi.fn()),
+      onPictureInPictureChange: vi.fn(() => vi.fn()),
+      setPictureInPictureEnabled: vi.fn(async () => {}),
+    }))
+    const { createPinia, setActivePinia } = await import('pinia')
+    const { routerKey } = await import('vue-router')
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const { useCatalogStore } = await import('@/stores/catalogStore')
+    const catalog = useCatalogStore()
+    let running = 0
+    let peak = 0
+    const order = []
+    const pending = []
+    vi.spyOn(catalog, 'loadSection').mockImplementation((s) => {
+      if (catalog.status[s].state !== 'idle') return Promise.resolve()
+      catalog.status[s].state = 'loading'
+      order.push(s)
+      peak = Math.max(peak, ++running)
+      return new Promise((resolve) => pending.push(() => { running--; catalog.status[s].state = 'ready'; resolve() }))
+    })
+    vi.spyOn(catalog, 'getItems').mockImplementation(async (s) => [{ stream_id: 1, name: `Item de ${s}`, section: s }])
+    const { default: Dashboard } = await import('@/views/Dashboard.vue')
+    const wrapper = mount(Dashboard, { global: { plugins: [pinia], provide: { [routerKey]: { replace: vi.fn() } } }, attachTo: document.body })
+    await flushPromises()
+    // Segundo pedido do Início no meio da primeira carga (ex.: troca de perfil/controle parental ao entrar).
+    wrapper.vm.$.setupState.showcaseAfterListChange?.()
+    await flushPromises()
+    expect(wrapper.html()).not.toContain('Item de vod') // nada pronto ainda
+    pending.shift()() // Filmes pronto; Séries ainda baixando
+    await flushPromises()
+    expect(wrapper.html()).toContain('Item de vod') // a fileira aparece sem esperar as outras seções
+    expect(wrapper.html()).not.toContain('Item de series')
+    while (pending.length) {
+      pending.shift()()
+      await flushPromises()
+    }
+
+    expect(peak).toBe(1)
+    expect(order).toEqual(['vod', 'series', 'live'])
+    wrapper.unmount()
+  })
+})
+
 describe('Dashboard — controle parental nos atalhos (auditoria RFC-025, item 9)', () => {
   it('"Continuar assistindo" e "Minha lista" não mostram nem tocam item de categoria bloqueada sem PIN', async () => {
     vi.resetModules()
-    const { wrapper } = await mountHome({})
+    const { wrapper, pinia } = await mountHome({})
     const { useCatalogStore } = await import('@/stores/catalogStore')
     const { usePlayerStore } = await import('@/stores/playerStore')
-    const catalog = useCatalogStore()
-    const player = usePlayerStore()
+    // A Pinia do Dashboard, não a "ativa": sobra assíncrona do teste anterior pode trocar a ativa no meio (instável).
+    const catalog = useCatalogStore(pinia)
+    const player = usePlayerStore(pinia)
     catalog.categories = { ...catalog.categories, vod: [{ category_id: '1', category_name: 'Ação' }, { category_id: '9', category_name: 'Adultos +18' }] }
     const ok = { stream_id: 10, name: 'Filme Livre', section: 'vod', category_id: '1' }
     const locked = { stream_id: 20, name: 'Filme Bloqueado', section: 'vod', category_id: '9' }
@@ -78,7 +131,14 @@ describe('Dashboard — controle parental nos atalhos (auditoria RFC-025, item 9
     await flushPromises()
     player.watchHistory = [locked, ok]
     player.customQueue = [locked, ok]
-    await vi.waitFor(() => expect(wrapper.html()).toContain('Filme Livre'))
+    // Filmes ainda sem categorias (carregando): não dá para saber o que está bloqueado, então nada aparece.
+    catalog.status.vod.state = 'loading'
+    await flushPromises()
+    expect(wrapper.html()).not.toContain('Filme Bloqueado')
+    expect(wrapper.html()).not.toContain('Filme Livre')
+    catalog.status.vod.state = 'ready'
+    await flushPromises()
+    await vi.waitFor(() => expect(wrapper.html()).toContain('Filme Livre'), { timeout: 4000 }) // 1 s padrão falhava com a suíte cheia
     const html = wrapper.html()
     expect(html).not.toContain('Filme Bloqueado')
     const play = vi.spyOn(player, 'playFromCustomQueue').mockResolvedValue(true)

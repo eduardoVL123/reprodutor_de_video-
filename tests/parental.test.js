@@ -117,6 +117,24 @@ describe('catálogo com categorias fora da vista', () => {
     expect(await db.getItems('vod', db.ALL_CATEGORIES, 0, 10)).toHaveLength(6)
   })
 
+  it('item em duas categorias: bloqueado em uma, some também da outra (itens e contagem)', async () => {
+    const db = await import('@/services/catalogDb')
+    const cats = [{ category_id: '1', category_name: 'Ação' }, { category_id: '9', category_name: 'Adultos' }]
+    const streams = [
+      { stream_id: 1, name: 'Ação comum', category_id: '1' },
+      { stream_id: 2, name: 'Duplo', category_id: '1', category_ids: ['1', '9'] },
+    ]
+    await db.saveSection('vod', { categories: cats, streams })
+    db.setHiddenCategories('vod', ['9'])
+
+    expect((await db.getItems('vod', '1', 0, 10)).map((i) => i.stream_id)).toEqual([1])
+    expect((await db.visibleCategoryCounts('vod'))['1']).toBe(1)
+
+    db.setHiddenCategories('vod', [])
+    expect((await db.getItems('vod', '1', 0, 10)).map((i) => i.stream_id)).toEqual([1, 2])
+    expect(await db.visibleCategoryCounts('vod')).toBeNull()
+  })
+
   it('lista nova já chega filtrada: a contagem de "Todos" nunca mostra o adulto, nem por um instante', async () => {
     const db = await import('@/services/catalogDb')
     await db.saveSection('vod', { categories: CATS, streams: STREAMS })

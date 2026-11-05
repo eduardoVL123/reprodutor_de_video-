@@ -12,6 +12,7 @@ import {
   clearCatalog,
   setHiddenCategories,
   visibleCount,
+  visibleCategoryCounts,
 } from '@/services/catalogDb'
 
 // Listas grandes (50.000+ itens) podem demorar bem mais que um login.
@@ -41,6 +42,7 @@ export const useCatalogStore = defineStore('catalog', () => {
   // Controle parental: categorias fora de "Todos" e da busca (escondidas + bloqueadas sem PIN), por seção.
   const hiddenIds = { live: [], vod: [], series: [] }
   const visibleTotals = shallowRef({ live: null, vod: null, series: null }) // null = sem filtro
+  const visibleCounts = shallowRef({ live: null, vod: null, series: null }) // por categoria; null = sem filtro
   // Quem decide o que fica fora (parentalStore). Chamado ao publicar a lista, antes do Início ler os itens:
   // assim nada de uma categoria bloqueada aparece nem por um instante.
   let hiddenResolver = null
@@ -135,7 +137,9 @@ export const useCatalogStore = defineStore('catalog', () => {
   async function refreshVisible(section) {
     setHiddenCategories(section, hiddenIds[section])
     const n = await visibleCount(section)
+    const perCategory = await visibleCategoryCounts(section)
     visibleTotals.value = { ...visibleTotals.value, [section]: n }
+    visibleCounts.value = { ...visibleCounts.value, [section]: perCategory }
   }
 
   /** Aplica as categorias fora da vista (parentalStore). Recalcula a contagem de "Todos". */
@@ -215,7 +219,10 @@ export const useCatalogStore = defineStore('catalog', () => {
 
   // ---------- Leitura em janelas (nunca reativa) ----------
   function countFor(section, categoryId = ALL_CATEGORIES) {
-    if (categoryId !== ALL_CATEGORIES) return counts.value[section][String(categoryId)] || 0
+    if (categoryId !== ALL_CATEGORIES) {
+      const visible = visibleCounts.value[section]
+      return (visible || counts.value[section])[String(categoryId)] || 0
+    }
     const visible = visibleTotals.value[section]
     return visible === null || visible === undefined ? totals.value[section] : visible
   }
@@ -235,6 +242,7 @@ export const useCatalogStore = defineStore('catalog', () => {
     totals.value = { live: 0, vod: 0, series: 0 }
     counts.value = { live: {}, vod: {}, series: {} }
     visibleTotals.value = { live: null, vod: null, series: null }
+    visibleCounts.value = { live: null, vod: null, series: null }
     await clearCatalog()
   }
 

@@ -22,7 +22,8 @@
     "lint": "eslint .",
     "build:tizen": "vite build && node scripts/package-tv.mjs tizen",
     "build:webos": "vite build && node scripts/package-tv.mjs webos",
-    "icons": "node scripts/make-tv-icons.mjs"
+    "icons": "node scripts/make-tv-icons.mjs",
+    "desktop": "vite build && electron desktop/main.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -42,6 +43,7 @@
     "@vitejs/plugin-vue": "^6.0.9",
     "@vue/test-utils": "^2.5.1",
     "autoprefixer": "^10.6.1",
+    "electron": "^45.2.3",
     "eslint": "^9.39.5",
     "eslint-plugin-vue": "^10.11.1",
     "fake-indexeddb": "^6.2.6",

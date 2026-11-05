@@ -289,6 +289,14 @@ describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
     expect(await verify('outra.com')).toBe(false)
   })
 
+  it('aceita a plataforma desktop (app de PC)', async () => {
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 3) })
+    await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey: 'c'.repeat(64), platform: 'desktop', host: 'x.com' }) }), '10.0.0.2')
+    expect((await db.prepare('SELECT platform FROM devices').first()).platform).toBe('desktop')
+  })
+
   it('com nonce do app, a assinatura cobre o nonce (resposta gravada não serve para outra consulta)', async () => {
     const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
     const db = openSqlite(':memory:')

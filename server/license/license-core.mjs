@@ -19,7 +19,7 @@ import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
 export const MAX_BODY_BYTES = 4096
-export const PLATFORMS = ['android', 'tizen', 'webos', 'web']
+export const PLATFORMS = ['android', 'tizen', 'webos', 'desktop', 'web']
 // newDevicesPerDay (por rede) e newDevicesGlobalPerDay (serviço todo): cortam o ataque de criar aparelhos falsos para
 // inflar os ativos de um parceiro.
 export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20, newDevicesGlobalPerDay: 3000 }

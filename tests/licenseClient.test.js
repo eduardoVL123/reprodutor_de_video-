@@ -63,6 +63,22 @@ describe('identidade do aparelho', () => {
     expect(second).toBe(first)
   })
 
+  it('no app de PC usa o MachineGuid do Windows em hash; reinstalar dá a mesma chave', async () => {
+    window.pulseDesktop = { machineId: async () => 'guid-do-windows-123' }
+    try {
+      const { getDeviceKey, devicePlatform } = await import('@/services/deviceIdentity')
+      const key = await getDeviceKey()
+      expect(devicePlatform()).toBe('desktop')
+      expect(key).toMatch(/^[a-f0-9]{64}$/)
+      expect(key).not.toContain('guid-do-windows')
+      vi.resetModules()
+      memory.clear() // reinstalação apaga os dados do app
+      expect(await (await import('@/services/deviceIdentity')).getDeviceKey()).toBe(key)
+    } finally {
+      delete window.pulseDesktop
+    }
+  })
+
   it('no navegador usa um código aleatório guardado no aparelho', async () => {
     const { getDeviceKey, devicePlatform } = await import('@/services/deviceIdentity')
     const key = await getDeviceKey()
@@ -198,6 +214,44 @@ describe('bloqueio (G2: falha aberta)', () => {
     await license.refresh(LIST)
     expect(license.shouldBlock(LIST)).toBe(true)
     expect(license.code).toBe('QDU5NXY7')
+  })
+
+  it('lista de demonstração nunca bloqueia (o revisor da loja reabre o app depois dos 7 dias); outra lista sim', async () => {
+    const DEMO = 'https://demo.test/pulse-demo.m3u'
+    vi.stubEnv('VITE_DEMO_PLAYLIST_URL', DEMO)
+    setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    const demo = { type: 'm3u', baseUrl: 'https://demo.test', resolvedUrl: DEMO }
+    await license.refresh(demo)
+    expect(license.shouldBlock(demo)).toBe(false)
+    const parecida = { type: 'm3u', baseUrl: 'https://demo.test', resolvedUrl: 'https://demo.test/outra.m3u' }
+    await license.refresh(parecida)
+    expect(license.shouldBlock(parecida)).toBe(true)
+  })
+
+  it('troca de lista no meio da consulta: a resposta atrasada da lista antiga não libera a nova', async () => {
+    let releaseA = null
+    const answer = (access) => reply(200, { access, code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })
+    setup({
+      fetchImpl: async (_url, init) => {
+        if (String(init && init.body).includes('lista-a')) {
+          await new Promise((r) => (releaseA = r))
+          return answer('activated')
+        }
+        return answer('blocked')
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    const A = { baseUrl: 'http://lista-a.test' }
+    const B = { baseUrl: 'http://lista-b.test' }
+    const slowA = license.refresh(A)
+    await vi.waitFor(() => expect(releaseA).toBeTypeOf('function'))
+    await license.refresh(B)
+    releaseA()
+    await slowA
+    expect(license.shouldBlock(B)).toBe(true)
   })
 
   it('o bloqueio salvo de uma lista não bloqueia outra lista', async () => {

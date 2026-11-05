@@ -93,6 +93,17 @@ export async function visibleCount(section) {
   return v ? v.list.length : null
 }
 
+/** Itens visíveis por categoria com o filtro atual (null = sem filtro: valem as contagens do catálogo). */
+export async function visibleCategoryCounts(section) {
+  const meta = await getMeta(section)
+  const v = meta ? await visibility(section, meta) : null
+  if (!v) return null
+  const index = await getIndex(section)
+  const counts = {}
+  for (const id of Object.keys(index)) counts[id] = index[id].reduce((n, p) => n + (v.blocked[p] ? 0 : 1), 0)
+  return counts
+}
+
 /** Posições globais fora da vista (para a busca descartar); null = nada escondido. */
 export async function blockedPositions(section) {
   const meta = await getMeta(section)
@@ -308,7 +319,10 @@ export async function getItems(section, categoryId, start, count) {
       for (let p = start; p < end; p++) positions.push(p)
     }
   } else {
-    const list = (await getIndex(section))[String(categoryId)] || []
+    let list = (await getIndex(section))[String(categoryId)] || []
+    // Item em várias categorias (category_ids): bloqueado em uma, some de todas (como em "Todos" e na busca).
+    const v = await visibility(section, meta)
+    if (v) list = list.filter((p) => !v.blocked[p])
     positions = list.slice(start, start + count)
   }
   return readPositions(section, meta, positions)

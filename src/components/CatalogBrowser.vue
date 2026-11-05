@@ -10,7 +10,7 @@ import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
 import PinDialog from '@/components/PinDialog.vue'
 import ParentalModal from '@/components/ParentalModal.vue'
 import { useParentalStore } from '@/stores/parentalStore'
-import { ALL_CATEGORIES } from '@/services/catalogDb'
+import { ALL_CATEGORIES, categoriesOf } from '@/services/catalogDb'
 import { fetchVodInfo, fetchSeriesInfo, normalizeVodInfo } from '@/services/xtreamApi'
 import { pickArtwork } from '@/utils/artwork'
 import { focusFirstIn, registerKeyHandler } from '@/utils/spatialNavigation'
@@ -193,7 +193,7 @@ async function loadCategoryRows() {
   if (isLive.value) {
     // Canal de categoria escondida/bloqueada fica fora dos Favoritos também (auditoria RFC-025, item 9).
     const blocked = new Set(parental.blockedIds('live', catalog.categories.live))
-    const favChannels = player.customQueue.filter((it) => it.section === 'live' && !blocked.has(String(it.category_id)))
+    const favChannels = player.customQueue.filter((it) => it.section === 'live' && !categoriesOf(it).some((id) => blocked.has(id)))
     if (favChannels.length > 0) {
       rows.push({
         category_id: 'favorites',
@@ -462,14 +462,14 @@ onBeforeUnmount(() => {
     <!-- Estado: Carregando / Baixando -->
     <div
       v-if="state.state === 'loading' || state.state === 'idle'"
-      class="flex flex-col items-center justify-center flex-1 gap-6"
+      class="flex flex-col items-center justify-center flex-1 gap-6 phone:px-6"
       role="status"
     >
       <svg class="w-16 h-16 animate-spin text-tv-accent" viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2.5" opacity="0.2" />
         <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" />
       </svg>
-      <p class="text-tv-base text-neutral-300 font-medium">{{ state.step || 'Carregando catálogo...' }}</p>
+      <p class="text-tv-base text-neutral-300 font-medium text-center">{{ state.step || 'Carregando catálogo...' }}</p>
       <div v-if="progressPct > 0" class="w-[30rem] max-w-[80vw] h-2 rounded-full bg-white/10 overflow-hidden">
         <div class="h-full bg-tv-accent" :style="{ width: progressPct + '%' }" />
       </div>
