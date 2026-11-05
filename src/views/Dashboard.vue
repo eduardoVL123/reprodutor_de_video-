@@ -42,7 +42,9 @@ const parental = useParentalStore()
 const blockedBySection = computed(() =>
   Object.fromEntries(['live', 'vod', 'series'].map((s) => [s, new Set(parental.blockedIds(s, catalog.categories[s]))])),
 )
-const allowedByParental = (it) => !categoriesOf(it).some((id) => blockedBySection.value[it.section]?.has(id))
+// Seção ainda sem categorias (carregando ou com erro): não dá para saber o que está bloqueado, então esconde.
+const allowedByParental = (it) =>
+  catalog.status[it.section]?.state === 'ready' && !categoriesOf(it).some((id) => blockedBySection.value[it.section]?.has(id))
 const visibleHistory = computed(() => player.watchHistory.filter(allowedByParental))
 const visibleQueue = computed(() => player.customQueue.filter(allowedByParental))
 const profileStore = useProfileStore()
@@ -252,8 +254,16 @@ function handleHeroInfo() {
   openListModal()
 }
 
-async function loadSectionsInOrder(sections) {
-  for (const section of sections) await catalog.loadSection(section)
+// Fila única: um segundo pedido do Início no meio da carga espera a vez em vez de baixar outra seção junto.
+let sectionQueue = Promise.resolve()
+function loadSectionsInOrder(sections) {
+  const run = sectionQueue.then(async () => {
+    for (const section of sections) {
+      if (catalog.status[section].state === 'idle') await catalog.loadSection(section)
+    }
+  })
+  sectionQueue = run.catch(() => {})
+  return run
 }
 
 /**
@@ -272,10 +282,12 @@ async function loadCatalogShowcase({ reset = false } = {}) {
   }
 
   // Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
-  await loadSectionsInOrder(['vod', 'series', 'live'].filter((s) => catalog.status[s].state === 'idle'))
+  // Sem esperar todas: cada fileira aparece quando a sua seção fica pronta (o watch de status chama de novo).
+  loadSectionsInOrder(['vod', 'series', 'live']).catch(() => {})
+  const ready = (s) => catalog.status[s].state === 'ready'
 
   try {
-    const vodItems = await catalog.getItems('vod', ALL_CATEGORIES, 0, 20)
+    const vodItems = ready('vod') ? await catalog.getItems('vod', ALL_CATEGORIES, 0, 20) : null
     if (!stale() && vodItems && vodItems.length > 0) {
       vodShowcase.value = vodItems.map((item) => ({
         stream_id: item.stream_id,
@@ -290,7 +302,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
   } catch (_) {}
 
   try {
-    const seriesItems = await catalog.getItems('series', ALL_CATEGORIES, 0, 20)
+    const seriesItems = ready('series') ? await catalog.getItems('series', ALL_CATEGORIES, 0, 20) : null
     if (!stale() && seriesItems && seriesItems.length > 0) {
       seriesShowcase.value = seriesItems.map((item) => ({
         stream_id: item.stream_id || item.series_id,
@@ -305,7 +317,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
   } catch (_) {}
 
   try {
-    const liveItems = await catalog.getItems('live', ALL_CATEGORIES, 0, 20)
+    const liveItems = ready('live') ? await catalog.getItems('live', ALL_CATEGORIES, 0, 20) : null
     if (!stale() && liveItems && liveItems.length > 0) {
       liveShowcase.value = liveItems.map((item) => {
         return {
