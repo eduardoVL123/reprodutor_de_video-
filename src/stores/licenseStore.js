@@ -34,6 +34,15 @@ const BLOCKING = ['blocked', 'suspended'] // suspended: o dono bloqueou o aparel
 
 export const listHost = (session) => normalizeHost(session && session.baseUrl)
 
+/**
+ * A lista de demonstração (vídeos livres da Blender) nunca bloqueia: o revisor das lojas reabre o app depois dos 7 dias
+ * de teste e precisa conseguir testar. Só a URL exata do build vale; outra lista no mesmo servidor continua bloqueando.
+ */
+function isDemoSession(session) {
+  const demo = String(import.meta.env.VITE_DEMO_PLAYLIST_URL || '').trim()
+  return !!demo && !!session && session.type === 'm3u' && (session.resolvedUrl === demo || session.baseUrl === demo)
+}
+
 export const useLicenseStore = defineStore('license', () => {
   const code = ref('')
   const access = ref('')
@@ -146,7 +155,7 @@ export const useLicenseStore = defineStore('license', () => {
    * acesso salvo que bloqueia ('blocked'/'suspended'). Antes da primeira resposta, nada bloqueia.
    */
   function blockReason(session) {
-    if (!isLicenseEnabled()) return ''
+    if (!isLicenseEnabled() || isDemoSession(session)) return ''
     const confirmed = checkedAt.value > 0 && host.value === listHost(session)
     if (!offline.value) return confirmed && BLOCKING.includes(access.value) ? access.value : ''
     if (!confirmed) return 'offline'

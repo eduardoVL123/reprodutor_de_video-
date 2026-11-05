@@ -216,6 +216,20 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.code).toBe('QDU5NXY7')
   })
 
+  it('lista de demonstração nunca bloqueia (o revisor da loja reabre o app depois dos 7 dias); outra lista sim', async () => {
+    const DEMO = 'https://demo.test/pulse-demo.m3u'
+    vi.stubEnv('VITE_DEMO_PLAYLIST_URL', DEMO)
+    setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    const demo = { type: 'm3u', baseUrl: 'https://demo.test', resolvedUrl: DEMO }
+    await license.refresh(demo)
+    expect(license.shouldBlock(demo)).toBe(false)
+    const parecida = { type: 'm3u', baseUrl: 'https://demo.test', resolvedUrl: 'https://demo.test/outra.m3u' }
+    await license.refresh(parecida)
+    expect(license.shouldBlock(parecida)).toBe(true)
+  })
+
   it('troca de lista no meio da consulta: a resposta atrasada da lista antiga não libera a nova', async () => {
     let releaseA = null
     const answer = (access) => reply(200, { access, code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })
