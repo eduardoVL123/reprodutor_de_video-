@@ -1,4 +1,4 @@
-# Plano — Pulse Player (só o que falta, atualizado em 2026-11-03)
+# Plano — Pulse Player (só o que falta, atualizado em 2026-11-05)
 
 Meta: **Google Play primeiro**, depois as lojas mais fáceis. Samsung, LG e PC ficam para depois.
 Ordem sugerida de cima para baixo. Passo a passo do Play Console: [`docs/lojas/GOOGLE-PLAY.md`](lojas/GOOGLE-PLAY.md).
@@ -15,19 +15,21 @@ sem nenhuma rota de dados aberta.
 - [x] Auditoria de segurança (código, 2026-11-04): itens 1-4 e 9 corrigidos; 5-8 em `docs/rfc/RFC-025-auditoria-pendencias.md`.
 
 ## 2. Google Play (bloqueia o envio)
-- [ ] Decidir o pagamento: sem venda dentro do app (como está) ou faturamento da Google.
+- [x] Pagamento: **sem venda dentro do app** no envio (decisão de 2026-11-05). Faturamento da Google só depois de
+      aceito na loja, se fizer sentido.
 - [x] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub; AAB 2.1 assinado gerado em 2026-11-04 (`C:devndroidpulse-player-2.1-play.aab`).
 - [x] Variáveis do CI: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_PUBLIC_KEY`, `PULSE_LICENSE_BASE_URL`.
 - [x] `PRIVACY.md` preenchido e publicado em `/privacidade` (2026-11-04).
-- [ ] Lista de demonstração com capas (pôsteres Blender, CC BY) e capturas finais (incluir controle parental e o
-      player tocando no aparelho real).
+- [ ] Lista de demonstração com capas e capturas finais (incluir controle parental e o player tocando no aparelho
+      real). **Direção (2026-11-05):** mostrar usos além de IPTV (hotel, recepção, empresa, escola, igreja, academia);
+      grupos e regras em [`docs/demo/README.md`](demo/README.md).
 - [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
 - [ ] Formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores por 14 dias.
 - [x] `versionCode` 4 / 2.1 (subir de novo a cada envio).
-- [ ] Revisar e juntar o PR #1 (`fix/auditoria` → `main`).
+- [x] PR #1 juntado na `main`. PR #3 (auditoria completa + 2 commits que ficaram de fora) aberto em 2026-11-05.
 
 ## 3. Mercado Pago e serviços no ar
-- [ ] Cartão do aparelho (assinatura anual): o Mercado Pago de teste recusa com 400 "User bad request". O Pix gera o pedido;
+- [ ] (**só quando o dono pedir**) Cartão do aparelho (assinatura anual): o Mercado Pago de teste recusa com 400 "User bad request". O Pix gera o pedido;
       o cartão dos créditos ainda não foi confirmado (ficou "em análise"). Decisão (2026-11-04): fica em teste por enquanto; testar a assinatura com credenciais de produção depois.
 - [ ] Etapa 7 da RFC-020: comprador de teste, rodada local, nomes de estorno, rodada na Cloudflare de teste,
       pontos 🔎, homologação.
@@ -47,4 +49,5 @@ sem nenhuma rota de dados aberta.
       limites e custo do D1/Workers por aparelho ativo, consultas do painel com milhares de aparelhos).
 
 ## 5. Outras lojas (depois)
-- [ ] Samsung, LG e PC (Microsoft Store, RFC-024).
+- [ ] Samsung e LG.
+- [ ] PC (Microsoft Store, RFC-024): em andamento desde 2026-11-05 (etapas 1-3: janela Electron, CORS, integração).
