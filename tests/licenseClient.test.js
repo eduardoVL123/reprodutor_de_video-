@@ -216,6 +216,30 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.code).toBe('QDU5NXY7')
   })
 
+  it('troca de lista no meio da consulta: a resposta atrasada da lista antiga não libera a nova', async () => {
+    let releaseA = null
+    const answer = (access) => reply(200, { access, code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })
+    setup({
+      fetchImpl: async (_url, init) => {
+        if (String(init && init.body).includes('lista-a')) {
+          await new Promise((r) => (releaseA = r))
+          return answer('activated')
+        }
+        return answer('blocked')
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    const A = { baseUrl: 'http://lista-a.test' }
+    const B = { baseUrl: 'http://lista-b.test' }
+    const slowA = license.refresh(A)
+    await vi.waitFor(() => expect(releaseA).toBeTypeOf('function'))
+    await license.refresh(B)
+    releaseA()
+    await slowA
+    expect(license.shouldBlock(B)).toBe(true)
+  })
+
   it('o bloqueio salvo de uma lista não bloqueia outra lista', async () => {
     setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
     const { useLicenseStore } = await import('@/stores/licenseStore')

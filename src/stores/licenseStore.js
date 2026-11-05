@@ -47,6 +47,7 @@ export const useLicenseStore = defineStore('license', () => {
   const offline = ref(false)
   let loaded = false
   let entryTimer = null
+  let refreshSeq = 0 // só a consulta mais nova grava: a resposta atrasada de outra lista não libera a atual
 
   /** Estado salvo só vale se a assinatura conferir para ESTE aparelho (editar o armazenamento não libera nada). */
   async function load() {
@@ -103,6 +104,7 @@ export const useLicenseStore = defineStore('license', () => {
   /** Pergunta ao serviço sobre a lista da sessão; em falha mantém o que estava salvo. */
   async function refresh(session) {
     if (!isLicenseEnabled() || !session) return
+    const my = ++refreshSeq
     await load()
     const now = Date.now()
     if (now > lastSeen.value) {
@@ -117,6 +119,7 @@ export const useLicenseStore = defineStore('license', () => {
       const r = await checkAccess({ ...id, nonce })
       // Resposta sem a assinatura do servidor (proxy, hosts falso, resposta antiga repetida) vale como fora do ar.
       if (!(await verifyLicense({ ...r, nonce }, id))) throw new Error('resposta sem assinatura válida')
+      if (my !== refreshSeq) return
       const state = {
         code: r.code,
         access: r.access,
@@ -132,6 +135,7 @@ export const useLicenseStore = defineStore('license', () => {
       offline.value = false
       await storage.set(STATE_KEY, state)
     } catch (err) {
+      if (my !== refreshSeq) return
       offline.value = true
       console.warn('[licença] Serviço indisponível; usando o último estado salvo:', err && err.message)
     }
