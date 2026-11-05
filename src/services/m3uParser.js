@@ -109,7 +109,8 @@ export async function parseM3u(text) {
 
         const catMap = isVod ? vodCategoryMap : liveCategoryMap
         if (!catMap.has(groupTitle)) {
-          catMap.set(groupTitle, String(catMap.size + 1))
+          // Pelo nome, não pela ordem: o fornecedor reordenar a lista não pode mover o bloqueio do controle parental.
+          catMap.set(groupTitle, `g_${hashText(groupTitle)}`)
         }
         const categoryId = catMap.get(groupTitle)
 
