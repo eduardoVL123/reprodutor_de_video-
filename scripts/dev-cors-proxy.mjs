@@ -82,7 +82,8 @@ export function proxyHandler(req, res) {
   }
   // Uma página de outro site aberta neste navegador também chega por loopback: só a página de dev pode usar o proxy.
   const origin = req.headers && req.headers.origin
-  if (origin && !LOCAL_ORIGIN.test(origin)) {
+  // <img src="localhost:5173/__proxy__?..."> de outro site vem SEM Origin; o navegador marca como cross-site.
+  if ((origin && !LOCAL_ORIGIN.test(origin)) || (req.headers && req.headers['sec-fetch-site'] === 'cross-site')) {
     sendProxyError(res, 403, 'Proxy: origem não permitida.')
     return
   }

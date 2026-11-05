@@ -303,6 +303,18 @@ describe('pair-core: ciclo de vida de sessões e endpoints da API', () => {
     const resLiberado = await parseResponse(await core.handleApi(reqLiberado, '192.168.1.10'))
     expect(resLiberado.status).toBe(201)
   })
+
+  it('erros de código do celular no mesmo IP (CGNAT) não travam o polling da TV', async () => {
+    const core = createPairCore({ now: () => 1_000_000 })
+    const ip = '177.10.0.1'
+    const created = await parseResponse(await core.handleApi(makeRequest('http://localhost/v1/sessions', { method: 'POST', body: { pub: PUB } }), ip))
+    const { code, secret } = created.json
+    for (let i = 0; i < 25; i++) {
+      await core.handleApi(makeRequest('http://localhost/v1/sessions/ZZZZ22/payload', { method: 'POST', body: { box: BOX } }), ip)
+    }
+    const poll = await parseResponse(await core.handleApi(makeRequest(`http://localhost/v1/sessions/${code}/payload`, { secret }), ip))
+    expect(poll.status).toBe(204)
+  })
 })
 
 describe('networkKey (limites por rede)', () => {
