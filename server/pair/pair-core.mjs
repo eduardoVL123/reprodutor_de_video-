@@ -272,8 +272,8 @@ export function createPairCore(options = {}) {
     return null
   }
 
-  function notFound(ip) {
-    limiter.add('miss', ip)
+  function notFound(ip, bucket = 'miss') {
+    limiter.add(bucket, ip)
     return fail(404, 'Código não encontrado ou expirado.')
   }
 
@@ -330,18 +330,19 @@ export function createPairCore(options = {}) {
   }
 
   function collectPayload(request, code, ip) {
-    const missWait = limiter.retryAfter('miss', ip, limits.miss)
+    // Balde próprio da TV: erros de código do celular (vizinho no mesmo IP de CGNAT) não travam o polling da TV.
+    const missWait = limiter.retryAfter('tvMiss', ip, limits.miss)
     if (missWait) return fail(429, 'Muitas tentativas. Aguarde um minuto.', { 'Retry-After': String(missWait) })
     const rateErr = throttled('poll', ip)
     if (rateErr) return rateErr
 
     // A TV legítima nunca erra o código nem o segredo: 404 e 403 contam no balde de erros (sem oráculo de códigos).
     const s = liveSession(code)
-    if (!s) return notFound(ip)
+    if (!s) return notFound(ip, 'tvMiss')
 
     const clientSecret = request.headers.get('x-pair-secret') || ''
     if (!timingSafeEqualStr(clientSecret, s.secret)) {
-      limiter.add('miss', ip)
+      limiter.add('tvMiss', ip)
       return fail(403, 'Segredo inválido.')
     }
 

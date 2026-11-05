@@ -113,7 +113,7 @@ describe('CatalogBrowser — celular em pé (RFC-023)', () => {
     ['TV/deitado: "Todos" continua em fileiras', false, 0, 1],
   ])('%s', async (_name, portrait, grids, rails) => {
     const { computed } = await import('vue')
-    vi.doMock('@/composables/useFormFactor', () => ({ useFormFactor: () => ({ isPhonePortrait: computed(() => portrait) }) }))
+    vi.doMock('@/composables/useFormFactor', () => ({ useFormFactor: () => ({ layout: computed(() => (portrait ? 'phone-portrait' : 'tv')), isPhonePortrait: computed(() => portrait) }) }))
     wrapper = await setupRows({ section: 'vod', items: [{ stream_id: 1, name: 'Filme' }] })
     expect(document.querySelectorAll('[data-grid-root]')).toHaveLength(grids)
     expect(document.querySelectorAll('[data-focus-row^="rail-"]').length > 0 ? 1 : 0).toBe(rails)

@@ -130,9 +130,11 @@ describe('painel — ações no aparelho', () => {
 
   it('apagar os dados tira o aparelho do sistema; se abrir o app de novo, volta como aparelho novo', async () => {
     await call('POST', `/admin/api/devices/${dev.code}/activate`, {})
+    const key = (await db.prepare('SELECT device_key FROM devices WHERE code = ?').bind(dev.code).first()).device_key
+    await db.prepare("INSERT INTO inbox (device_key, box, created_at, expires_at) VALUES (?, 'lista-cifrada', 1, 2)").bind(key).run()
     expect((await call('DELETE', `/admin/api/devices/${dev.code}`)).status).toBe(200)
     expect((await call('GET', `/admin/api/devices/${dev.code}`)).status).toBe(404)
-    for (const table of ['activations', 'device_events', 'partner_cycle_entries']) {
+    for (const table of ['activations', 'device_events', 'partner_cycle_entries', 'inbox']) {
       expect((await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n).toBe(0)
     }
     const again = await access(1)

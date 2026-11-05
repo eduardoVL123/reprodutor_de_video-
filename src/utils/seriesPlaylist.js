@@ -31,7 +31,7 @@ export function seasonsOf(seriesData) {
 export const episodeTitle = (ep) => ep.title || ep.name || `Episódio ${ep.episode_num}`
 
 /** Itens do player para todos os episódios, temporada após temporada. */
-export function buildSeriesPlaylist({ seriesData, seriesName, seriesId, fallbackImage = '' }) {
+export function buildSeriesPlaylist({ seriesData, seriesName, seriesId, fallbackImage = '', categoryId = '', categoryIds = [] }) {
   return seasonsOf(seriesData).flatMap((season) =>
     episodesOf(seriesData, season.key).map((ep) => ({
       stream_id: ep.id,
@@ -40,6 +40,9 @@ export function buildSeriesPlaylist({ seriesData, seriesName, seriesId, fallback
       container_extension: ep.container_extension || 'mp4',
       section: 'series',
       seriesId,
+      // Categorias da série: sem elas, o episódio no "Continuar assistindo" escapava do controle parental.
+      category_id: categoryId,
+      category_ids: categoryIds,
     })),
   )
 }
@@ -66,6 +69,8 @@ export async function playHistoryItem(item, { player, loadSeries }) {
       seriesName: info.name || seriesNameFromEpisode(item.name) || 'Série',
       seriesId: item.seriesId,
       fallbackImage: info.cover || item.stream_icon || '',
+      categoryId: item.category_id,
+      categoryIds: item.category_ids,
     })
     const startIndex = items.findIndex((it) => String(it.stream_id) === String(item.stream_id))
     if (startIndex >= 0) {

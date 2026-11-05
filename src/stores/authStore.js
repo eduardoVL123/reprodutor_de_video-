@@ -13,6 +13,7 @@ import {
 import { importM3uCatalog, hashText } from '@/services/m3uParser'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
+import { useProfileStore } from '@/stores/profileStore'
 
 const SESSION_KEY = 'auth:session'
 const SAVED_LISTS_KEY = 'auth:savedLists'
@@ -444,6 +445,12 @@ export const useAuthStore = defineStore('auth', () => {
       console.warn('[auth] Falha ao atualizar savedLists após remoção:', err)
     }
     if (wasActive && remaining.length === 0) await logout()
+    // Histórico, fila e escolhas parentais desta lista, em todos os perfis: o link M3U leva a senha da lista.
+    const profileIds = useProfileStore().profiles.map((p) => p.id).concat('default')
+    const keys = profileIds.flatMap((p) =>
+      ['player:customQueue', 'player:watchHistory', 'parental:categories'].map((prefix) => `${prefix}:${p}:${listId}`),
+    )
+    await Promise.all(keys.map((k) => storage.remove(k).catch(() => {})))
     return true
   }
 

@@ -32,9 +32,17 @@ describe('chave da caixa de entrada', () => {
     const store = new Map()
     const first = await loadOrCreateInboxKeys(store)
     const box = await (await pairLib()).seal(first.publicKey, 'ABCD2345', LIST)
-    const again = await loadOrCreateInboxKeys(store)
+    const again = await loadOrCreateInboxKeys(new Map(store)) // app reaberto: lê do storage, não da memória
     expect(again.publicKey).toBe(first.publicKey)
     expect(await again.open(box, 'ABCD2345')).toEqual(LIST)
+  })
+
+  it('duas chamadas ao mesmo tempo (licença e inbox ao abrir o Início) usam o mesmo par', async () => {
+    const { loadOrCreateInboxKeys } = await import('@/services/inboxKeys')
+    const store = new Map()
+    const [a, b] = await Promise.all([loadOrCreateInboxKeys(store), loadOrCreateInboxKeys(store)])
+    expect(a.publicKey).toBe(b.publicKey)
+    expect((await loadOrCreateInboxKeys(new Map(store))).publicKey).toBe(a.publicKey)
   })
 })
 

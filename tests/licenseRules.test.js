@@ -131,4 +131,10 @@ describe('licença — ativação anual (R7)', () => {
   it('com ativação vencida: conta a partir de agora', () => {
     expect(extendActivation(brt(2026, 1, 1), now)).toBe(brt(2027, 4, 10))
   })
+  it('fim de mês não transborda: 31/01 + 1 mês = 28/02; 29/02 + 12 meses = 28/02', () => {
+    const jan31 = Date.UTC(2027, 0, 31, 15)
+    expect(extendActivation(null, jan31, 1)).toBe(Date.UTC(2027, 1, 28, 15))
+    expect(extendActivation(null, Date.UTC(2028, 1, 29, 15), 12)).toBe(Date.UTC(2029, 1, 28, 15))
+    expect(extendActivation(null, Date.UTC(2027, 7, 31, 15), 3)).toBe(Date.UTC(2027, 10, 30, 15))
+  })
 })

@@ -4,11 +4,24 @@ import { fileURLToPath, URL } from 'node:url'
 import { devCorsProxy } from './scripts/dev-cors-proxy.mjs'
 import { tvClassicScript } from './scripts/tv-classic-script.mjs'
 
+/** Build com servidor de licença e sem a chave pública: o app aceitaria qualquer resposta (hosts falso libera tudo). */
+function requireLicenseKey() {
+  return {
+    name: 'require-license-key',
+    apply: 'build',
+    configResolved({ env }) {
+      if (env.VITE_LICENSE_BASE_URL && !env.VITE_LICENSE_PUBLIC_KEY) {
+        throw new Error('VITE_LICENSE_BASE_URL definida sem VITE_LICENSE_PUBLIC_KEY: a assinatura da licença não seria conferida.')
+      }
+    },
+  }
+}
+
 export default defineConfig({
   // Caminhos relativos: obrigatório para empacotar em .wgt (Tizen) e .ipk (webOS),
   // que carregam o app via file:// e não a partir da raiz de um domínio.
   base: './',
-  plugins: [vue(), devCorsProxy(), tvClassicScript()],
+  plugins: [vue(), devCorsProxy(), tvClassicScript(), requireLicenseKey()],
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url)),

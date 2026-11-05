@@ -129,6 +129,14 @@ describe('API — ativar aparelhos com créditos', () => {
     expect((await call('GET', '/api/v1/me', null, reseller.key)).body.credits).toBe(2)
   })
 
+  it('mesma Idempotency-Key para OUTRO aparelho é 409 (não devolve o "ok" do primeiro sem ativar o segundo)', async () => {
+    await activate(codes[0], reseller.key, 'pedido-77')
+    const other = await activate(codes[1], reseller.key, 'pedido-77')
+    expect(other.status).toBe(409)
+    expect((await call('POST', '/v1/access', { deviceKey: `${'d'.repeat(60)}0002`, host: 'x.com' }, null)).body.access).not.toBe('activated')
+    expect((await call('GET', '/api/v1/me', null, reseller.key)).body.credits).toBe(2)
+  })
+
   it('sem Idempotency-Key é recusado (evita débito duplo por repetição)', async () => {
     const res = await handle(
       new Request('http://license.test/api/v1/activations', {
@@ -242,6 +250,13 @@ describe('API — sub-revendas', () => {
     const child = (await api('POST', '/api/v1/sub-resellers', { name: 'Filial' })).body
     await api('POST', `/api/v1/sub-resellers/${child.id}/credits`, { amount: 3 }, parent.key, 'repasse-1')
     await api('POST', `/api/v1/sub-resellers/${child.id}/credits`, { amount: 3 }, parent.key, 'repasse-1')
+    expect((await call('GET', '/api/v1/me', null, child.key)).body.credits).toBe(3)
+  })
+
+  it('mesma Idempotency-Key com outra quantidade é 409, não a resposta do repasse anterior', async () => {
+    const child = (await api('POST', '/api/v1/sub-resellers', { name: 'Filial' })).body
+    await api('POST', `/api/v1/sub-resellers/${child.id}/credits`, { amount: 3 }, parent.key, 'repasse-2')
+    expect((await api('POST', `/api/v1/sub-resellers/${child.id}/credits`, { amount: 5 }, parent.key, 'repasse-2')).status).toBe(409)
     expect((await call('GET', '/api/v1/me', null, child.key)).body.credits).toBe(3)
   })
 

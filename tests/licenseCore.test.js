@@ -288,4 +288,21 @@ describe('assinatura de /v1/access (LICENSE_SIGNING_KEY)', () => {
     expect(await verify('lista.com')).toBe(true)
     expect(await verify('outra.com')).toBe(false)
   })
+
+  it('com nonce do app, a assinatura cobre o nonce (resposta gravada não serve para outra consulta)', async () => {
+    const pair = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify'])
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const handle = createLicenseHandler({ db, now: () => Date.UTC(2026, 10, 3), signingKey: JSON.stringify(await crypto.subtle.exportKey('jwk', pair.privateKey)) })
+    const deviceKey = 'a'.repeat(32)
+    const nonce = 'f'.repeat(32)
+    const res = await handle(new Request('http://license.test/v1/access', { method: 'POST', body: JSON.stringify({ deviceKey, host: 'lista.com', nonce }) }), '10.0.0.1')
+    const body = await res.json()
+    const sig = Uint8Array.from(atob(body.sig.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (body.sig.length % 4)) % 4)), (c) => c.charCodeAt(0))
+    const verify = (n) =>
+      crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, pair.publicKey, sig, new TextEncoder().encode(licenseSignedText({ ...body, deviceKey, host: 'lista.com', nonce: n })))
+    expect(await verify(nonce)).toBe(true)
+    expect(await verify('0'.repeat(32))).toBe(false)
+    expect(await verify(undefined)).toBe(false)
+  })
 })

@@ -71,6 +71,8 @@ describe('tela de ativação', () => {
     expect(wrapper.find('#activation-qr').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/R\$|licenca\.test/)
     expect(wrapper.text()).toContain('fornecedor')
+    expect(wrapper.text()).not.toMatch(/paguei|assinar/i)
+    expect(wrapper.find('#activation-retry').text()).toBe('Verificar ativação')
     expect(wrapper.find('#activation-code').text()).toBe('QDU5NXY7')
     wrapper.unmount()
   })

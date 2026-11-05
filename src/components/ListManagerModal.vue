@@ -6,6 +6,7 @@ import PairPanel from '@/components/PairPanel.vue'
 import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
 import { useLicenseStore } from '@/stores/licenseStore'
+import { isStoreBuild } from '@/services/licenseApi'
 
 /**
  * Gerenciador de listas (servidores/playlists salvos). O pai abre com `open()` (via ref) e é
@@ -233,7 +234,8 @@ defineExpose({ open, close })
            tela ele ficava escondido embaixo do formulário no celular. -->
       <p v-if="license.code" id="device-code" class="mt-4 text-tv-sm text-neutral-300 phone:mt-3">
         Código do aparelho: <span class="font-mono font-bold tracking-widest text-tv-accent">{{ license.code }}</span>
-        <span class="block text-tv-xs text-neutral-500">Use para assinar e em Minha TV no site.</span>
+        <!-- Versão das lojas: nada que leve a pagamento fora da loja (RFC-018 D4) -->
+        <span class="block text-tv-xs text-neutral-500">{{ isStoreBuild() ? 'Use em Minha TV no site.' : 'Use para assinar e em Minha TV no site.' }}</span>
       </p>
 
       <!-- Mensagem de erro -->

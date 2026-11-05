@@ -180,6 +180,8 @@ function playEpisodeList(seasonKey, indexInSeason) {
     seriesName: info.value.name || props.item.name || 'Série',
     seriesId: mediaId.value,
     fallbackImage: info.value.poster,
+    categoryId: props.item.category_id,
+    categoryIds: props.item.category_ids,
   })
   const startIndex = items.findIndex((it) => String(it.stream_id) === String(episode.id))
   player.playPlaylist({ items, startIndex: Math.max(0, startIndex), section: 'series' })
@@ -386,14 +388,10 @@ onBeforeUnmount(() => {
             class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="toggleBookmark"
           >
-            <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <svg v-else class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
+            <svg class="w-4 h-4 shrink-0" :class="isBookmarked ? 'text-tv-accent' : ''" viewBox="0 0 24 24" :fill="isBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
+              </svg>
+            <span>{{ isBookmarked ? 'Nos favoritos' : 'Favoritos' }}</span>
           </button>
 
           <button
@@ -460,14 +458,10 @@ onBeforeUnmount(() => {
             class="tv-focusable h-[3.4rem] whitespace-nowrap shrink-0 px-7 rounded-lg tv-btn-glass text-white font-medium text-tv-sm flex items-center gap-3 phone-portrait:flex-1 phone-portrait:justify-center phone-portrait:h-12 phone-portrait:px-3 phone-portrait:rounded-xl phone-portrait:text-[0.9rem]"
             @click="toggleBookmark"
           >
-            <svg v-if="isBookmarked" class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-            <svg v-else class="w-4 h-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-              <line x1="12" y1="5" x2="12" y2="19" />
-              <line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
+            <svg class="w-4 h-4 shrink-0" :class="isBookmarked ? 'text-tv-accent' : ''" viewBox="0 0 24 24" :fill="isBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
+              </svg>
+            <span>{{ isBookmarked ? 'Nos favoritos' : 'Favoritos' }}</span>
           </button>
 
           <button

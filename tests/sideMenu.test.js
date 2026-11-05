@@ -39,7 +39,7 @@ describe('SideMenu — menu inferior só no celular', () => {
     expect(main).not.toMatch(/\b(sm|md|lg|xl):/)
     expect(main).toMatch(/(^|\s)pl-\[7rem\](\s|$)/)
     expect(main).toContain('phone:pl-0')
-    expect(main).toContain('phone:pb-16')
+    expect(main).toContain('phone:pb-[calc(4.6rem+env(safe-area-inset-bottom))]') // barra de baixo em pé e deitado
   })
 })
 

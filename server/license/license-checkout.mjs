@@ -91,13 +91,6 @@ async function hmacHex(secret, message) {
   return Array.from(new Uint8Array(sig), (b) => b.toString(16).padStart(2, '0')).join('')
 }
 
-function sameText(a, b) {
-  if (a.length !== b.length) return false
-  let diff = 0
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i)
-  return diff === 0
-}
-
 /**
  * Assinatura `x-signature` do Mercado Pago: HMAC-SHA256 de `id:<data.id em minúsculas>;request-id:<x-request-id>;ts:<ts>;`
  * (partes ausentes saem do manifesto). Sem janela de `ts`: um reenvio legítimo pode chegar horas depois, e repetir uma
@@ -116,7 +109,7 @@ async function validSignature(request, url, secret) {
   if (dataId) parts.push(`id:${dataId}`)
   if (requestId) parts.push(`request-id:${requestId}`)
   parts.push(`ts:${fields.ts}`)
-  return sameText(await hmacHex(secret, `${parts.join(';')};`), fields.v1.toLowerCase())
+  return timingSafeEqualStr(await hmacHex(secret, `${parts.join(';')};`), fields.v1.toLowerCase())
 }
 
 export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret = '', dbLimits = CHECKOUT_DB_LIMITS }) {
@@ -284,6 +277,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     if (row.kind === 'device_annual') {
       const device = await findDeviceByCode(db, row.device_code)
       if (!device) return null
+      // shortcut: dois pagamentos do MESMO aparelho entregues no mesmo instante (ou um Pix e uma ativação da revenda)
+      // partem do mesmo fim e somam 1 ano só; raro, o dono vê no painel; resolver com o cálculo no SQL se aparecer.
       const endsAt = extendActivation(await activationEndsAt(db, device.device_key), at)
       return [
         db
@@ -391,8 +386,23 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
    * ela é suspensa (active = 0) para o dono resolver, porque ativações feitas não voltam.
    */
   async function reverseOrder(row, reason) {
-    const claim = await db.prepare("UPDATE orders SET status = 'refunded' WHERE id = ? AND status != 'refunded'").bind(row.id).run()
-    if (claim.meta.changes !== 1 || row.status !== 'delivered') return
+    if (row.status === 'refunded') return
+    // Entrega em andamento: erro → webhook 500 → o Mercado Pago reenvia o estorno depois que a entrega terminar.
+    if (row.status === 'delivering') throw new Error(`pedido ${row.id}: estorno chegou durante a entrega`)
+    const claim = await db.prepare("UPDATE orders SET status = 'refunded' WHERE id = ? AND status = ?").bind(row.id, row.status).run()
+    if (claim.meta.changes !== 1) throw new Error(`pedido ${row.id}: mudou de estado durante o estorno`)
+    if (row.status !== 'delivered') return
+    try {
+      await undoDelivery(row)
+    } catch (err) {
+      // Sem desfazer, o pedido não pode ficar 'refunded': o reenvio do webhook tenta de novo com o saldo atual.
+      await db.prepare("UPDATE orders SET status = ? WHERE id = ? AND status = 'refunded'").bind(row.status, row.id).run()
+      throw err
+    }
+    console.warn(`[checkout] pedido ${row.id}: estornado no Mercado Pago (${reason}); entrega desfeita, confira no painel`)
+  }
+
+  async function undoDelivery(row) {
     const at = now()
     if (row.kind === 'device_annual') {
       const revoked = (await db.prepare("SELECT id, device_key FROM activations WHERE note = ? AND source = 'purchase' AND revoked_at IS NULL").bind(row.id).all()).results
@@ -426,7 +436,6 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
           : []),
       ])
     }
-    console.warn(`[checkout] pedido ${row.id}: estornado no Mercado Pago (${reason}); entrega desfeita, confira no painel`)
   }
 
   /** Resultado da entrega para quem tem o viewSecret; a chave do revendedor novo aparece até `keyUntil` e depois some. */
@@ -448,7 +457,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     // Mercado Pago, no máximo uma vez por minuto por pedido, e retoma a entrega.
     const resumable = row.status === 'pending' || row.status === 'paid' || (row.status === 'delivering' && at - (row.checked_at || 0) >= STUCK_DELIVERY_MS)
     if (resumable && mp && row.mp_order_id && at - (row.checked_at || row.created_at) >= RECHECK_MS) {
-      await db.prepare('UPDATE orders SET checked_at = ? WHERE id = ?').bind(at, orderId).run()
+      // 'delivering' não: renovar checked_at aqui fecharia a própria trava de 5 min que a entrega usa para retomar.
+      if (row.status !== 'delivering') await db.prepare('UPDATE orders SET checked_at = ? WHERE id = ?').bind(at, orderId).run()
       try {
         await confirm(row.mp_order_id)
       } catch (err) {
@@ -513,7 +523,10 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     if (!sub || !charge.payment) return
     if (REVERSED.includes(charge.payment.status)) return reverseInstallment(sub, charge)
     if (charge.payment.status !== 'approved') return
-    if (Math.round(Number(charge.transaction_amount) * 100) !== DEVICE_ANNUAL_PRICE || charge.currency_id !== 'BRL') {
+    // Valor contratado na adesão (o pedido tem o mesmo id da assinatura), não o preço de hoje da tabela.
+    const signup = await db.prepare('SELECT amount_cents FROM orders WHERE id = ?').bind(sub.id).first()
+    const expected = signup ? signup.amount_cents : DEVICE_ANNUAL_PRICE
+    if (Math.round(Number(charge.transaction_amount) * 100) !== expected || charge.currency_id !== 'BRL') {
       console.warn(`[checkout] assinatura ${sub.id}: valor ou moeda da parcela não conferem; não entregue`)
       return
     }

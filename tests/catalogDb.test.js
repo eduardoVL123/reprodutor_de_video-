@@ -130,4 +130,18 @@ describe('catalogDb — falhas do IndexedDB (auditoria)', () => {
 
     expect((await getItems('vod', ALL_CATEGORIES, 0, 2)).map((i) => i.stream_id)).toEqual([1, 2])
   })
+
+  it('lista trocada no fim da gravação: a meta da lista velha não volta ao disco depois da limpeza', async () => {
+    const { saveSection, getMeta, clearCatalog } = await import('@/services/catalogDb')
+    let cleared
+    await saveSection('live', {
+      categories: [{ category_id: '1', category_name: 'Velha' }],
+      streams: streams(10),
+      onProgress: (p) => {
+        if (p === 1) cleared = clearCatalog() // troca de lista entre o último bloco e a meta
+      },
+    })
+    await cleared
+    expect(await getMeta('live')).toBeNull()
+  })
 })

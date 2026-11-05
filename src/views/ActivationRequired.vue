@@ -115,7 +115,7 @@ onBeforeUnmount(() => {
             Ver planos e ativar
           </button>
           <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="$emit('retry')">
-            {{ offline ? 'Tentar de novo' : 'Já paguei, verificar' }}
+            {{ offline ? 'Tentar de novo' : storeBuild ? 'Verificar ativação' : 'Já paguei, verificar' }}
           </button>
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">
             Usar outra lista

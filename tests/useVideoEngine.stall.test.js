@@ -102,7 +102,8 @@ describe('useVideoEngine — canal ou vídeo que nunca começa', () => {
 
     await vi.advanceTimersByTimeAsync(29000) // nada chega: o tempo nunca sai do zero
 
-    expect(engine.error.value).not.toBe('')
+    const { NO_SIGNAL_ERROR } = await import('@/composables/useVideoEngine')
+    expect(engine.error.value).toBe(NO_SIGNAL_ERROR) // zero bytes: canal sem transmissão, não "verifique sua conexão"
     engine.destroyEngine()
   })
 })
@@ -128,6 +129,8 @@ describe('useVideoEngine — linha do tempo no erro (diagnóstico do celular)', 
     expect(detail).toMatch(/progress×2 \(último 3s\)/)
     expect(detail).toMatch(/alternativo \d+s/)
     expect(detail).toMatch(/fim \d+s readyState=\d networkState=\d/)
+    const { PLAYBACK_ERROR } = await import('@/composables/useVideoEngine')
+    expect(engine.error.value).toBe(PLAYBACK_ERROR) // chegaram dados: não é "canal sem transmissão"
     engine.destroyEngine()
   })
 })

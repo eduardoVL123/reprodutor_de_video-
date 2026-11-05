@@ -63,6 +63,17 @@ describe('proxy anti-CORS de desenvolvimento', () => {
     expect(res.writeHead).toHaveBeenCalledWith(403, expect.any(Object))
   })
 
+  it('recusa <img> de outro site (sem Origin, mas marcado cross-site pelo navegador)', async () => {
+    const { proxyHandler } = await import('../scripts/dev-cors-proxy.mjs')
+    const res = { headersSent: false, writeHead: vi.fn(), end: vi.fn(), on: vi.fn() }
+    const headers = { host: 'localhost:5173', 'sec-fetch-site': 'cross-site' }
+    const req = { method: 'GET', url: '/__proxy__?url=http%3A%2F%2F192.168.0.1%2F', headers, socket: { remoteAddress: '127.0.0.1' } }
+
+    proxyHandler(req, res)
+
+    expect(res.writeHead).toHaveBeenCalledWith(403, expect.any(Object))
+  })
+
   it('recusa clientes que não estão na própria máquina', async () => {
     const { proxyHandler } = await import('../scripts/dev-cors-proxy.mjs')
     const res = { headersSent: false, writeHead: vi.fn(), end: vi.fn(), on: vi.fn() }

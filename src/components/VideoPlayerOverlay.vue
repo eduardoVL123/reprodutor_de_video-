@@ -1247,14 +1247,10 @@ onBeforeUnmount(() => {
                 :class="isBookmarked ? 'border-white/40' : ''"
                 @click="toggleBookmark"
               >
-                <svg v-if="isBookmarked" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                <svg v-else class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span>{{ isBookmarked ? 'Na minha lista' : 'Minha lista' }}</span>
+                <svg class="w-4 h-4" :class="isBookmarked ? 'text-tv-accent' : ''" viewBox="0 0 24 24" :fill="isBookmarked ? 'currentColor' : 'none'" stroke="currentColor" stroke-width="2" stroke-linejoin="round">
+                <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
+              </svg>
+                <span>{{ isBookmarked ? 'Nos favoritos' : 'Favoritos' }}</span>
               </button>
             </div>
           </div>

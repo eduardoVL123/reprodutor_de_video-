@@ -210,7 +210,7 @@ function onSelectTab(tab) {
               : 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
           ]"
           :data-focus-active="activeTab === 'favorites' ? 'true' : null"
-          title="Minha lista"
+          title="Favoritos"
           @click="onSelectTab('favorites')"
         >
           <div class="w-8 h-8 flex items-center justify-center shrink-0">
@@ -222,7 +222,7 @@ function onSelectTab(tab) {
             class="phone:hidden ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
             :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
           >
-            Minha lista
+            Favoritos
           </span>
         </button>
       </div>

@@ -6,7 +6,7 @@
  * Todos os horários vêm de now() do servidor (G4).
  */
 import { generateCode, createLimiter, readJsonBody, networkKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
-import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText } from './license-rules.mjs'
+import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText, validNonce } from './license-rules.mjs'
 import { createSigner } from './license-sign.mjs'
 import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry, hitLimit } from './license-db.mjs'
 import { createAdminRoutes } from './license-admin.mjs'
@@ -134,7 +134,7 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
       const result = await access(body, ip)
       const reply = { access: result.access, ...publicState(result, result.at) }
       if (!sign) return json(200, reply)
-      const sig = await sign(licenseSignedText({ ...reply, deviceKey: body.deviceKey, host: normalizeHost(body.host) || '' }))
+      const sig = await sign(licenseSignedText({ ...reply, deviceKey: body.deviceKey, host: normalizeHost(body.host) || '', nonce: validNonce(body.nonce) }))
       return json(200, { ...reply, sig })
     },
     '/v1/entry': async (body, ip) => {
