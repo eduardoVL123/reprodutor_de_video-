@@ -12,7 +12,19 @@ const idb = localforage.createInstance({ name: 'neutral-media-player', storeName
 const defaultStore = { get: (k) => idb.getItem(k), set: (k, v) => idb.setItem(k, v) }
 
 /** @param {{get: Function, set: Function}} store onde guardar o par (padrão: IndexedDB do app) */
-export async function loadOrCreateInboxKeys(store = defaultStore) {
+export function loadOrCreateInboxKeys(store = defaultStore) {
+  // Duas chamadas juntas (licença e inbox ao abrir o Início) criariam dois pares: a lista cifrada para um não abre no outro.
+  if (!pendingByStore.has(store)) {
+    const job = loadOrCreate(store)
+    pendingByStore.set(store, job)
+    job.catch(() => pendingByStore.delete(store)) // falhou: a próxima chamada tenta de novo
+  }
+  return pendingByStore.get(store)
+}
+
+const pendingByStore = new WeakMap()
+
+async function loadOrCreate(store) {
   let pair = await store.get(PAIR_ID)
   if (!pair || !pair.privateKey || !pair.publicKey) {
     pair = await generateEcdhPair()

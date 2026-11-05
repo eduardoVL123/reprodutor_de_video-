@@ -150,7 +150,7 @@ describe('chamadas ao serviço (G3: só chave, plataforma e domínio)', () => {
     const [url, init] = fetchMock.mock.calls[0]
     expect(url).toBe('https://licenca.test/v1/access')
     const body = JSON.parse(init.body)
-    expect(Object.keys(body).sort()).toEqual(['deviceKey', 'host', 'platform', 'pub'])
+    expect(Object.keys(body).sort()).toEqual(['deviceKey', 'host', 'nonce', 'platform', 'pub'])
     expect(body.pub).toBe('PUB-DA-TV')
     expect(body.host).toBe('parceiro.com')
     expect(init.body).not.toMatch(/S3nh|joao|get\.php/)
@@ -276,12 +276,33 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.blockReason(LIST)).toBe('offline')
   })
 
+  it('sem serviço: relógio voltado para trás depois de já ter andado não reabre a carência (TV "congelada")', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.UTC(2026, 9, 1)
+    vi.setSystemTime(start)
+    let up = true
+    setup({
+      fetchImpl: async () => {
+        if (!up) throw new TypeError('Failed to fetch')
+        return reply(200, { access: 'trial', code: 'QDU5NXY7', trialEndsAt: start + 30 * DAY, activationEndsAt: null, serverTime: start })
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    up = false
+    vi.setSystemTime(start + 6 * DAY)
+    await license.refresh(LIST)
+    vi.setSystemTime(start + DAY) // usuário volta o relógio para dentro da carência
+    expect(license.blockReason(LIST)).toBe('offline')
+  })
+
   it('bloqueio salvo continua valendo sem serviço', async () => {
     let up = true
     setup({
       fetchImpl: async () => {
         if (!up) throw new TypeError('Failed to fetch')
-        return reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })
+        return reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: Date.now() })
       },
     })
     const { useLicenseStore } = await import('@/stores/licenseStore')
@@ -394,7 +415,7 @@ describe('assinatura do servidor (resposta falsa de proxy ou hosts não libera)'
     const { licenseSignedText } = await import('../server/license/license-rules.mjs')
     return async (_url, init) => {
       const body = JSON.parse(init.body)
-      return reply(200, { ...state, sig: await sign(licenseSignedText({ ...state, deviceKey: body.deviceKey, host: body.host })) })
+      return reply(200, { ...state, sig: await sign(licenseSignedText({ ...state, deviceKey: body.deviceKey, host: body.host, nonce: body.nonce })) })
     }
   }
 
@@ -419,6 +440,33 @@ describe('assinatura do servidor (resposta falsa de proxy ou hosts não libera)'
     vi.stubGlobal('fetch', vi.fn(await signedServer(other.sign, ACTIVATED)))
     await license.refresh(NEW)
     expect(license.blockReason(NEW)).toBe('offline')
+  })
+
+  it('resposta assinada gravada e repetida (replay por proxy) não renova a carência: o nonce muda a cada consulta', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.UTC(2026, 9, 1)
+    vi.setSystemTime(start)
+    const { sign, publicText } = await keys()
+    let recorded = null
+    const real = await signedServer(sign, { access: 'trial', code: 'QDU5NXY7', trialEndsAt: start + 30 * DAY, activationEndsAt: null, serverTime: start })
+    setup({
+      fetchImpl: async (url, init) => {
+        if (recorded) return reply(200, recorded)
+        const res = await real(url, init)
+        recorded = await res.json()
+        return reply(200, recorded)
+      },
+    })
+    vi.stubEnv('VITE_LICENSE_PUBLIC_KEY', publicText)
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('')
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    vi.setSystemTime(start + 8 * DAY)
+    await license.refresh(LIST) // servidor bloqueado; o proxy devolve a resposta gravada no 1º dia
+    spy.mockRestore()
+    expect(license.blockReason(LIST)).toBe('offline')
   })
 
   it('estado salvo editado no aparelho (trocar "blocked" por "activated") é descartado ao abrir', async () => {

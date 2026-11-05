@@ -18,6 +18,14 @@ import { normalizeHost } from '../../server/license/license-rules.mjs'
  */
 
 const STATE_KEY = 'license:state'
+const LAST_SEEN_KEY = 'license:lastSeen' // maior horário do relógio já visto: relógio voltado para trás não reabre a carência
+
+/** Aleatório por consulta: o servidor assina junto e uma resposta gravada não serve de novo (replay). */
+function newNonce() {
+  const c = globalThis.crypto
+  if (!c || !c.getRandomValues) return ''
+  return Array.from(c.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('')
+}
 export const ENTRY_DELAY_MS = 10 * 1000
 export const OFFLINE_GRACE_MS = 7 * 24 * 3600 * 1000
 // Relógio da TV pode andar um pouco para trás (acerto de horário); mais que isso conta como manipulação.
@@ -34,6 +42,7 @@ export const useLicenseStore = defineStore('license', () => {
   const activationEndsAt = ref(null)
   const checkedAt = ref(0)
   const serverTime = ref(0)
+  const lastSeen = ref(0)
   // A última consulta da lista aberta falhou (sem rede ou resposta não assinada): vale a carência.
   const offline = ref(false)
   let loaded = false
@@ -44,6 +53,7 @@ export const useLicenseStore = defineStore('license', () => {
     if (loaded) return
     loaded = true
     try {
+      lastSeen.value = Number(await storage.get(LAST_SEEN_KEY)) || 0
       const saved = await storage.get(STATE_KEY)
       if (saved && typeof saved === 'object' && (await verifyLicense(saved, { deviceKey: await getDeviceKey(), host: saved.host || '' }))) {
         apply(saved)
@@ -57,7 +67,8 @@ export const useLicenseStore = defineStore('license', () => {
     host.value = state.host || ''
     trialEndsAt.value = state.trialEndsAt || 0
     activationEndsAt.value = state.activationEndsAt || null
-    checkedAt.value = state.checkedAt || 0
+    // checkedAt não é assinado: não pode passar da hora do servidor (assinada), senão editar o storage reabre a carência.
+    checkedAt.value = state.serverTime ? Math.min(state.checkedAt || 0, state.serverTime + CLOCK_SKEW_MS) : state.checkedAt || 0
     serverTime.value = state.serverTime || 0
   }
 
@@ -93,13 +104,19 @@ export const useLicenseStore = defineStore('license', () => {
   async function refresh(session) {
     if (!isLicenseEnabled() || !session) return
     await load()
+    const now = Date.now()
+    if (now > lastSeen.value) {
+      lastSeen.value = now
+      storage.set(LAST_SEEN_KEY, now).catch(() => {})
+    }
     // Outra lista: o "sem serviço" da anterior não vale para ela enquanto a consulta não volta.
     if (listHost(session) !== host.value) offline.value = false
     try {
       const id = await identity(session)
-      const r = await checkAccess(id)
-      // Resposta sem a assinatura do servidor (proxy, hosts falso) vale como serviço fora do ar.
-      if (!(await verifyLicense(r, id))) throw new Error('resposta sem assinatura válida')
+      const nonce = newNonce()
+      const r = await checkAccess({ ...id, nonce })
+      // Resposta sem a assinatura do servidor (proxy, hosts falso, resposta antiga repetida) vale como fora do ar.
+      if (!(await verifyLicense({ ...r, nonce }, id))) throw new Error('resposta sem assinatura válida')
       const state = {
         code: r.code,
         access: r.access,
@@ -108,6 +125,7 @@ export const useLicenseStore = defineStore('license', () => {
         activationEndsAt: r.activationEndsAt,
         serverTime: r.serverTime,
         sig: r.sig,
+        nonce,
         checkedAt: Date.now(),
       }
       apply(state)
@@ -128,7 +146,9 @@ export const useLicenseStore = defineStore('license', () => {
     const confirmed = checkedAt.value > 0 && host.value === listHost(session)
     if (!offline.value) return confirmed && BLOCKING.includes(access.value) ? access.value : ''
     if (!confirmed) return 'offline'
-    const elapsed = Date.now() - checkedAt.value
+    const now = Date.now()
+    if (now < lastSeen.value - CLOCK_SKEW_MS) return 'offline' // relógio voltado para trás depois de já ter andado
+    const elapsed = Math.max(now, lastSeen.value) - checkedAt.value
     if (elapsed < -CLOCK_SKEW_MS || elapsed > OFFLINE_GRACE_MS) return 'offline'
     if (BLOCKING.includes(access.value)) return access.value
     // Hora do servidor estimada: o teste ou a ativação podem ter vencido enquanto a TV estava sem o serviço.

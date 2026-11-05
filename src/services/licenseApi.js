@@ -61,7 +61,7 @@ async function post(path, body) {
 
 /** @returns {Promise<{access: 'trial'|'partner'|'activated'|'blocked', code: string, trialEndsAt: number, activationEndsAt: number|null}>} */
 // pub: chave pública da caixa de entrada (RFC-021); sem cifra no aparelho vai sem ela.
-export const checkAccess = ({ deviceKey, platform, host, pub }) => post('/v1/access', { deviceKey, platform, host, pub })
+export const checkAccess = ({ deviceKey, platform, host, pub, nonce }) => post('/v1/access', { deviceKey, platform, host, pub, nonce })
 
 export const sendEntry = ({ deviceKey, platform, host }) => post('/v1/entry', { deviceKey, platform, host })
 
