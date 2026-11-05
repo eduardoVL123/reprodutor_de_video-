@@ -9,6 +9,10 @@ import { canUseDevProxy, devProxyUrl, maskSecrets } from '@/services/netEnv'
 export const PLAYBACK_ERROR =
   'Não foi possível reproduzir esta mídia no momento. Verifique sua conexão ou tente outro item.'
 
+// Servidor não mandou nenhum byte: típico de canal de evento fora do horário do jogo.
+export const NO_SIGNAL_ERROR =
+  'Este canal não está transmitindo agora. Ele pode estar fora do ar ou só abrir no horário do evento. Tente mais tarde ou escolha outro canal.'
+
 /**
  * Configuração otimizada para IPTV Xtream Codes em Smart TVs e Android TV (RFC-009).
  */
@@ -462,9 +466,11 @@ export function useVideoEngine() {
     console.warn('[player] Reprodução falhou:', reason, detail)
     const summary = timelineSummary() // antes do teardown, que zera o estado do <video>
     const eng =engineType.value || (detail && detail.indexOf('HLS') !== -1 ? 'hls' : 'native') // antes do teardown, que zera engineType
+    // Só o nativo conta 'progress' de forma confiável (com MSE/hls.js o evento é irregular).
+    const noSignal = eng === 'native' && !hasProgressed && progressCount === 0
     token++
     teardownMedia()
-    error.value = PLAYBACK_ERROR
+    error.value = noSignal ? NO_SIGNAL_ERROR : PLAYBACK_ERROR
     const format = ext || 'mídia'
     const masked = triedUrl ? maskSecrets(triedUrl) : '-'
     const before = usingFallback && fallbackCause ? ` | Formato principal: ${fallbackCause}` : ''
