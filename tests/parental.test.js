@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 
 /** Controle parental e categorias escondidas (plano, itens 1 e 3). */
@@ -33,6 +33,44 @@ describe('parentalStore', () => {
     expect(parental.isLocked('vod', CATS[1])).toBe(false)
     expect(parental.blockedIds('vod', CATS)).toEqual([])
     expect(await parental.checkPin('0000')).toBe(false)
+  })
+
+  it('escolha de uma lista não vale para a categoria de mesmo id em outra lista; desbloqueio some ao trocar', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const parental = useParentalStore()
+    await parental.load('p-lista', 'A')
+    await parental.setStatus('vod', CATS[2], 'visible') // "3" = Esportes na lista A
+    await parental.unlock('vod', CATS[1], '2580')
+    await parental.load('p-lista', 'B')
+    expect(parental.statusOf('vod', { category_id: '3', category_name: 'XXX Adultos' })).toBe('locked') // "3" na lista B
+    expect(parental.isLocked('vod', CATS[1])).toBe(true)
+    await parental.load('p-lista', 'A')
+    expect(parental.statusOf('vod', CATS[2])).toBe('visible')
+  })
+
+  it('5 PINs errados: espera 30 s, e nem o certo abre nesse tempo', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const parental = useParentalStore()
+    await parental.load('p-trava')
+    await parental.checkPin('2580') // cria
+    for (let i = 0; i < 5; i++) expect(await parental.checkPin('1111')).toBe(false)
+    expect(await parental.checkPin('2580')).toBe(false)
+    expect(parental.pinError()).toMatch(/Espere \d+ s/)
+    const now = Date.now()
+    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 31e3)
+    expect(await parental.checkPin('2580')).toBe(true)
+    clock.mockRestore()
+  })
+
+  it('storage falhou ao ler: não aceita qualquer PIN nem sobrescreve o PIN salvo', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const { storage } = await import('@/services/storage')
+    const parental = useParentalStore()
+    const get = vi.spyOn(storage, 'get').mockRejectedValue(new Error('IndexedDB fora'))
+    await parental.load('p-erro')
+    get.mockRestore()
+    expect(parental.needsPin()).toBe(false)
+    expect(await parental.unlock('vod', CATS[1], '9999')).toBe(false)
   })
 
   it('trocar o PIN: precisa do atual, e o novo passa a valer', async () => {

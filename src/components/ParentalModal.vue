@@ -29,7 +29,7 @@ const defaultPinHint = computed(() =>
 )
 
 async function enterList(pin) {
-  if (!(await parental.checkPin(pin))) return 'PIN incorreto.'
+  if (!(await parental.checkPin(pin))) return parental.pinError()
   step.value = 'list'
   nextTick(() => {
     popScope = pushFocusScope(rootEl.value)
@@ -39,7 +39,7 @@ async function enterList(pin) {
 }
 
 async function keepCurrent(pin) {
-  if (!(await parental.checkPin(pin))) return 'PIN incorreto.'
+  if (!(await parental.checkPin(pin))) return parental.pinError()
   currentPin.value = pin
   step.value = 'pin-new'
   return true

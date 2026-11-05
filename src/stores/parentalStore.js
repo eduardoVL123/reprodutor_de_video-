@@ -13,7 +13,11 @@ import { storage } from '@/services/storage'
 
 const PIN_KEY = 'parental:pin'
 export const PIN_PATTERN = /^\d{4,8}$/
-const settingsKey = (profileId) => `parental:categories:${profileId || 'default'}`
+// Por perfil E por lista: o id de categoria só vale dentro da lista (na M3U é a posição do grupo).
+const settingsKey = (profileId, listId) => `parental:categories:${profileId || 'default'}:${listId || 'none'}`
+const UNREADABLE = '!' // nenhum hash é igual: com o storage falhando, nada abre e o PIN salvo não é sobrescrito
+const MAX_PIN_FAILS = 5
+const PIN_LOCK_MS = 30e3
 // Nomes de categoria que entram bloqueados por padrão (listas costumam usar estes termos para conteúdo adulto).
 export const ADULT_NAME = /adult|xxx|\+\s?18|18\s?\+|porn|er[oó]tic|sexy|playboy/i
 const SECTIONS = ['live', 'vod', 'series']
@@ -32,19 +36,26 @@ export const useParentalStore = defineStore('parental', () => {
   const settings = shallowRef(emptySettings())
   const pinHash = ref('')
   const unlocked = ref(new Set()) // `${section}:${id}` desbloqueadas nesta abertura do app
-  let profileId = ''
+  let key = settingsKey()
+  let loadSeq = 0
+  let pinFails = 0
+  let pinLockedUntil = 0
 
-  async function load(id) {
-    profileId = id || 'default'
+  async function load(profileId, listId) {
+    const seq = ++loadSeq
+    key = settingsKey(profileId, listId)
+    unlocked.value = new Set() // desbloqueio do pai não passa para outro perfil nem outra lista
+    settings.value = emptySettings()
     try {
-      const saved = await storage.get(settingsKey(profileId))
+      const saved = await storage.get(key)
+      const savedPin = await storage.get(PIN_KEY)
+      if (seq !== loadSeq) return // troca rápida: a leitura velha não sobrescreve a nova
       const next = emptySettings()
       if (saved && typeof saved === 'object') SECTIONS.forEach((s) => Object.assign(next[s], saved[s] || {}))
       settings.value = next
-      const savedPin = await storage.get(PIN_KEY)
       pinHash.value = typeof savedPin === 'string' && savedPin ? savedPin : ''
     } catch (_) {
-      settings.value = emptySettings()
+      if (seq === loadSeq) pinHash.value = UNREADABLE
     }
   }
 
@@ -70,7 +81,7 @@ export const useParentalStore = defineStore('parental', () => {
   async function setStatus(section, category, status) {
     const next = { ...settings.value, [section]: { ...settings.value[section], [String(category.category_id)]: status } }
     settings.value = next
-    await storage.set(settingsKey(profileId), next).catch((err) => console.warn('[parental] Falha ao salvar:', err))
+    await storage.set(key, next).catch((err) => console.warn('[parental] Falha ao salvar:', err))
   }
 
   /** Ainda não há PIN: o primeiro que o usuário digitar vira o PIN (não existe PIN de fábrica). */
@@ -86,13 +97,28 @@ export const useParentalStore = defineStore('parental', () => {
    * @returns {Promise<boolean>}
    */
   async function checkPin(pin) {
-    if (!PIN_PATTERN.test(String(pin || ''))) return false
+    if (Date.now() < pinLockedUntil || !PIN_PATTERN.test(String(pin || ''))) return false
     if (needsPin()) {
       await savePin(pin)
       return true
     }
-    return (await hashPin(pin)) === pinHash.value
+    if ((await hashPin(pin)) === pinHash.value) {
+      pinFails = 0
+      return true
+    }
+    // Só 10 mil PINs de 4 dígitos: depois de 5 erros, espera 30 s (pelo controle, testar todos leva dias).
+    if (++pinFails >= MAX_PIN_FAILS) {
+      pinFails = 0
+      pinLockedUntil = Date.now() + PIN_LOCK_MS
+    }
+    return false
   }
+
+  /** Mensagem para PIN recusado: em espera depois de muitos erros, ou só incorreto. */
+  const pinError = () =>
+    Date.now() < pinLockedUntil
+      ? `Muitas tentativas. Espere ${Math.ceil((pinLockedUntil - Date.now()) / 1000)} s.`
+      : 'PIN incorreto.'
 
   /** @returns {Promise<boolean>} PIN certo: a categoria abre até fechar o app. */
   async function unlock(section, category, pin) {
@@ -103,11 +129,11 @@ export const useParentalStore = defineStore('parental', () => {
 
   /** @returns {Promise<string>} '' se trocou; senão o motivo. */
   async function changePin(current, next) {
-    if (!(await checkPin(current))) return 'PIN atual incorreto.'
+    if (!(await checkPin(current))) return Date.now() < pinLockedUntil ? pinError() : 'PIN atual incorreto.'
     if (!PIN_PATTERN.test(String(next || ''))) return 'O novo PIN precisa ter de 4 a 8 números.'
     await savePin(next)
     return ''
   }
 
-  return { settings, unlocked, load, statusOf, isLocked, blockedIds, setStatus, checkPin, unlock, changePin, needsPin }
+  return { settings, unlocked, load, statusOf, isLocked, blockedIds, setStatus, checkPin, unlock, changePin, needsPin, pinError }
 })

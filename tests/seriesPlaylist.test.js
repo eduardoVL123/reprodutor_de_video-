@@ -32,10 +32,21 @@ describe('seriesPlaylist — fila da série inteira', () => {
       container_extension: 'mp4',
       section: 'series',
       seriesId: 9,
+      category_id: '',
+      category_ids: [],
     })
     expect(items[1].name).toBe('Maré - T1:E2 - Episódio 2')
     expect(items[1].stream_icon).toBe('http://srv.test/poster.jpg')
     expect(items[2].container_extension).toBe('mkv')
+  })
+
+  it('episódio leva as categorias da série: o controle parental do Início consegue bloquear', async () => {
+    const { buildSeriesPlaylist } = await import('@/utils/seriesPlaylist')
+    const { toPlainItem } = await import('@/stores/playerStore')
+    const { categoriesOf } = await import('@/services/catalogDb')
+
+    const [ep] = buildSeriesPlaylist({ seriesData: SERIES_DATA, seriesName: 'X', seriesId: 9, categoryId: '7', categoryIds: ['8'] })
+    expect(categoriesOf(toPlainItem(ep, 'series'))).toEqual(['7', '8']) // sobrevive ao histórico salvo
   })
 })
 

@@ -2,6 +2,7 @@ import { watch } from 'vue'
 import { useParentalStore } from '@/stores/parentalStore'
 import { useProfileStore } from '@/stores/profileStore'
 import { useCatalogStore } from '@/stores/catalogStore'
+import { useAuthStore } from '@/stores/authStore'
 
 const SECTIONS = ['live', 'vod', 'series']
 
@@ -14,9 +15,14 @@ export function useParentalFilter(onChange) {
   const parental = useParentalStore()
   const profiles = useProfileStore()
   const catalog = useCatalogStore()
+  const auth = useAuthStore()
 
   catalog.setHiddenResolver((section, categories) => parental.blockedIds(section, categories))
-  watch(() => profiles.activeProfileId, (id) => parental.load(id), { immediate: true })
+  watch(
+    () => [profiles.activeProfileId, auth.session && auth.session.id],
+    ([profileId, listId]) => parental.load(profileId, listId),
+    { immediate: true },
+  )
   watch(
     () => [parental.settings, parental.unlocked],
     async () => {

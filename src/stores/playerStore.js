@@ -1,6 +1,7 @@
 import { ref, shallowRef, computed, watch, nextTick } from 'vue'
 import { defineStore } from 'pinia'
 import { storage } from '@/services/storage'
+import { encryptSecret, decryptSecret } from '@/services/crypto'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
 import { useAuthStore } from '@/stores/authStore'
@@ -53,11 +54,26 @@ export function toPlainItem(item, section) {
     stream_icon: item.stream_icon ? String(item.stream_icon) : (item.cover ? String(item.cover) : ''),
     container_extension: item.container_extension ? String(item.container_extension) : '',
     category_id: item.category_id !== undefined && item.category_id !== null ? String(item.category_id) : '',
+    // Categorias extras: o controle parental do Início bloqueia se QUALQUER uma estiver bloqueada (como o catálogo).
+    category_ids: Array.isArray(item.category_ids) ? item.category_ids.map(String) : [],
     section: String(section || item.section || ''),
     directUrl: item.directUrl ? String(item.directUrl) : '',
     // Episódio: id da série a que pertence (um card por série no "Continuar assistindo").
     seriesId: item.seriesId !== undefined && item.seriesId !== null ? String(item.seriesId) : '',
   }
+}
+
+/** Link da M3U pode ter usuário e senha no caminho: no storage vai cifrado como a URL da lista (protectM3u). */
+async function sealDirectUrl(item) {
+  if (!item || !item.directUrl) return item
+  const directUrlEnc = await encryptSecret(item.directUrl)
+  return directUrlEnc ? { ...item, directUrl: '', directUrlEnc } : item // sem WebCrypto: texto, como a lista
+}
+
+async function openDirectUrl(item) {
+  if (!item || !item.directUrlEnc) return item
+  const { directUrlEnc, ...rest } = item
+  return { ...rest, directUrl: (await decryptSecret(directUrlEnc)) || '' }
 }
 
 /** Entrada do "Continuar assistindo" (item plano + progresso), ou `null` se o item for inválido. */
@@ -171,6 +187,10 @@ export const usePlayerStore = defineStore('player', () => {
           }
         }
 
+        if (Array.isArray(finalQueue)) finalQueue = await Promise.all(finalQueue.map(openDirectUrl))
+        if (Array.isArray(finalHistory)) finalHistory = await Promise.all(finalHistory.map(openDirectUrl))
+        if (gen !== generation) return
+
         if (Array.isArray(finalQueue)) {
           customQueue.value = finalQueue
             .map((it) => toPlainItem(it, it && it.section))
@@ -193,16 +213,21 @@ export const usePlayerStore = defineStore('player', () => {
     return hydrating
   }
 
+  const saveSeq = {}
+  /** Grava com o `directUrl` cifrado; se outro save da mesma chave começou depois, ele é que grava. */
+  async function saveSealed(key, items, label) {
+    const seq = (saveSeq[key] = (saveSeq[key] || 0) + 1)
+    const sealed = await Promise.all(items.map(sealDirectUrl))
+    if (seq !== saveSeq[key]) return
+    return storage.set(key, sealed).catch((err) => console.warn(`[player] Falha ao salvar ${label}:`, err))
+  }
+
   function persistQueue() {
-    const plain = customQueue.value.map((it) => toPlainItem(it, it.section))
-    return storage.set(getQueueKey(), plain).catch((err) => console.warn('[player] Falha ao salvar Minha Fila:', err))
+    return saveSealed(getQueueKey(), customQueue.value.map((it) => toPlainItem(it, it.section)), 'Minha Fila')
   }
 
   function persistWatchHistory() {
-    const plain = watchHistory.value.map((it) => toHistoryEntry(it)).filter(Boolean)
-    return storage
-      .set(getHistoryKey(), plain)
-      .catch((err) => console.warn('[player] Falha ao salvar histórico:', err))
+    return saveSealed(getHistoryKey(), watchHistory.value.map((it) => toHistoryEntry(it)).filter(Boolean), 'histórico')
   }
 
   function isInCustomQueue(item, section) {

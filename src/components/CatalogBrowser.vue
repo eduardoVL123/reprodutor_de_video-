@@ -259,7 +259,7 @@ async function loadFeaturedInfo(it) {
 
 async function unlockCategory(pin) {
   const cat = pinFor.value
-  if (!(await parental.unlock(props.section, cat, pin))) return 'PIN incorreto.'
+  if (!(await parental.unlock(props.section, cat, pin))) return parental.pinError()
   pinFor.value = null
   chooseCategory(cat)
   return true

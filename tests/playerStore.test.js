@@ -33,6 +33,22 @@ describe('playerStore — histórico persistido', () => {
 
     expect(player.customQueue.map((q) => q.stream_id)).toEqual([1])
   })
+
+  it('link M3U com usuário e senha não fica em texto no storage, e volta ao reabrir', async () => {
+    const { storage, usePlayerStore } = await setup()
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    const url = 'http://srv.test/joao/s3nh4/55.ts'
+    player.enqueueItem({ stream_id: 55, name: 'Canal', directUrl: url }, 'live')
+    await vi.waitFor(async () => expect(await storage.get('player:customQueue:p1')).toHaveLength(1))
+    expect(JSON.stringify(await storage.get('player:customQueue:p1'))).not.toContain('s3nh4')
+
+    const { createPinia, setActivePinia } = await import('pinia')
+    setActivePinia(createPinia())
+    const reopened = usePlayerStore()
+    await reopened.hydrate(true)
+    expect(reopened.customQueue[0].directUrl).toBe(url)
+  })
 })
 
 describe('playerStore — dados anteriores aos perfis', () => {

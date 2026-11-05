@@ -180,6 +180,8 @@ function playEpisodeList(seasonKey, indexInSeason) {
     seriesName: info.value.name || props.item.name || 'Série',
     seriesId: mediaId.value,
     fallbackImage: info.value.poster,
+    categoryId: props.item.category_id,
+    categoryIds: props.item.category_ids,
   })
   const startIndex = items.findIndex((it) => String(it.stream_id) === String(episode.id))
   player.playPlaylist({ items, startIndex: Math.max(0, startIndex), section: 'series' })

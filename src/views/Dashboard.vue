@@ -20,7 +20,7 @@ import ProfileGate from '@/components/ProfileGate.vue'
 import SearchScreen from '@/components/SearchScreen.vue'
 import AccountScreen from '@/components/AccountScreen.vue'
 import { registerBackHandler, focusFirstIn } from '@/utils/spatialNavigation'
-import { ALL_CATEGORIES } from '@/services/catalogDb'
+import { ALL_CATEGORIES, categoriesOf } from '@/services/catalogDb'
 import { formatTime } from '@/utils/formatTime'
 import { pickArtwork } from '@/utils/artwork'
 import { normalizeVodInfo, fetchVodInfo, fetchSeriesInfo } from '@/services/xtreamApi'
@@ -42,7 +42,7 @@ const parental = useParentalStore()
 const blockedBySection = computed(() =>
   Object.fromEntries(['live', 'vod', 'series'].map((s) => [s, new Set(parental.blockedIds(s, catalog.categories[s]))])),
 )
-const allowedByParental = (it) => !blockedBySection.value[it.section]?.has(String(it.category_id))
+const allowedByParental = (it) => !categoriesOf(it).some((id) => blockedBySection.value[it.section]?.has(id))
 const visibleHistory = computed(() => player.watchHistory.filter(allowedByParental))
 const visibleQueue = computed(() => player.customQueue.filter(allowedByParental))
 const profileStore = useProfileStore()
