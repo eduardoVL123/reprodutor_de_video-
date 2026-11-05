@@ -113,10 +113,16 @@ export async function movements(db, resellerId, { before = null, limit = 50 } = 
   return rows.results.map(publicMovement)
 }
 
-async function replay(db, resellerId, idempotencyKey) {
+/** `same(m)`: a chave repetida é da MESMA operação (tipo e alvo); se não for, 409 em vez da resposta de outra. */
+async function replay(db, resellerId, idempotencyKey, same) {
   if (!idempotencyKey) return null
-  const m = await db.prepare('SELECT response FROM credit_movements WHERE reseller_id = ? AND idempotency_key = ?').bind(resellerId, idempotencyKey).first()
-  return m && m.response ? JSON.parse(m.response) : null
+  const m = await db
+    .prepare('SELECT kind, device_code, counterpart_id, delta, response FROM credit_movements WHERE reseller_id = ? AND idempotency_key = ?')
+    .bind(resellerId, idempotencyKey)
+    .first()
+  if (!m) return null
+  if (!same(m)) throw new ResellerError(409, 'Esta Idempotency-Key já foi usada em outra operação. Use uma chave nova.')
+  return m.response ? JSON.parse(m.response) : null
 }
 
 /**
@@ -126,9 +132,11 @@ async function replay(db, resellerId, idempotencyKey) {
  * (cada uma gasta 1 crédito e o aparelho ganha só 1 ano); raro, o dono estorna; resolver com o cálculo no SQL se aparecer.
  */
 export async function activateDevice(db, { reseller, code, idempotencyKey, now }) {
-  const previous = await replay(db, reseller.id, idempotencyKey)
+  const wanted = String(code || '').toUpperCase()
+  const same = (m) => m.kind === 'activation' && m.device_code === wanted
+  const previous = await replay(db, reseller.id, idempotencyKey, same)
   if (previous) return previous
-  const device = await findDeviceByCode(db, String(code || '').toUpperCase())
+  const device = await findDeviceByCode(db, wanted)
   if (!device) throw new ResellerError(404, 'Código não encontrado. Abra o Pulse Player na TV uma vez e tente de novo.')
   if (device.blocked_at) throw new ResellerError(409, 'Este aparelho está suspenso. Fale com o suporte.')
 
@@ -148,7 +156,7 @@ export async function activateDevice(db, { reseller, code, idempotencyKey, now }
         .bind(reseller.id, device.code, `reseller:${reseller.id}`, now, idempotencyKey || null, JSON.stringify(response)),
     ])
   } catch (err) {
-    const again = await replay(db, reseller.id, idempotencyKey) // a mesma chave chegou junto: vale a resposta dela
+    const again = await replay(db, reseller.id, idempotencyKey, same) // a mesma chave chegou junto: vale a resposta dela
     if (again) return again
     if (/CHECK/i.test(String(err && err.message))) throw new ResellerError(402, 'Saldo de créditos insuficiente.')
     throw err
@@ -160,7 +168,8 @@ export async function activateDevice(db, { reseller, code, idempotencyKey, now }
 /** Repasse para uma revenda direta (R3): sai de um saldo e entra no outro, nunca cria crédito. */
 export async function transferCredits(db, { from, toId, amount, idempotencyKey, now }) {
   validAmount(amount)
-  const previous = await replay(db, from.id, idempotencyKey)
+  const same = (m) => m.kind === 'transfer_out' && String(m.counterpart_id) === String(toId) && m.delta === -amount
+  const previous = await replay(db, from.id, idempotencyKey, same)
   if (previous) return previous
   const child = await db.prepare('SELECT * FROM resellers WHERE id = ? AND parent_id = ?').bind(toId, from.id).first()
   if (!child) throw new ResellerError(404, 'Revenda não encontrada entre as suas.')
@@ -180,7 +189,7 @@ export async function transferCredits(db, { from, toId, amount, idempotencyKey, 
         .bind(child.id, amount, from.id, `reseller:${from.id}`, now),
     ])
   } catch (err) {
-    const again = await replay(db, from.id, idempotencyKey)
+    const again = await replay(db, from.id, idempotencyKey, same)
     if (again) return again
     if (/CHECK/i.test(String(err && err.message))) throw new ResellerError(402, 'Saldo de créditos insuficiente.')
     throw err

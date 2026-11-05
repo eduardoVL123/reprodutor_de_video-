@@ -45,6 +45,10 @@
     return crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2)}`
   }
 
+  // A mesma operação reusa a chave até dar certo: se a rede caiu depois do débito, o novo clique não debita de novo.
+  const pendingKeys = {}
+  const keyFor = (op) => (pendingKeys[op] = pendingKeys[op] || idempotencyKey())
+
   async function api(method, path, body, idem) {
     const headers = { Authorization: `Bearer ${key()}`, 'Content-Type': 'application/json' }
     if (idem) headers['Idempotency-Key'] = idem
@@ -178,7 +182,9 @@
     const btn = $('activate-button')
     btn.disabled = true
     try {
-      const result = await api('POST', 'activations', { code }, idempotencyKey())
+      const op = `activate:${code}`
+      const result = await api('POST', 'activations', { code }, keyFor(op))
+      delete pendingKeys[op]
       say('activate-status', `Ativado até ${fmtDate(result.activationEndsAt)}. Na TV, toque em "Já paguei, verificar".`, true)
       $('activate-code').value = ''
       $('balance').textContent = String(result.credits)
@@ -206,8 +212,12 @@
     e.preventDefault()
     const amount = Number($('transfer-amount').value)
     if (!currentSub) return
+    const btn = $('transfer-button')
+    btn.disabled = true
     try {
-      const result = await api('POST', `sub-resellers/${currentSub.id}/credits`, { amount }, idempotencyKey())
+      const op = `transfer:${currentSub.id}:${amount}`
+      const result = await api('POST', `sub-resellers/${currentSub.id}/credits`, { amount }, keyFor(op))
+      delete pendingKeys[op]
       $('balance').textContent = String(result.credits)
       $('transfer-amount').value = ''
       $('transfer-form').hidden = true
@@ -215,6 +225,8 @@
       await Promise.all([loadSubs(), loadMovements()])
     } catch (err) {
       say('message', err.message)
+    } finally {
+      btn.disabled = false
     }
   }
 

@@ -88,9 +88,14 @@ export function accessFor({ trialEndsAt, activationEndsAt, isPartner, now, block
  * Texto assinado da resposta de acesso (servidor assina, app confere; license-sign.mjs e src/services/licenseSignature.js).
  * Inclui a chave do aparelho e a lista: a resposta de um aparelho ou de uma lista não serve para outro.
  */
-export function licenseSignedText({ deviceKey, host, access, code, trialEndsAt, activationEndsAt, serverTime }) {
-  return JSON.stringify(['pulse-license-v1', deviceKey, host || '', access || '', code || '', trialEndsAt ?? null, activationEndsAt ?? null, serverTime ?? null])
+export function licenseSignedText({ deviceKey, host, access, code, trialEndsAt, activationEndsAt, serverTime, nonce }) {
+  const fields = ['pulse-license-v1', deviceKey, host || '', access || '', code || '', trialEndsAt ?? null, activationEndsAt ?? null, serverTime ?? null]
+  // Nonce do app (aleatório por consulta): uma resposta gravada não serve de novo. Sem nonce = app antigo, texto igual.
+  return JSON.stringify(nonce ? fields.concat(nonce) : fields)
 }
+
+/** Nonce aceito do app: texto curto em base64url (o resto é ignorado e a resposta sai sem ele). */
+export const validNonce = (nonce) => (typeof nonce === 'string' && /^[A-Za-z0-9_-]{16,64}$/.test(nonce) ? nonce : '')
 
 /** Ativo do ciclo (R5): duas entradas com 24 h ou mais de diferença. */
 export function isActive({ firstAt, lastAt }) {
@@ -100,6 +105,11 @@ export function isActive({ firstAt, lastAt }) {
 /** Nova data de fim da ativação: meses (padrão 12 = 1 ano) somados ao fim atual, ou a agora se já venceu. */
 export function extendActivation(currentEndsAt, now, months = 12) {
   const from = new Date(Math.max(now, currentEndsAt || 0))
+  // Dia limitado ao último do mês de destino: 31/01 + 1 mês = 28 ou 29/02, não 03/03.
+  const day = from.getUTCDate()
+  from.setUTCDate(1)
   from.setUTCMonth(from.getUTCMonth() + months)
+  const lastDay = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + 1, 0)).getUTCDate()
+  from.setUTCDate(Math.min(day, lastDay))
   return from.getTime()
 }

@@ -4,7 +4,7 @@
  */
 import { timingSafeEqualStr, readJsonBody } from '../pair/pair-core.mjs'
 import { cyclesUntil, isActive, normalizeHost, extendActivation, ACTIVE_GAP_MS, DAY_MS } from './license-rules.mjs'
-import { findDeviceByCode, activationEndsAt, hitLimit } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit, lockedFor } from './license-db.mjs'
 import { creditTotal, partnerMonthlyPrice } from './pricing.mjs'
 import {
   publicReseller,
@@ -393,7 +393,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
         const { device } = await deviceInfo(db, m[1])
         await refuseIfRenewing(device, 'apagar')
         await db.batch(
-          ['partner_cycle_entries', 'activations', 'device_events', 'devices'].map((table) =>
+          ['partner_cycle_entries', 'activations', 'device_events', 'inbox', 'devices'].map((table) =>
             db.prepare(`DELETE FROM ${table} WHERE device_key = ?`).bind(device.device_key),
           ),
         )
@@ -406,9 +406,8 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
     if (!adminToken) return json(503, { error: 'Painel desligado: defina LICENSE_ADMIN_TOKEN.' })
     // Token errado demais desta rede: recusa até o token certo por um tempo (sem isso, dá para tentar sem parar).
     const failKey = { bucket: 'adminFail', key: ip, limit: ADMIN_FAIL_LIMIT, windowMs: ADMIN_FAIL_WINDOW_MS }
-    const locked = await db.prepare('SELECT window_start, count FROM rate_limits WHERE bucket = ? AND key = ?').bind(failKey.bucket, ip).first()
-    if (locked && locked.count >= ADMIN_FAIL_LIMIT && now() - locked.window_start < ADMIN_FAIL_WINDOW_MS) {
-      const wait = Math.max(1, Math.ceil((locked.window_start + ADMIN_FAIL_WINDOW_MS - now()) / 1000))
+    const wait = await lockedFor(db, { ...failKey, now: now() })
+    if (wait) {
       return json(429, { error: 'Muitas tentativas com o token errado. Aguarde.' }, { 'Retry-After': String(wait) })
     }
     const auth = request.headers.get('Authorization') || ''

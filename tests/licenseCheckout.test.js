@@ -377,6 +377,32 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(refunds).toEqual([{ delta: -5 }])
   })
 
+  it('estorno que falha ao desfazer (banco caiu, saldo mudou no meio) não fica "refunded": o reenvio desfaz', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    const batch = vi.spyOn(db, 'batch').mockRejectedValueOnce(new Error('CHECK constraint failed'))
+    expect((await webhook(`ORD-${orderId}`, { requestId: 'estorno' })).status).toBe(500)
+    batch.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('delivered')
+    expect((await webhook(`ORD-${orderId}`, { requestId: 'estorno-reenvio' })).status).toBe(200)
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('refunded')
+    expect((await db.prepare('SELECT credits FROM resellers').first()).credits).toBe(0)
+  })
+
+  it('estorno no meio da entrega: espera (500) em vez de marcar e deixar a entrega gravar "entregue" por cima', async () => {
+    const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    await db.prepare("UPDATE orders SET status = 'delivering', checked_at = ? WHERE id = ?").bind(clock, orderId).run()
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await webhook(`ORD-${orderId}`, { requestId: 'estorno' })).status).toBe(500)
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('delivering')
+  })
+
   it('estorno parcial (desconto, acerto) mantém os créditos e só avisa o dono', async () => {
     const { orderId } = await pixFor({ kind: 'credits', quantity: 20, name: 'Loja do Zé', contact: '16 99999-0000' })
     pay(orderId)
@@ -708,6 +734,14 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect(await activationEndsAt(db, KEY)).toBeNull()
   })
 
+  it('preço da tabela mudou depois da adesão: a parcela no valor contratado ainda é entregue', async () => {
+    const sub = await subscribe()
+    await db.prepare('UPDATE orders SET amount_cents = 1990 WHERE id = ?').bind(sub.orderId).run() // contratou a R$ 19,90
+    installment('8101', sub.preId, { transaction_amount: 19.9 })
+    await webhook('8101', { type: 'subscription_authorized_payment' })
+    expect(await activationEndsAt(db, KEY)).not.toBeNull()
+  })
+
   it('assinatura cancelada no Mercado Pago: fica cancelada aqui; se nunca pagou, o pedido falha', async () => {
     const sub = await subscribe()
     preapprovals.get(sub.preId).status = 'cancelled'
@@ -945,6 +979,19 @@ describe('auditoria ponytail — nunca cobrar sem entregar', () => {
     clock += 6 * MIN
     const done = await admin('POST', `/admin/api/orders/${orderId}/reprocess`)
     expect(done.body.status).toBe('delivered')
+  })
+
+  it('pedido preso em "entregando" com a tela de pagamento aberta: a própria consulta da tela retoma a entrega', async () => {
+    mpReply = defaultReply
+    const { orderId, viewSecret } = (await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'Loja do Zé', contact: 'x', email: EMAIL })).body
+    pay(orderId)
+    await db.prepare("UPDATE orders SET status = 'delivering', checked_at = ? WHERE id = ?").bind(clock, orderId).run()
+    let seen
+    for (let i = 0; i < 12; i++) {
+      clock += MIN // a tela consulta sem parar; aqui, uma vez por minuto
+      seen = (await req('GET', `/v1/checkout/${orderId}?s=${viewSecret}`)).body
+    }
+    expect(seen.status).toBe('delivered')
   })
 })
 
