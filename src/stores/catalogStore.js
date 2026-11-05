@@ -176,6 +176,7 @@ export const useCatalogStore = defineStore('catalog', () => {
               st.progress = p
             },
           })
+          assertCurrent(my) // a gravação parou no meio porque a lista foi trocada
           // Solta as referências para o GC liberar o array gigante.
           cats = null
           streams = null

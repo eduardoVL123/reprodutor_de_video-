@@ -9,7 +9,7 @@ describe('capas ausentes não buscam imagens de terceiros', () => {
   it('m3uParser deixa a capa vazia quando a playlist não informa logo', async () => {
     const { parseM3u } = await import('@/services/m3uParser')
 
-    expect(parseM3u(PLAYLIST).liveStreams[0].stream_icon).toBe('')
+    expect((await parseM3u(PLAYLIST)).liveStreams[0].stream_icon).toBe('')
   })
 
   it('catalogDb devolve itens sem capa com stream_icon vazio', async () => {

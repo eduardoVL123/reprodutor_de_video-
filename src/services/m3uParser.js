@@ -30,14 +30,19 @@ function nameCommaIndex(line) {
   return -1
 }
 
+// Compiladas uma vez: criar 3 RegExp por linha custava 300 mil compilações numa lista de 100 mil itens.
+const ATTR_REGEX = new Map(
+  ['tvg-logo', 'group-title', 'tvg-name'].map((name) => [name, new RegExp(`${name}=(?:"([^"]*)"|'([^']*)'|([^\\s,]+))`, 'i')]),
+)
+const YIELD_EVERY = 2000 // itens entre pausas: a TV volta a responder ao controle durante a importação
+
 function extractAttribute(attrString, attrName) {
   if (!attrString) return ''
-  const regex = new RegExp(`${attrName}=(?:"([^"]*)"|'([^']*)'|([^\\s,]+))`, 'i')
-  const match = attrString.match(regex)
+  const match = attrString.match(ATTR_REGEX.get(attrName))
   return match ? (match[1] || match[2] || match[3] || '').trim() : ''
 }
 
-export function parseM3u(text) {
+export async function parseM3u(text) {
   if (!text || typeof text !== 'string') {
     return { liveStreams: [], vodStreams: [], liveCategories: [], vodCategories: [] }
   }
@@ -90,6 +95,7 @@ export function parseM3u(text) {
       // É uma URL de stream
       if (currentMeta) {
         count++
+        if (count % YIELD_EVERY === 0) await new Promise((resolve) => setTimeout(resolve, 0))
         const url = line
         const groupTitle = currentMeta.group || 'Geral'
 
@@ -153,7 +159,7 @@ export function parseM3u(text) {
  * Processa a lista M3U e salva as seções 'live', 'vod' e 'series' (sempre vazia) no IndexedDB.
  */
 export async function importM3uCatalog(m3uText, { onProgress } = {}) {
-  const { liveStreams, vodStreams, liveCategories, vodCategories } = parseM3u(m3uText)
+  const { liveStreams, vodStreams, liveCategories, vodCategories } = await parseM3u(m3uText)
   if (!liveStreams.length && !vodStreams.length) throw new XtreamError(ERROR_CODES.EMPTY_M3U_ERROR)
 
   // Salva 'live'

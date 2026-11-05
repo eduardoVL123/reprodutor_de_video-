@@ -41,6 +41,7 @@ const searchCache = new Map() // seção => Promise<string[]> (inclui construç�
 const chunkCache = new Map() // Map preserva ordem de inserção => LRU simples
 const memoryChunks = new Map() // chunks que não coube gravar (cota cheia): fora do LRU, senão seriam perdidos
 let generation = 0 // invalida leituras em voo quando o catálogo é trocado
+let clearCount = 0 // só o clearCatalog (troca de lista): gravações em andamento da lista velha param
 
 const hasValue = (v) => v !== undefined && v !== null && v !== ''
 
@@ -48,7 +49,7 @@ const hasValue = (v) => v !== undefined && v !== null && v !== ''
  * Categorias do item: a principal (`category_id`) e as extras (`category_ids`, painéis Xtream novos).
  * Sem as extras, uma categoria cujos itens estão todos nela como secundária ficava vazia e sumia.
  */
-function categoriesOf(item) {
+export function categoriesOf(item) {
   if (!item) return ['none']
   const ids = [item.category_id].concat(Array.isArray(item.category_ids) ? item.category_ids : [])
   const unique = []
@@ -160,6 +161,10 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     throw new Error('Formato inválido para o catálogo')
   }
   await removeSection(section)
+  // Lista trocada (clearCatalog) no meio da gravação: para de gravar, senão a meta antiga volta ao disco depois da
+  // limpeza e a lista nova a usa como "pronta" (categorias velhas, fileiras vazias, em todo boot).
+  const clears = clearCount
+  const replaced = () => clears !== clearCount
 
   const total = streams.length
   const chunkCount = Math.ceil(total / CHUNK_SIZE)
@@ -194,6 +199,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
       searchIndex[base + k] = normalizeText(slice[k] && slice[k].name)
     }
 
+    if (replaced()) return
     try {
       await db.setItem(chunkKey(section, n), slice)
     } catch (quotaErr) {
@@ -219,6 +225,7 @@ export async function saveSection(section, { categories, streams, onProgress }) 
     updatedAt: new Date().toISOString(),
   }
 
+  if (replaced()) return
   try {
     await db.setItem(catKey(section), categories)
   } catch (_) {
@@ -236,11 +243,13 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   } catch (err) {
     console.warn(`[catalogDb] Índice de busca de "${section}" mantido só em memória (${err && err.message}).`)
   }
+  if (replaced()) return
   if (!incomplete) {
     try {
       await db.setItem(metaKey(section), metaObj)
     } catch (_) {}
   }
+  if (replaced()) return
 
   metaCache.set(section, metaObj)
   indexCache.set(section, index)
@@ -381,6 +390,7 @@ export function getSearchIndex(section) {
 
 /** Remove todo o catálogo (logout / troca de conta). */
 export async function clearCatalog() {
+  clearCount++
   try {
     await db.clear()
   } catch (err) {
