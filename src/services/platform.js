@@ -1,5 +1,5 @@
 import { registerPlugin } from '@capacitor/core'
-import { isNativeApp } from '@/services/netEnv'
+import { isNativeApp, isDesktopApp } from '@/services/netEnv'
 
 /**
  * Integração com a plataforma hospedeira (Samsung Tizen, LG webOS, APK Capacitor, navegador).
@@ -19,6 +19,10 @@ export const isWebOS = () => !!window.PalmSystem || /Web0S|webOS/.test(navigator
  */
 export async function exitApp() {
   try {
+    if (isDesktopApp()) {
+      window.pulseDesktop.exit()
+      return
+    }
     if (window.tizen && window.tizen.application) {
       window.tizen.application.getCurrentApplication().exit()
       return
@@ -45,7 +49,7 @@ export async function exitApp() {
  * fechar a janela do usuário). Usado para só oferecer "Sair" onde ele funciona.
  */
 export function canExitApp() {
-  return !!(window.tizen && window.tizen.application) || isWebOS() || isNativeApp()
+  return !!(window.tizen && window.tizen.application) || isWebOS() || isNativeApp() || isDesktopApp()
 }
 
 /**

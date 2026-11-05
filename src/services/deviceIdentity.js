@@ -1,5 +1,5 @@
 import { Device } from '@capacitor/device'
-import { isNativeApp } from '@/services/netEnv'
+import { isNativeApp, isDesktopApp } from '@/services/netEnv'
 import { isWebOS } from '@/services/platform'
 import { storage } from '@/services/storage'
 
@@ -17,6 +17,7 @@ let cached = null
 
 export function devicePlatform() {
   if (isNativeApp()) return 'android'
+  if (isDesktopApp()) return 'desktop'
   if (window.tizen) return 'tizen'
   if (isWebOS()) return 'webos'
   return 'web'
@@ -46,6 +47,7 @@ async function platformId() {
   try {
     if (devicePlatform() === 'android') return (await Device.getId()).identifier || ''
     if (devicePlatform() === 'webos') return await webosUdid()
+    if (devicePlatform() === 'desktop') return (await window.pulseDesktop.machineId()) || ''
     if (window.webapis && window.webapis.productinfo && window.webapis.productinfo.getDuid) {
       return window.webapis.productinfo.getDuid() || ''
     }

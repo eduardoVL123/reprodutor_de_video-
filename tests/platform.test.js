@@ -5,6 +5,7 @@ afterEach(() => {
   delete window.webOS
   delete window.PalmSystem
   delete window.Capacitor
+  delete window.pulseDesktop
 })
 
 function mockCapacitorCore() {
@@ -23,6 +24,14 @@ function mockCapacitorCore() {
 }
 
 describe('platform.exitApp', () => {
+  it('no app de PC fecha a janela e oferece "Sair"', async () => {
+    window.pulseDesktop = { exit: vi.fn() }
+    const { exitApp, canExitApp } = await import('@/services/platform')
+    expect(canExitApp()).toBe(true)
+    await exitApp()
+    expect(window.pulseDesktop.exit).toHaveBeenCalled()
+  })
+
   it('encerra pelo Tizen quando disponível', async () => {
     const exit = vi.fn()
     window.tizen = { application: { getCurrentApplication: () => ({ exit }) } }

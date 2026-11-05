@@ -63,6 +63,22 @@ describe('identidade do aparelho', () => {
     expect(second).toBe(first)
   })
 
+  it('no app de PC usa o MachineGuid do Windows em hash; reinstalar dá a mesma chave', async () => {
+    window.pulseDesktop = { machineId: async () => 'guid-do-windows-123' }
+    try {
+      const { getDeviceKey, devicePlatform } = await import('@/services/deviceIdentity')
+      const key = await getDeviceKey()
+      expect(devicePlatform()).toBe('desktop')
+      expect(key).toMatch(/^[a-f0-9]{64}$/)
+      expect(key).not.toContain('guid-do-windows')
+      vi.resetModules()
+      memory.clear() // reinstalação apaga os dados do app
+      expect(await (await import('@/services/deviceIdentity')).getDeviceKey()).toBe(key)
+    } finally {
+      delete window.pulseDesktop
+    }
+  })
+
   it('no navegador usa um código aleatório guardado no aparelho', async () => {
     const { getDeviceKey, devicePlatform } = await import('@/services/deviceIdentity')
     const key = await getDeviceKey()

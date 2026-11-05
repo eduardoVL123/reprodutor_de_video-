@@ -23,6 +23,11 @@ export function isNativeApp() {
   }
 }
 
+/** true no app de PC (Electron, RFC-024): o desktop/preload.cjs expõe `window.pulseDesktop`. */
+export function isDesktopApp() {
+  return typeof window !== 'undefined' && !!window.pulseDesktop
+}
+
 /** true quando o proxy local do Vite está disponível (PC em localhost). */
 export function canUseDevProxy() {
   if (typeof location === 'undefined' || isNativeApp()) return false
