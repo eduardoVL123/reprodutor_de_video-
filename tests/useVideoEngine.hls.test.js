@@ -146,6 +146,27 @@ describe('useVideoEngine (HLS) — canal que não abre em nenhum formato', () =>
   })
 })
 
+describe('useVideoEngine (HLS) — canal que o provedor tirou do ar', () => {
+  it('lista do canal com 404 (jogo que acabou): avisa na hora que o canal não está transmitindo, sem o alternativo', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { useVideoEngine, NO_SIGNAL_ERROR } = await import('@/composables/useVideoEngine')
+    const engine = useVideoEngine()
+    const video = document.createElement('video')
+    video.play = vi.fn(() => Promise.resolve())
+    video.pause = vi.fn()
+
+    await engine.attachAndPlay(video, { ...LIVE, fallbackUrl: 'http://srv.test/live/u/p/9.ts' })
+    const hls = instances[instances.length - 1]
+    // Primeiro 404 ainda não é fatal (o hls.js tentaria de novo por ~13 s): já basta para desistir.
+    hls.emit(EVENTS.ERROR, { fatal: false, type: 'networkError', details: 'manifestLoadError', response: { code: 404 } })
+
+    expect(engine.error.value).toBe(NO_SIGNAL_ERROR)
+    expect(engine.errorDetail.value).toContain('HTTP 404')
+    expect(video.getAttribute('src') || '').not.toContain('.ts') // não tentou o alternativo
+    engine.destroyEngine()
+  })
+})
+
 describe('useVideoEngine (HLS) — canal aberto por horas (auditoria)', () => {
   it('quedas de rede espaçadas, cada uma recuperada, não esgotam as tentativas', async () => {
     const { engine, hls, state } = await startLiveAndPlay()
