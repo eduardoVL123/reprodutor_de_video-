@@ -189,9 +189,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0
-          name: Pulse Player 2.0 (APK de Teste)
+          name: Pulse Player 2.2 (APK para instalação direta)
           body: |
-            ### Pulse Player 2.0 — Redesign com Menu Lateral e Player OSD
+            ### Pulse Player 2.2 — Demonstração e acesso atualizado
+            Versão 2.2, código 5. Demonstração livre após o período de teste, novas capas e vídeos de uso geral.
             
             **Como instalar na Smart TV com o app Downloader:**
             1. Abra o app **Downloader** na sua Android TV ou Fire TV.

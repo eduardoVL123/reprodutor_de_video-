@@ -1,9 +1,33 @@
 #EXTM3U
-#EXTINF:-1 group-title="Canais de demonstração",Big Buck Bunny em HLS (Blender Foundation, CC BY 3.0)
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/hotel-boas-vindas.jpg" group-title="Hotel — Canais internos",Boas-vindas ao hóspede
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/hotel-boas-vindas.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/hotel-servicos.jpg" group-title="Hotel — Canais internos",Serviços do hotel
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/hotel-servicos.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/hotel-restaurante.jpg" group-title="Hotel — Canais internos",Cardápio do restaurante
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/hotel-restaurante.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/recepcao.jpg" group-title="Recepção e espera",Bem-vindo à recepção
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/recepcao.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/avisos.jpg" group-title="Recepção e espera",Avisos e horários
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/avisos.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/integracao.jpg" group-title="Empresa — Treinamentos",Integração de novos colaboradores
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/integracao.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/seguranca.jpg" group-title="Empresa — Treinamentos",Treinamento de segurança
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/seguranca.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/aula-introducao.jpg" group-title="Escola e cursos",Aula 1 — Introdução
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/aula-introducao.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/aula-pratica.jpg" group-title="Escola e cursos",Aula 2 — Prática
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/aula-pratica.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/alongamento.jpg" group-title="Academia",Treino em laço — Alongamento
+https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/media/alongamento.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/canal-bunny.jpg" group-title="Eventos e transmissões de demonstração",Big Buck Bunny — teste HLS (Blender Foundation · CC BY 3.0)
 https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8
-#EXTINF:-1 group-title="Filmes de demonstração",Big Buck Bunny (Blender Foundation, CC BY 3.0)
-https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4
-#EXTINF:-1 group-title="Filmes de demonstração",Elephants Dream (Blender Foundation, CC BY 2.5)
-https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4
-#EXTINF:-1 group-title="Filmes de demonstração",Tears of Steel (Blender Foundation, CC BY 3.0)
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/canal-steel.jpg" group-title="Eventos e transmissões de demonstração",Tears of Steel — teste HLS (Blender Foundation · CC BY 3.0)
 https://test-streams.mux.dev/tos_ismc/main.m3u8
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/big-buck-bunny.jpg" group-title="Filmes de demonstração",Big Buck Bunny (Blender Foundation · CC BY 3.0)
+https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/elephants-dream.jpg" group-title="Filmes de demonstração",Elephants Dream (Blender Foundation · CC BY 2.5)
+https://archive.org/download/ElephantsDream/ed_1024_512kb.mp4
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/tears-of-steel.jpg" group-title="Filmes de demonstração",Tears of Steel (Blender Foundation · CC BY 3.0)
+https://download.blender.org/demo/movies/ToS/tears_of_steel_720p.mov
+#EXTINF:-1 tvg-logo="https://raw.githubusercontent.com/eduardoVL123/reprodutor_de_video-/main/docs/demo/capas/sintel.jpg" group-title="Filmes de demonstração",Sintel — Trailer (Blender Foundation · CC BY 3.0)
+https://download.blender.org/durian/trailer/sintel_trailer-720p.mp4

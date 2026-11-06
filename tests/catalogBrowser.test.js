@@ -65,6 +65,18 @@ async function setupRows({ section = 'vod', items = [] } = {}) {
 }
 
 describe('CatalogBrowser — fileiras por categoria', () => {
+  it.each([
+    ['series', 'm3u', 'Esta lista não tem séries.'],
+    ['series', 'xtream', 'Nenhum item encontrado nesta categoria.'],
+    ['vod', 'm3u', 'Nenhum item encontrado nesta categoria.'],
+  ])('catálogo vazio %s/%s mostra a explicação correspondente', async (section, type, message) => {
+    wrapper = await setupRows({ section })
+    const { useAuthStore } = await import('@/stores/authStore')
+    useAuthStore().session = { type, baseUrl: 'https://demo.test', username: 'demo' }
+    await flushPromises()
+    expect(wrapper.text()).toContain(message)
+  })
+
   it('não inventa programação nem progresso nos canais (o app não tem guia de programação)', async () => {
     wrapper = await setupRows({ section: 'live', items: [{ stream_id: 9, name: 'Canal 9' }] })
 

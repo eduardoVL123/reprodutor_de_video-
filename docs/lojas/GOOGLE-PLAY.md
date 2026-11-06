@@ -19,8 +19,9 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
       `PULSE_KEY_ALIAS`, `PULSE_KEY_PASSWORD` nos Secrets do GitHub. O CI gera o AAB assinado.
 - [ ] **Play App Signing**: aceite no console (a Google guarda a chave final; a sua vira chave de upload).
 - [x] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
-- [ ] **Versão**: suba `versionCode` (hoje 4) a cada envio, em `android/app/build.gradle`. O AAB de 2026-11-05 ainda
-      usa o 4: se o console recusar por versão repetida, suba para 5 e gere de novo.
+- [x] **Versão preparada**: `versionCode` 5 / `versionName` 2.2 em `android/app/build.gradle` (2026-11-06).
+      Gerar novos APK/AAB assinados pelo CI. Os arquivos de 2026-11-05 ainda usam código 4 e não contêm a
+      liberação permanente da demonstração. O próximo envio deve usar os arquivos novos após conferir a assinatura.
 
 ## 2. Configurar o app (Painel → "Configurar o app")
 

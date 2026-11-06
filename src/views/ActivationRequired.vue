@@ -6,6 +6,7 @@ import { plansPageUrl, isStoreBuild } from '@/services/licenseApi'
 import { openExternal } from '@/services/platform'
 import { isPhone } from '@/utils/compat'
 import { pushFocusScope } from '@/utils/spatialNavigation'
+import { useAuthStore } from '@/stores/authStore'
 
 /**
  * "Ative este aparelho" (RFC-018 R7): o teste de 7 dias acabou e a lista não é de parceiro.
@@ -15,7 +16,14 @@ import { pushFocusScope } from '@/utils/spatialNavigation'
 // reason (licenseStore.blockReason): 'blocked' = teste acabou; 'suspended' = o dono bloqueou o aparelho (RFC-019),
 // só falar com o suporte; 'offline' = a licença não foi confirmada há mais de 7 dias (ou nunca), precisa de conexão.
 const props = defineProps({ code: { type: String, default: '' }, reason: { type: String, default: 'blocked' } })
-defineEmits(['retry', 'manage-lists'])
+const emit = defineEmits(['retry', 'manage-lists', 'demo-opened'])
+const auth = useAuthStore()
+const demoPlaylistUrl = String(import.meta.env.VITE_DEMO_PLAYLIST_URL || '').trim()
+
+async function tryDemo() {
+  const ok = await auth.login({ dns: demoPlaylistUrl, username: '', password: '', label: 'Demonstração' })
+  if (ok) emit('demo-opened')
+}
 
 const rootEl = ref(null)
 const storeBuild = isStoreBuild()
@@ -120,7 +128,11 @@ onBeforeUnmount(() => {
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">
             Usar outra lista
           </button>
+          <button v-if="demoPlaylistUrl" id="activation-demo" type="button" class="tv-btn min-w-[16rem]" :disabled="auth.loading" @click="tryDemo">
+            {{ auth.loading ? 'Abrindo demonstração…' : 'Experimentar demonstração' }}
+          </button>
         </div>
+        <p v-if="auth.error" role="alert" class="mt-3 text-tv-sm text-red-400">{{ auth.error }}</p>
       </div>
     </div>
   </div>

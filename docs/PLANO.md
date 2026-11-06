@@ -23,11 +23,14 @@ sem nenhuma rota de dados aberta.
 - [x] `PRIVACY.md` preenchido e publicado em `/privacidade` (2026-11-04).
 - [ ] Lista de demonstração com capas e capturas finais (incluir controle parental e o player tocando no aparelho
       real). **Direção (2026-11-05):** mostrar usos além de IPTV (hotel, recepção, empresa, escola, igreja, academia);
-      grupos e regras em [`docs/demo/README.md`](demo/README.md).
+      grupos e regras em [`docs/demo/README.md`](demo/README.md); proposta e plano em
+      [`RFC-026`](rfc/RFC-026-lista-de-demonstracao.md). Fase 1 implementada localmente: 10 vídeos próprios com áudio,
+      16 capas, 7 grupos, dois HLS atuais e aviso em Séries. Falta publicar os arquivos e testar no aparelho.
+      Novo APK só quando o dono pedir (2026-11-06).
 - [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
 - [ ] Play App Signing, formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores
       por 14 dias.
-- [x] `versionCode` 4 / 2.1 (subir de novo a cada envio; se o console recusar o 4, subir para 5).
+- [x] `versionCode` 5 / 2.2 preparado em 2026-11-06. Gerar APK e AAB novos assinados pelo CI após publicar os arquivos da demonstração.
 - [x] Revisão do código para a Play (2026-11-05): targetSdk 36, sem bibliotecas nativas (16 KB ok), só INTERNET,
       textos da versão da loja sem vendedor nem pagamento, link da política de privacidade dentro do app.
 - [ ] Levar a branch `feat/app-pc` (correções da auditoria + app de PC) para a `main` por PR.

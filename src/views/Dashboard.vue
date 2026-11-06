@@ -566,6 +566,7 @@ onBeforeUnmount(() => {
       :list-label="auth.activeListLabel || auth.username || ''"
       @navigate="activeTab = $event"
       @manage-lists="openListModal"
+      @demo-opened="onListChanged"
       @switch-profile="openProfileGate"
     />
 

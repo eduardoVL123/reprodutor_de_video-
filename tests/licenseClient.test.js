@@ -230,6 +230,18 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.shouldBlock(parecida)).toBe(true)
   })
 
+  it('demonstração reabre sem confirmação da licença depois do teste; outra lista continua protegida', async () => {
+    const url = 'https://demo.test/pulse-demo.m3u'
+    vi.stubEnv('VITE_DEMO_PLAYLIST_URL', url)
+    setup({ fetchImpl: async () => { throw new TypeError('Failed to fetch') } })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    const demo = { type: 'm3u', baseUrl: url, resolvedUrl: url }
+    await license.refresh(demo)
+    expect(license.blockReason(demo)).toBe('')
+    expect(license.blockReason({ ...demo, baseUrl: url + '?outra', resolvedUrl: url + '?outra' })).toBe('offline')
+  })
+
   it('troca de lista no meio da consulta: a resposta atrasada da lista antiga não libera a nova', async () => {
     let releaseA = null
     const answer = (access) => reply(200, { access, code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })

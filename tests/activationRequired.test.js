@@ -14,6 +14,8 @@ afterEach(async () => {
 })
 
 async function mountScreen({ storeBuild = '', reason = 'blocked', code = 'QDU5NXY7' } = {}) {
+  const { createPinia, setActivePinia } = await import('pinia')
+  setActivePinia(createPinia())
   vi.stubEnv('VITE_LICENSE_BASE_URL', 'https://licenca.test')
   vi.stubEnv('VITE_LICENSE_STORE_BUILD', storeBuild)
   const nav = await import('@/utils/spatialNavigation')
@@ -25,6 +27,19 @@ async function mountScreen({ storeBuild = '', reason = 'blocked', code = 'QDU5NX
 }
 
 describe('tela de ativação', () => {
+  it('permite abrir a demonstração diretamente com o aparelho bloqueado', async () => {
+    vi.stubEnv('VITE_DEMO_PLAYLIST_URL', 'https://demo.test/pulse-demo.m3u')
+    const wrapper = await mountScreen({ reason: 'offline' })
+    const { useAuthStore } = await import('@/stores/authStore')
+    const auth = useAuthStore()
+    const login = vi.spyOn(auth, 'login').mockResolvedValue(true)
+    await wrapper.find('#activation-demo').trigger('click')
+    await flushPromises()
+    expect(login).toHaveBeenCalledWith({ dns: 'https://demo.test/pulse-demo.m3u', username: '', password: '', label: 'Demonstração' })
+    expect(wrapper.emitted('demo-opened')).toHaveLength(1)
+    wrapper.unmount()
+  })
+
   it('sem confirmar a licença (carência acabou ou nunca conectou): pede conexão, sem QR nem planos', async () => {
     const wrapper = await mountScreen({ reason: 'offline', code: '' })
     expect(wrapper.text()).toContain('Verifique a conexão')

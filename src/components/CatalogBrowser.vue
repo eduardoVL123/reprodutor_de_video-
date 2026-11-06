@@ -612,7 +612,11 @@ onBeforeUnmount(() => {
 
       <!-- Mensagem quando não há itens -->
       <div v-else-if="showGrid || categoryRows.length === 0" class="py-20 text-center text-neutral-400">
-        <p class="text-tv-lg font-medium">Nenhum item encontrado nesta categoria.</p>
+        <template v-if="section === 'series' && auth.session?.type === 'm3u' && activeCategory === ALL_CATEGORIES">
+          <p class="text-tv-lg font-medium">Esta lista não tem séries.</p>
+          <p class="mt-3 px-6 text-tv-sm">Listas no formato M3U trazem canais e filmes. As séries aparecem quando o servidor da lista oferece esse catálogo.</p>
+        </template>
+        <p v-else class="text-tv-lg font-medium">Nenhum item encontrado nesta categoria.</p>
         <button
           v-if="activeCategory !== ALL_CATEGORIES"
           type="button"
