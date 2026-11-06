@@ -6,6 +6,20 @@
   const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
   let config = null
 
+  function setupLegalNotice() {
+    const dialog = $('legal-notice')
+    if (!dialog || location.pathname !== '/') return
+    const key = 'pulse:legal-notice:v1'
+    try {
+      if (localStorage.getItem(key) === 'dismissed') return
+    } catch (_) { /* Navegação privada pode bloquear o armazenamento. */ }
+    dialog.addEventListener('close', () => {
+      if (!$('legal-remember').checked) return
+      try { localStorage.setItem(key, 'dismissed') } catch (_) { /* Continua funcionando sem persistência. */ }
+    })
+    dialog.showModal()
+  }
+
   /** Código do aparelho como aparece na TV: maiúsculas, só o alfabeto do serviço, 8 caracteres. */
   function normalizeCode(text) {
     let out = ''
@@ -297,5 +311,6 @@
     }
   }
 
+  setupLegalNotice()
   start()
 })()

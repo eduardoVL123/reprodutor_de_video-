@@ -121,6 +121,18 @@ describe('arquivos do site', () => {
     for (const href of ['href="/"', 'href="/assinar"', 'href="/creditos"']) expect(html).toContain(href)
   })
 
+  it.each(['index.html', 'assinar.html', 'creditos.html', 'cliente.html', 'privacidade.html', 'pagar.html'])('%s: menu na ordem aprovada', (page) => {
+    const html = readFileSync(SITE + page, 'utf8')
+    const menu = html.match(/<nav class="site-nav"[^>]*>([\s\S]*?)<\/nav>/)[1]
+    const links = [...menu.matchAll(/<a href="([^"]+)"[^>]*>([^<]+)<\/a>/g)].map((match) => [match[1], match[2]])
+    expect(links).toEqual([
+      ['/', 'Início'],
+      ['/assinar', 'Ativar meu app'],
+      ['/creditos', 'Revendas'],
+      ['/enviar', 'Enviar listas'],
+    ])
+  })
+
   it('/enviar (destino do app das lojas, RFC-025 §2): sem preço nem link de compra, nem para a landing', () => {
     const html = readFileSync(SITE + 'enviar.html', 'utf8')
     for (const banned of ['href="/"', '/assinar', '/creditos', '/pagar', 'R$', 'preço']) expect(html).not.toContain(banned)
@@ -158,10 +170,13 @@ describe('arquivos do site', () => {
 describe('site.js no navegador', () => {
   const CONFIG = { contactUrl: 'https://wa.me/5516992791692', devicePriceCents: 2500, minCredits: 10, creditTiers: [[1000, 500], [500, 600], [100, 700], [51, 800], [20, 900], [10, 1000]] }
 
-  async function open(page, fetchImpl, search = '') {
+  async function open(page, fetchImpl, search = '', pathname = `/${page}`) {
     const html = readFileSync(SITE + page, 'utf8')
     document.body.innerHTML = html.slice(html.indexOf('<body>') + 6, html.indexOf('</body>')).replace(/<script[^>]*><\/script>/g, '')
-    window.history.replaceState({}, '', `/${page}${search}`)
+    // jsdom não implementa o diálogo modal nativo do navegador.
+    const dialog = document.getElementById('legal-notice')
+    if (dialog) dialog.showModal = () => { dialog.open = true }
+    window.history.replaceState({}, '', `${pathname}${search}`)
     vi.stubGlobal('fetch', vi.fn(fetchImpl))
     await import('../server/pair/public/pair-lib.js')
     new Function(readFileSync(`${SITE}site.js`, 'utf8'))()
@@ -172,7 +187,28 @@ describe('site.js no navegador', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+    localStorage.removeItem('pulse:legal-notice:v1')
     document.body.innerHTML = ''
+  })
+
+  it('o aviso abre na raiz do site e só memoriza a escolha quando solicitado', async () => {
+    await open('index.html', async () => jsonReply(CONFIG), '', '/')
+    const dialog = document.getElementById('legal-notice')
+    expect(dialog.open).toBe(true)
+    dialog.dispatchEvent(new Event('close'))
+    expect(localStorage.getItem('pulse:legal-notice:v1')).toBeNull()
+    document.getElementById('legal-remember').checked = true
+    dialog.dispatchEvent(new Event('close'))
+    expect(localStorage.getItem('pulse:legal-notice:v1')).toBe('dismissed')
+    await open('index.html', async () => jsonReply(CONFIG), '', '/')
+    expect(document.getElementById('legal-notice').open).toBe(false)
+  })
+
+  it('não abre o aviso fora da página inicial', async () => {
+    await open('index.html', async () => jsonReply(CONFIG), '', '/outra')
+    expect(document.getElementById('legal-notice').open).toBe(false)
+    await open('enviar.html', async () => jsonReply(CONFIG))
+    expect(document.getElementById('legal-notice')).toBeNull()
   })
 
   it('Enviar lista: cifra para a chave da TV e só manda o texto cifrado, que a TV abre', async () => {
