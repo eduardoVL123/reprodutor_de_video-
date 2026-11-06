@@ -58,8 +58,12 @@ Se falhar, a alternativa prevista na RFC é hospedar em `/demo/` no site, ajusta
 Uma URL de playlist em branch diferente da configurada no build exige aparelho ativado para esse teste,
 pois a isenção vale para a URL exata da demonstração.
 
-O aviso **Esta lista não tem séries** é alteração do app e entrará no próximo APK/AAB quando o dono pedir.
+O aviso **Esta lista não tem séries** está incluído no APK/AAB 2.2, gerado em 2026-11-06.
 As séries de demonstração por Xtream pertencem à fase 2.
+
+Publicado na main em `d4ca008`. Os 26 arquivos foram conferidos via HTTP (200/206) e um clipe de 15 segundos
+reproduziu em 720p no Chromium diretamente do GitHub. Os MP4 são servidos como `application/octet-stream`,
+com Range funcionando. A validação em celular e TV reais continua pendente.
 
 ## Conferir links antes de cada envio
 

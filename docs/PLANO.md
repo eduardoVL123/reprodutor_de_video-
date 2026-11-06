@@ -1,4 +1,4 @@
-# Plano — Pulse Player (só o que falta, atualizado em 2026-11-05)
+# Plano — Pulse Player (só o que falta, atualizado em 2026-11-06)
 
 Meta: **Google Play primeiro**, depois as lojas mais fáceis. Samsung, LG e PC ficam para depois.
 Ordem sugerida de cima para baixo. Passo a passo do Play Console: [`docs/lojas/GOOGLE-PLAY.md`](lojas/GOOGLE-PLAY.md).
@@ -17,23 +17,25 @@ sem nenhuma rota de dados aberta.
 ## 2. Google Play (bloqueia o envio)
 - [x] Pagamento: **sem venda dentro do app** no envio (decisão de 2026-11-05). Faturamento da Google só depois de
       aceito na loja, se fizer sentido.
-- [x] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub. AAB 2.1 assinado mais novo: CI de 2026-11-05
-      (commit `06a6462`, branch `feat/app-pc`), baixado em `C:\dev\android\play-2026-11-05\bundle\release\app-release.aab`.
+- [x] Chave de publicação e segredos `PULSE_KEYSTORE_*` no GitHub. APK/AAB 2.2, código 5, assinados pelo
+      [CI de 2026-11-06](https://github.com/eduardoVL123/reprodutor_de_video-/actions/runs/42304877362), commit `d4ca008`.
+      Arquivos em `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-release.apk` e
+      `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-play.aab`. Assinaturas conferidas; bundletool validou o AAB.
 - [x] Variáveis do CI: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_PUBLIC_KEY`, `PULSE_LICENSE_BASE_URL`.
 - [x] `PRIVACY.md` preenchido e publicado em `/privacidade` (2026-11-04).
 - [ ] Lista de demonstração com capas e capturas finais (incluir controle parental e o player tocando no aparelho
       real). **Direção (2026-11-05):** mostrar usos além de IPTV (hotel, recepção, empresa, escola, igreja, academia);
       grupos e regras em [`docs/demo/README.md`](demo/README.md); proposta e plano em
-      [`RFC-026`](rfc/RFC-026-lista-de-demonstracao.md). Fase 1 implementada localmente: 10 vídeos próprios com áudio,
-      16 capas, 7 grupos, dois HLS atuais e aviso em Séries. Falta publicar os arquivos e testar no aparelho.
-      Novo APK só quando o dono pedir (2026-11-06).
+      [`RFC-026`](rfc/RFC-026-lista-de-demonstracao.md). Fase 1 publicada na main: 10 vídeos próprios com áudio,
+      16 capas, 7 grupos, dois HLS atuais e aviso em Séries no APK/AAB 2.2. Os 26 arquivos responderam 200/206;
+      um clipe reproduziu no Chromium direto do GitHub. Falta validar no aparelho e fazer as capturas finais.
 - [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
 - [ ] Play App Signing, formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores
       por 14 dias.
-- [x] `versionCode` 5 / 2.2 preparado em 2026-11-06. Gerar APK e AAB novos assinados pelo CI após publicar os arquivos da demonstração.
+- [x] `versionCode` 5 / 2.2 gerado e assinado em 2026-11-06. Modo loja confirmado no AAB; APK direto com modo completo.
 - [x] Revisão do código para a Play (2026-11-05): targetSdk 36, sem bibliotecas nativas (16 KB ok), só INTERNET,
       textos da versão da loja sem vendedor nem pagamento, link da política de privacidade dentro do app.
-- [ ] Levar a branch `feat/app-pc` (correções da auditoria + app de PC) para a `main` por PR.
+- [x] `feat/app-pc` integrada na `main` pelo PR #4. Atualizações desta conversa publicadas na `main` em 2026-11-06.
 
 ## 3. Mercado Pago e serviços no ar
 - [ ] (**só quando o dono pedir**) Cartão do aparelho (assinatura anual): o Mercado Pago de teste recusa com 400 "User bad request". O Pix gera o pedido;

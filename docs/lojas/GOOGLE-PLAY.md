@@ -19,9 +19,13 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
       `PULSE_KEY_ALIAS`, `PULSE_KEY_PASSWORD` nos Secrets do GitHub. O CI gera o AAB assinado.
 - [ ] **Play App Signing**: aceite no console (a Google guarda a chave final; a sua vira chave de upload).
 - [x] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
-- [x] **Versão preparada**: `versionCode` 5 / `versionName` 2.2 em `android/app/build.gradle` (2026-11-06).
-      Gerar novos APK/AAB assinados pelo CI. Os arquivos de 2026-11-05 ainda usam código 4 e não contêm a
-      liberação permanente da demonstração. O próximo envio deve usar os arquivos novos após conferir a assinatura.
+- [x] **Versão gerada**: `versionCode` 5 / `versionName` 2.2, assinada pelo CI em 2026-11-06.
+      Para upload na Play, usar `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-play.aab`.
+      Para instalação direta, usar `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-release.apk`.
+      [CI](https://github.com/eduardoVL123/reprodutor_de_video-/actions/runs/42304877362) com 1.103 testes,
+      lint e build verdes. Assinatura igual à do AAB anterior, `bundletool validate` passou e target SDK 36 conferido.
+      AAB com `VITE_LICENSE_STORE_BUILD=1`, APK direto com modo completo. Demonstração publicada e isenta de ativação.
+      A validação física da versão nova e as etapas pendentes do Play Console continuam necessárias.
 
 ## 2. Configurar o app (Painel → "Configurar o app")
 

@@ -1,5 +1,5 @@
 # RFC 0026: Lista de demonstração de uso geral
-- **Status:** Fase 1 implementada localmente; publicação e teste físico pendentes. APK só quando o dono pedir.
+- **Status:** Fase 1 publicada na main e incluída no APK/AAB 2.2 (2026-11-06). Teste físico e capturas pendentes.
 - **Autor:** Eduardo
 - **Data:** 2026-11-06
 
@@ -23,7 +23,7 @@ TV `ntv2.akamaized.net` responde com vídeo 720p; `ntv1` dá 403.
 
 ## Decisões do dono (2026-11-06)
 Atualização na execução: manter os dois HLS existentes (Big Buck Bunny e Tears of Steel), sem NASA.
-Sintel entra como trailer oficial. Não gerar APK agora; acumular as próximas mudanças e aguardar o pedido do dono.
+Sintel entra como trailer oficial. O dono pediu a geração depois dos ajustes do site: APK/AAB 2.2 assinados no CI.
 | Tema | Decisão | Como entra |
 |---|---|---|
 | Série | Quer uma série; se não der, pelo menos um aviso | **Fase 1:** aviso na aba Séries vazia. **Fase 2 (opcional):** série de verdade, por uma demonstração em Xtream no Worker |
@@ -209,8 +209,9 @@ depois de ver a fase 1 no aparelho.
 - Capas de filmes usam quadros reais, recortados e com crédito. Sintel usa o trailer oficial de 7,3 MB.
 - Os dois HLS atuais foram abertos pelo `ffprobe` com trilhas de vídeo e áudio. Tears of Steel exige
   `-allowed_extensions ALL -extension_picky 0` nessa ferramenta por causa das legendas WebVTT com extensão `.mp4`.
-- Publicação da mídia no GitHub, Range/Content-Type da mídia própria publicada e reprodução física continuam pendentes.
-- O aviso da aba Séries está no código e aguardará o próximo build solicitado pelo dono.
+- Mídia publicada na main em `d4ca008`. Os 26 arquivos responderam 200/206. O MP4 tem Range e tipo
+  `application/octet-stream`; o Chromium reproduziu o clipe de 15 s/720p diretamente do GitHub.
+- O aviso de Séries e a isenção da demonstração estão no APK/AAB 2.2. Testes físicos continuam pendentes.
 
 ## Perguntas em aberto
 1. **Fase 2:** seguir depois de ver a fase 1 no aparelho? (Decisão do dono; não bloqueia a fase 1.)
