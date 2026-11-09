@@ -175,7 +175,13 @@ async function startPlayback() {
     return
   }
 
-  await attachAndPlay(videoRef.value, currentStream())
+  let stream = null
+  try {
+    stream = currentStream()
+  } catch (err) {
+    console.warn('[player] Falha ao montar o endereço do vídeo:', err && err.name)
+  }
+  await attachAndPlay(videoRef.value, stream) // stream nulo vira a camada de erro do motor
 }
 
 function currentStream() {

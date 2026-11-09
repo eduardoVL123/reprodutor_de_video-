@@ -711,18 +711,26 @@ export function useVideoEngine() {
       return
     }
 
-    if (desc.isHls) {
-      const Hls = await loadHls()
+    try {
+      if (desc.isHls) {
+        const Hls = await loadHls()
+        if (my !== token) return
+        if (Hls && Hls.isSupported()) {
+          startHls(Hls, desc, my)
+          return
+        }
+        if (!video.canPlayType('application/vnd.apple.mpegurl')) {
+          console.info('[player] Sem MSE nem HLS nativo declarado; tentando reprodução direta.')
+        }
+      }
+      startNative(desc.primaryUrl, desc, my, false)
+    } catch (err) {
+      // Erro inesperado ao montar o motor: sem isto a tela ficava em "carregando" para sempre.
+      const detail = `${(err && err.name) || 'Error'}: ${(err && err.message) || 'falha ao iniciar'}`
       if (my !== token) return
-      if (Hls && Hls.isSupported()) {
-        startHls(Hls, desc, my)
-        return
-      }
-      if (!video.canPlayType('application/vnd.apple.mpegurl')) {
-        console.info('[player] Sem MSE nem HLS nativo declarado; tentando reprodução direta.')
-      }
+      fail(my, 'erro ao iniciar a reprodução', detail, desc.primaryUrl, desc.containerExtension)
+      error.value = PLAYBACK_ERROR // não é "sem sinal": o motor nem chegou a pedir o vídeo
     }
-    startNative(desc.primaryUrl, desc, my, false)
   }
 
   if (getCurrentInstance()) onBeforeUnmount(destroyEngine)

@@ -22,7 +22,9 @@ export const MAX_BODY_BYTES = 4096
 export const PLATFORMS = ['android', 'tizen', 'webos', 'desktop', 'web']
 // newDevicesPerDay (por rede) e newDevicesGlobalPerDay (serviço todo): cortam o ataque de criar aparelhos falsos para
 // inflar os ativos de um parceiro.
-export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20, newDevicesGlobalPerDay: 3000 }
+// newDevicesPerIPv4Day: no Brasil o CGNAT põe milhares de clientes atrás de um IPv4; o /64 do IPv6 é de uma casa só.
+// shortcut: 300 por IPv4 é chute; se um provedor grande bater nele, subir (o teto geral de 3000 continua valendo).
+export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20, newDevicesPerIPv4Day: 300, newDevicesGlobalPerDay: 3000 }
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
 // Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
 const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
@@ -79,7 +81,7 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
       const found = await findDevice(db, deviceKey)
       if (found) return found
       // No banco (não na memória do isolate): o limite vale para o serviço todo e sobrevive a reinícios.
-      if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: limits.newDevicesPerDay, windowMs: DAY_MS, now: now() }))) {
+      if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: ip.includes(':') ? limits.newDevicesPerDay : limits.newDevicesPerIPv4Day, windowMs: DAY_MS, now: now() }))) {
         throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
       }
       // Teto do serviço todo (auditoria RFC-025, item 3): muitas redes juntas não inflam os ativos de um parceiro sem

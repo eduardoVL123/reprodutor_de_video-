@@ -251,7 +251,8 @@ export async function purgeExpired(db, now) {
     .run()
   // Pedidos seguem a mesma guarda de 24 meses (decisão do dono, 2026-11-03): somem inteiros, com nome e contato.
   // A assinatura não depende do pedido de adesão (só o atualiza se ele existir), então renovações seguem valendo.
-  await db.prepare('DELETE FROM orders WHERE created_at < ?').bind(cutoff).run()
+  // Menos o pedido de adesão de assinatura: a parcela compara com o valor contratado nele (sem ele, valeria o preço de hoje).
+  await db.prepare('DELETE FROM orders WHERE created_at < ? AND id NOT IN (SELECT id FROM subscriptions)').bind(cutoff).run()
   await db.prepare('DELETE FROM partner_cycle_entries WHERE last_at < ?').bind(cutoff).run()
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db
@@ -259,7 +260,8 @@ export async function purgeExpired(db, now) {
       `DELETE FROM devices WHERE first_seen_at < ?
        AND blocked_at IS NULL -- suspenso fica: apagado, voltaria sem bloqueio e com teste novo (auditoria RFC-025, item 4)
        AND device_key NOT IN (SELECT device_key FROM activations)
-       AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)`,
+       AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)
+       AND code NOT IN (SELECT device_code FROM subscriptions WHERE status <> 'cancelled') -- assinou e espera a 1ª parcela`,
     )
     .bind(cutoff)
     .run()

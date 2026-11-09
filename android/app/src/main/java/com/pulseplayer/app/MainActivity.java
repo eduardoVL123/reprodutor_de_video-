@@ -215,7 +215,10 @@ public class MainActivity extends BridgeActivity {
             try {
                 String reason = String.valueOf(e.getMessage()).replace("\\", "\\\\").replace("\"", "\\\"");
                 byte[] errBytes = ("{\"error\":\"NativeHttp: " + reason + "\"}").getBytes("utf-8");
-                return new WebResourceResponse("application/json", "utf-8", 502, "Bad Gateway", corsHeaders, new ByteArrayInputStream(errBytes));
+                // Marca o 502 como nosso: só ele leva o JavaScript a repetir em http:// (um 5xx do servidor não).
+                Map<String, String> errHeaders = new HashMap<>(corsHeaders);
+                errHeaders.put("X-Pulse-Native-Error", "1");
+                return new WebResourceResponse("application/json", "utf-8", 502, "Bad Gateway", errHeaders, new ByteArrayInputStream(errBytes));
             } catch (Exception ignored) {}
         }
         return null;

@@ -68,7 +68,9 @@ export const useLicenseStore = defineStore('license', () => {
       if (saved && typeof saved === 'object' && (await verifyLicense(saved, { deviceKey: await getDeviceKey(), host: saved.host || '' }))) {
         apply(saved)
       }
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[license] Falha ao ler a licença salva:', err)
+    }
   }
 
   function apply(state) {

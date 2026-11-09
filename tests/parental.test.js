@@ -22,13 +22,16 @@ describe('parentalStore', () => {
     expect(parental.blockedIds('vod', CATS)).toEqual(['2'])
   })
 
-  it('sem PIN de fábrica: o primeiro PIN digitado vira o PIN; depois só ele desbloqueia (até fechar o app)', async () => {
+  it('sem PIN de fábrica: abrir a categoria não cria PIN (quem cria é o Controle parental); depois só ele desbloqueia', async () => {
     const { useParentalStore } = await import('@/stores/parentalStore')
     const parental = useParentalStore()
     await parental.load('p1')
     expect(parental.needsPin()).toBe(true)
-    expect(await parental.unlock('vod', CATS[1], '12')).toBe(false) // curto demais: não cria
-    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(true) // cria o PIN e desbloqueia
+    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(false) // a criança não vira dona do PIN
+    expect(parental.needsPin()).toBe(true)
+    expect(await parental.checkPin('12')).toBe(false) // curto demais: não cria
+    expect(await parental.checkPin('2580')).toBe(true) // Controle parental cria o PIN
+    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(true)
     expect(parental.needsPin()).toBe(false)
     expect(parental.isLocked('vod', CATS[1])).toBe(false)
     expect(parental.blockedIds('vod', CATS)).toEqual([])
@@ -40,6 +43,7 @@ describe('parentalStore', () => {
     const parental = useParentalStore()
     await parental.load('p-lista', 'A')
     await parental.setStatus('vod', CATS[2], 'visible') // "3" = Esportes na lista A
+    await parental.checkPin('2580') // cria
     await parental.unlock('vod', CATS[1], '2580')
     await parental.load('p-lista', 'B')
     expect(parental.statusOf('vod', { category_id: '3', category_name: 'XXX Adultos' })).toBe('locked') // "3" na lista B
@@ -95,8 +99,13 @@ describe('parentalStore', () => {
     parental = useParentalStore()
     await parental.load('p1')
     expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
-    await parental.load('p2') // outro perfil: padrão de novo
-    expect(parental.blockedIds('vod', CATS)).toEqual(['2'])
+    await parental.load('p2') // outro perfil sem escolhas próprias: segue o Principal
+    expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
+    await parental.setStatus('vod', CATS[0], 'visible') // escolha própria do p2
+    await parental.load('p2')
+    expect(parental.blockedIds('vod', CATS)).toEqual([]) // herdou o '2' visível do Principal e agora tem o '1' visível
+    await parental.load('p1') // o Principal não muda
+    expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
   })
 })
 
@@ -149,5 +158,18 @@ describe('catálogo com categorias fora da vista', () => {
 
     expect(catalog.countFor('vod')).toBe(4)
     expect((await catalog.getItems('vod', db.ALL_CATEGORIES, 0, 10)).map((i) => i.stream_id)).not.toContain(3)
+  })
+})
+
+describe('parentalStore — perfil novo', () => {
+  it('perfil sem escolhas próprias herda as do Principal (a criança não escapa criando outro perfil)', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const parental = useParentalStore()
+    await parental.load('p1', 'L')
+    await parental.setStatus('vod', CATS[2], 'hidden')
+
+    await parental.load('p-novo', 'L')
+
+    expect(parental.statusOf('vod', CATS[2])).toBe('hidden')
   })
 })

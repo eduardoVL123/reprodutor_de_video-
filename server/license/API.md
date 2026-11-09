@@ -137,14 +137,14 @@ Authorization: Bearer <chave de leitura>
 
 | Rota | O que devolve |
 |---|---|
-| `GET /api/v1/reports/summary?month=2026-11` | Resumo do mês: `{ month, activeDevices, trials, activations, paidOrders, revenueCents, byKind: { device_annual: { orders, cents }, credits: { orders, cents } } }` |
+| `GET /api/v1/reports/summary?month=2026-11` | Resumo do mês: `{ month, activeDevices, trials, activations, paidOrders, revenueCents, renewals: { count, cents }, byKind: { device_annual: { orders, cents }, credits: { orders, cents } } }` |
 | `GET /api/v1/reports/partners` | Parceiros e os aparelhos ativos de cada ciclo mensal: `[{ partnerId, name, active, cycles: [{ start, end, actives, monthlyCents }] }]` |
 | `GET /api/v1/reports/orders?month=2026-11&before={seq}` | Pedidos do mês, 50 por vez, mais novos primeiro: `[{ seq, id, createdAt, paidAt, kind, method, quantity, amountCents, status }]`. Para os próximos 50, `before` = o `seq` do último |
 
 - `month` é o mês no horário de Brasília (`AAAA-MM`); sem ele, o mês atual.
 - `activeDevices`: aparelhos com ativação valendo agora. `trials`: em teste e sem ativação. `activations`: ativações
-  que começaram no mês. `paidOrders` e `revenueCents`: pedidos pagos no mês pelo site (Pix e cartão). As renovações
-  automáticas do cartão nos anos seguintes ainda não entram nesse total.
+  que começaram no mês. `paidOrders` e `revenueCents`: pedidos pagos no mês pelo site (Pix e cartão); `revenueCents` também soma `renewals`, as renovações
+  automáticas do cartão entregues no mês (sem as estornadas).
 - Nenhuma resposta traz código de aparelho, nome, contato ou e-mail de cliente.
 - Limites: 60 chamadas por hora; 10 chaves erradas da mesma rede travam por 15 minutos (`429`). `POST` com a chave de
   leitura → `405`. Sem a chave configurada no servidor → `503`.

@@ -70,8 +70,9 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 > Foundation films (CC BY) and public test streams. The demo playlist never requires activation, so it keeps working
 > after the 7-day trial. Back on the home screen asks "Sair do Pulse Player?"; "Sair" closes the app.
 >
-> Parental control: the first PIN you type (4 to 8 digits) becomes the device PIN; categories with adult names start
-> locked. On phones and tablets, the privacy policy link is under **Conta → Política de privacidade**.
+> Parental control: categories with adult names start locked and stay closed until a PIN exists. To test it, open the
+> Movies, Series or TV tab, press **"Controle parental"** (only a padlock icon when the phone is upright), create a PIN (4 to 8 digits) and use it to open or hide
+> categories. Creating a new profile does not bypass it: profiles without their own choices follow the main profile. On phones and tablets, the privacy policy link is under **Conta → Política de privacidade**.
 
 *Só em builds com o pareamento, acrescente:*
 

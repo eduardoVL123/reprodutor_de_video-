@@ -1,7 +1,7 @@
 import { reactive, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
-import { apiRequest, XtreamError, fetchM3uText } from '@/services/xtreamApi'
+import { apiRequest, XtreamError, fetchM3uText, describeError } from '@/services/xtreamApi'
 import { importM3uCatalog } from '@/services/m3uParser'
 import {
   ALL_CATEGORIES,
@@ -196,8 +196,9 @@ export const useCatalogStore = defineStore('catalog', () => {
       if (err instanceof StaleLoad) return
       console.warn(`[catalog] Falha ao carregar "${section}":`, err && err.code, err && (err.technicalDetail || err.detail || err.message))
       st.state = 'error'
-      st.error = err?.userMessage || err?.message || 'Erro ao carregar catálogo'
-      st.errorDetail = err?.technicalDetail || (err?.stack ? String(err.stack) : String(err))
+      const described = describeError(err)
+      st.error = described.message
+      st.errorDetail = described.detail
     }
   }
 

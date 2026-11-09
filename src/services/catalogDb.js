@@ -63,7 +63,7 @@ export function categoriesOf(item) {
 // ---------- Categorias fora da vista (controle parental / escondidas) ----------
 // Valem para "Todos", Início, busca e zapping: quem lê o catálogo por aqui nunca vê esses itens.
 const hiddenBySection = new Map() // seção => Set de category_id
-const visibleCache = new Map() // seção => { list: posições visíveis, blocked: Uint8Array } (null = sem filtro)
+const visibleCache = new Map() // seção => { list, blocked: Uint8Array, byCat } (null = sem filtro)
 
 /** Define as categorias que não aparecem na seção. Item em várias categorias some se qualquer uma estiver fora. */
 export function setHiddenCategories(section, ids) {
@@ -80,7 +80,7 @@ async function visibility(section, meta) {
   hidden.forEach((id) => (index[id] || []).forEach((p) => (blocked[p] = 1)))
   const list = []
   for (let p = 0; p < meta.count; p++) if (!blocked[p]) list.push(p)
-  const result = { list, blocked }
+  const result = { list, blocked, byCat: {} } // byCat: categoria => posições visíveis (filtrada uma vez, não a cada página)
   visibleCache.set(section, result)
   return result
 }
@@ -158,7 +158,9 @@ async function removeSection(section) {
     await db.removeItem(catKey(section))
     await db.removeItem(idxKey(section))
     await db.removeItem(searchKey(section))
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[catalogDb] Falha ao apagar seção do banco local:', err)
+  }
   resetCaches(section)
 }
 
@@ -239,13 +241,15 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   if (replaced()) return
   try {
     await db.setItem(catKey(section), categories)
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[catalogDb] Categorias de "${section}" mantidas só em memória:`, err)
     catCache.set(section, categories)
     incomplete = true
   }
   try {
     await db.setItem(idxKey(section), index)
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[catalogDb] Índice de "${section}" mantido só em memória:`, err)
     indexCache.set(section, index)
     incomplete = true
   }
@@ -258,7 +262,9 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   if (!incomplete) {
     try {
       await db.setItem(metaKey(section), metaObj)
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[catalogDb] Falha ao salvar o resumo da seção (vai baixar de novo na próxima vez):', err)
+    }
   }
   if (replaced()) return
 
@@ -322,7 +328,7 @@ export async function getItems(section, categoryId, start, count) {
     let list = (await getIndex(section))[String(categoryId)] || []
     // Item em várias categorias (category_ids): bloqueado em uma, some de todas (como em "Todos" e na busca).
     const v = await visibility(section, meta)
-    if (v) list = list.filter((p) => !v.blocked[p])
+    if (v) list = v.byCat[categoryId] || (v.byCat[categoryId] = list.filter((p) => !v.blocked[p]))
     positions = list.slice(start, start + count)
   }
   return readPositions(section, meta, positions)

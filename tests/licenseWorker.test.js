@@ -110,11 +110,11 @@ describe('Worker da licença', () => {
     expect(res.status).toBe(200)
   })
 
-  it('o limite de aparelhos novos usa o IP real do visitante (CF-Connecting-IP)', async () => {
+  it('o limite de aparelhos novos usa o IP real do visitante (CF-Connecting-IP; IPv6 por /64, 20 por dia)', async () => {
     const env = mockEnv()
-    for (let i = 0; i < 20; i++) await post(env, '/v1/access', { deviceKey: `${'b'.repeat(60)}${String(i).padStart(4, '0')}`, host: 'x.com' }, '9.9.9.9')
-    expect((await post(env, '/v1/access', { deviceKey: 'c'.repeat(64), host: 'x.com' }, '9.9.9.9')).status).toBe(429)
-    expect((await post(env, '/v1/access', { deviceKey: 'c'.repeat(64), host: 'x.com' }, '8.8.8.8')).status).toBe(200)
+    for (let i = 0; i < 20; i++) await post(env, '/v1/access', { deviceKey: `${'b'.repeat(60)}${String(i).padStart(4, '0')}`, host: 'x.com' }, '2001:db8:9::9')
+    expect((await post(env, '/v1/access', { deviceKey: 'c'.repeat(64), host: 'x.com' }, '2001:db8:9::9')).status).toBe(429)
+    expect((await post(env, '/v1/access', { deviceKey: 'c'.repeat(64), host: 'x.com' }, '2001:db8:8::8')).status).toBe(200)
   })
 
   it('painel do dono: com o Access conferido serve a tela e a API ainda exige o token (RFC-025 §5)', async () => {

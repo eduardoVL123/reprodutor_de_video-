@@ -37,6 +37,7 @@ const handheld = computed(() => formFactor.value !== 'tv')
 const parental = useParentalStore()
 const parentalOpen = ref(false)
 const pinFor = ref(null) // categoria bloqueada esperando o PIN
+const NO_PIN_YET = 'Ainda não há PIN. Crie um no botão "Controle parental" desta aba para abrir esta categoria.'
 
 const activeCategory = ref(ALL_CATEGORIES)
 const detailsTarget = ref(null)
@@ -254,11 +255,14 @@ async function loadFeaturedInfo(it) {
       })
     }
     if (info) featuredInfo.value = info
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[catalog] Falha ao ler detalhes do destaque:', err)
+  }
 }
 
 async function unlockCategory(pin) {
   const cat = pinFor.value
+  if (parental.needsPin()) return NO_PIN_YET
   if (!(await parental.unlock(props.section, cat, pin))) return parental.pinError()
   pinFor.value = null
   chooseCategory(cat)
@@ -775,7 +779,7 @@ onBeforeUnmount(() => {
     <PinDialog
       v-if="pinFor"
       title="Categoria bloqueada"
-      :hint="`Digite o PIN para abrir ${pinFor.category_name}.`"
+      :hint="parental.needsPin() ? NO_PIN_YET : `Digite o PIN para abrir ${pinFor.category_name}.`"
       :submit="unlockCategory"
       @cancel="pinFor = null"
     />

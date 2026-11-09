@@ -212,18 +212,25 @@ describe('licença — aparelhos novos por IP (fraude contra parceiro)', () => {
   const access = (deviceKey, ip) => post('/v1/access', { deviceKey, host: 'x.com' }, ip)
   const key = (i) => `${'k'.repeat(60)}${String(i).padStart(4, '0')}`
 
-  it('cada IP cria no máximo 20 aparelhos por dia; os que já existem seguem funcionando', async () => {
-    for (let i = 0; i < 20; i++) expect((await access(key(i), '10.9.9.9')).status).toBe(200)
+  it('cada rede IPv6 (/64) cria no máximo 20 aparelhos por dia; os que já existem seguem funcionando', async () => {
+    for (let i = 0; i < 20; i++) expect((await access(key(i), '2001:db8:9::9')).status).toBe(200)
     clock += 2 * 60 * 1000 // passa a janela de 1 minuto: o limite de aparelhos novos é por dia
-    expect((await access(key(20), '10.9.9.9')).status).toBe(429)
-    expect((await access(key(0), '10.9.9.9')).status).toBe(200)
-    expect((await access(key(20), '10.8.8.8')).status).toBe(200)
+    expect((await access(key(20), '2001:db8:9::9')).status).toBe(429)
+    expect((await access(key(0), '2001:db8:9::9')).status).toBe(200)
+    expect((await access(key(20), '2001:db8:8::8')).status).toBe(200)
   })
 
   it('no dia seguinte o mesmo IP volta a poder criar', async () => {
-    for (let i = 0; i < 20; i++) await access(key(i), '10.9.9.9')
+    for (let i = 0; i < 20; i++) await access(key(i), '2001:db8:9::9')
     clock += 24 * 3600e3
-    expect((await access(key(21), '10.9.9.9')).status).toBe(200)
+    expect((await access(key(21), '2001:db8:9::9')).status).toBe(200)
+  })
+
+  it('IPv4 (CGNAT: um IP para milhares de clientes) aceita mais aparelhos novos por dia (auditoria 7)', async () => {
+    for (let i = 0; i < 21; i++) {
+      if (i === 20) clock += 2 * 60 * 1000 // passa a janela de 1 minuto
+      expect((await access(key(i), '10.9.9.9')).status).toBe(200)
+    }
   })
 
   it('o núcleo expõe a limpeza dos contadores para o servidor chamar de tempos em tempos', () => {

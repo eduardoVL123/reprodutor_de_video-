@@ -105,3 +105,26 @@ describe('useLicenseWatch', () => {
     expect(listeners.bg).toBeUndefined()
   })
 })
+
+describe('useLicenseWatch — app aberto por muito tempo', () => {
+  it('consulta de novo a cada 6 h (o teste de 7 dias vence mesmo sem fechar o app), sem nova entrada de parceiro', async () => {
+    vi.useFakeTimers()
+    try {
+      const session = ref({ id: 'a', baseUrl: 'http://parceiro.com' })
+      const wrapper = await mountWith(session)
+      await vi.advanceTimersByTimeAsync(0)
+      expect(license.refresh).toHaveBeenCalledTimes(1)
+      const entries = license.scheduleEntry.mock.calls.length
+
+      await vi.advanceTimersByTimeAsync(6 * 3600 * 1000)
+      expect(license.refresh).toHaveBeenCalledTimes(2)
+      expect(license.scheduleEntry.mock.calls.length).toBe(entries)
+
+      wrapper.unmount()
+      await vi.advanceTimersByTimeAsync(6 * 3600 * 1000)
+      expect(license.refresh).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

@@ -1,4 +1,4 @@
-# Plano — Pulse Player (só o que falta, atualizado em 2026-11-06)
+# Plano — Pulse Player (só o que falta, atualizado em 2026-11-09)
 
 Meta: **Google Play primeiro**, depois as lojas mais fáceis. Samsung, LG e PC ficam para depois.
 Ordem sugerida de cima para baixo. Passo a passo do Play Console: [`docs/lojas/GOOGLE-PLAY.md`](lojas/GOOGLE-PLAY.md).
@@ -33,8 +33,11 @@ sem nenhuma rota de dados aberta.
 - [ ] Play App Signing, formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores
       por 14 dias.
 - [x] `versionCode` 5 / 2.2 gerado e assinado em 2026-11-06. Modo loja confirmado no AAB; APK direto com modo completo.
-- [x] Revisão do código para a Play (2026-11-05): targetSdk 36, sem bibliotecas nativas (16 KB ok), só INTERNET,
+- [x] Revisão do código para a Play (2026-11-05): targetSdk 36, sem bibliotecas nativas (16 KB ok), só INTERNET e ACCESS_NETWORK_STATE (permissões normais),
       textos da versão da loja sem vendedor nem pagamento, link da política de privacidade dentro do app.
+- [ ] **2.3 / código 6 (2026-11-09)**: tratamento de erros e correções da auditoria de 2026-11-09 (PIN parental só
+      no Controle parental, perfil novo herda as regras, 5xx não rebaixa a senha para http, licença revisada a cada 6 h,
+      assinatura no cartão sem duplicar). Gerar pelo CI no merge da `main`, testar no aparelho e enviar à Play no lugar da 2.2.
 - [x] `feat/app-pc` integrada na `main` pelo PR #4. Atualizações desta conversa publicadas na `main` em 2026-11-06.
 
 ## 3. Mercado Pago e serviços no ar

@@ -783,6 +783,39 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect(await activationEndsAt(db, KEY)).toBeNull()
     expect((await db.prepare('SELECT status FROM subscriptions').first()).status).toBe('cancelled')
     expect(preapprovals.get(sub.preId).status).toBe('cancelled')
+    // 1ª parcela estornada: o pedido de adesão sai da receita (auditoria 10)
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(sub.orderId).first()).status).toBe('refunded')
+  })
+
+  it('webhook da assinatura chegou antes do registro: a adesão não dá erro nem cria outra (auditoria 3)', async () => {
+    mpReply = (url, init = {}) => {
+      const reply = subscriptionReply(url, init)
+      if (url.endsWith('/preapproval') && init.method === 'POST') {
+        const pre = reply.body // o aviso do MP chegou e gravou a assinatura antes da resposta da criação
+        db.prepare('INSERT INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) SELECT id, device_code, ?, ?, ? FROM orders WHERE id = ?')
+          .bind(pre.id, 'authorized', clock, pre.external_reference).runSync()
+      }
+      return reply
+    }
+    const sub = await subscribe()
+    expect(sub.httpStatus).toBe(201)
+    expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(1)
+  })
+
+  it('aparelho que já tem renovação no cartão não assina de novo (cobrança em dobro) (auditoria 3)', async () => {
+    const first = await subscribe()
+    expect(first.httpStatus).toBe(201)
+    const again = await subscribe()
+    expect(again.httpStatus).toBe(409)
+    expect(calls.filter((c) => c.url.endsWith('/preapproval') && c.method === 'POST')).toHaveLength(1)
+  })
+
+  it('expurgo de 24 meses não apaga o pedido de adesão de assinatura viva nem o aparelho dela (auditoria 4)', async () => {
+    const sub = await subscribe()
+    clock += 800 * 24 * 3600 * 1000
+    await purgeExpired(db, clock)
+    expect(await db.prepare('SELECT id FROM orders WHERE id = ?').bind(sub.orderId).first()).not.toBeNull()
+    expect(await db.prepare('SELECT code FROM devices').first()).not.toBeNull()
   })
 
   it('cartão recusado na adesão: 402, pedido falho e nenhuma assinatura', async () => {
@@ -813,6 +846,10 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     const list = await admin('GET', '/admin/api/subscriptions')
     expect(list.status).toBe(200)
     expect(list.body).toEqual([{ id: sub.orderId, deviceCode: expect.any(String), status: 'authorized', mpPreapprovalId: sub.preId, createdAt: clock, cancelledAt: null }])
+    // Mais de 200 assinaturas: a de uma TV antiga se acha pelo código (auditoria 11)
+    const code = list.body[0].deviceCode
+    expect((await admin('GET', `/admin/api/subscriptions?device=${code.toLowerCase()}`)).body).toHaveLength(1)
+    expect((await admin('GET', '/admin/api/subscriptions?device=ZZZZ9999')).body).toEqual([])
 
     calls = []
     const cancelled = await admin('POST', `/admin/api/subscriptions/${sub.orderId}/cancel`)
@@ -1022,6 +1059,33 @@ describe('revisão de segurança — limites no banco (valem entre isolates do W
     expect(pix.status).toBe(201)
   })
 
+  it('token inventado (o Mercado Pago recusa o token) não gasta o teto geral do cartão (auditoria 6)', async () => {
+    await db.prepare("INSERT INTO rate_limits VALUES ('cardAll', '*', ?, 299)").bind(clock).run()
+    mpReply = () => ({ status: 400, body: { message: 'invalid card_token' } })
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    for (let n = 1; n <= 3; n++) expect((await cardTry(`10.20.${n}.1`)).status).toBe(402)
+    mpReply = defaultReply
+    const next = await cardTry('10.21.0.1')
+    spy.mockRestore()
+    expect(next.status).not.toBe(429)
+  })
+
+  it('cartão recusado de verdade (a order volta falha) conta no teto geral (auditoria 6)', async () => {
+    await db.prepare("INSERT INTO rate_limits VALUES ('cardAll', '*', ?, 299)").bind(clock).run()
+    mpReply = (url, init = {}) => {
+      if (init.method !== 'POST') return defaultReply(url, init)
+      const body = JSON.parse(init.body)
+      const order = { id: `ORD-${body.external_reference}`, status: 'failed', status_detail: 'failed', total_amount: body.total_amount, external_reference: body.external_reference, transactions: { payments: [{ id: 'P', status: 'failed', amount: body.total_amount, payment_method: { id: 'visa', type: 'credit_card' } }] } }
+      mpOrders.set(order.id, order)
+      return { status: 201, body: order }
+    }
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await cardTry('10.22.0.1')).status).toBe(402)
+    const next = await cardTry('10.23.0.1')
+    spy.mockRestore()
+    expect(next.status).toBe(429)
+  })
+
   it('painel do dono: 10 tokens errados travam a rede por 15 minutos, até para o token certo', async () => {
     const admin = (token, ip = '10.3.3.3') =>
       handle(new Request('http://license.test/admin/api/orders', { headers: { Authorization: `Bearer ${token}` } }), ip)
@@ -1035,7 +1099,7 @@ describe('revisão de segurança — limites no banco (valem entre isolates do W
   it('aparelhos novos por dia ficam no banco: outra instância do serviço não zera a conta', async () => {
     const other = createLicenseHandler({ db, now: () => clock, adminToken: 'x' })
     const hello = (h, n) =>
-      h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '10.8.8.8')
+      h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '2001:db8:8::8')
     for (let n = 0; n < 20; n++) expect((await hello(n % 2 ? handle : other, n)).status).toBe(200)
     expect((await hello(other, 99)).status).toBe(429)
   })

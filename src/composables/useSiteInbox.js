@@ -43,7 +43,8 @@ export function useSiteInbox() {
           pending = { id, list }
           received.value = { ...describeList(list.dns), label: list.label }
           break
-        } catch (_) {
+        } catch (err) {
+          console.warn('[inbox] Lista enviada pelo site não pôde ser aberta e foi descartada:', err && err.name)
           unreadable.push(id)
         }
       }
