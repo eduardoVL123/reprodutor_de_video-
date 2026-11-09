@@ -783,6 +783,8 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect(await activationEndsAt(db, KEY)).toBeNull()
     expect((await db.prepare('SELECT status FROM subscriptions').first()).status).toBe('cancelled')
     expect(preapprovals.get(sub.preId).status).toBe('cancelled')
+    // 1ª parcela estornada: o pedido de adesão sai da receita (auditoria 10)
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(sub.orderId).first()).status).toBe('refunded')
   })
 
   it('webhook da assinatura chegou antes do registro: a adesão não dá erro nem cria outra (auditoria 3)', async () => {
@@ -844,6 +846,10 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     const list = await admin('GET', '/admin/api/subscriptions')
     expect(list.status).toBe(200)
     expect(list.body).toEqual([{ id: sub.orderId, deviceCode: expect.any(String), status: 'authorized', mpPreapprovalId: sub.preId, createdAt: clock, cancelledAt: null }])
+    // Mais de 200 assinaturas: a de uma TV antiga se acha pelo código (auditoria 11)
+    const code = list.body[0].deviceCode
+    expect((await admin('GET', `/admin/api/subscriptions?device=${code.toLowerCase()}`)).body).toHaveLength(1)
+    expect((await admin('GET', '/admin/api/subscriptions?device=ZZZZ9999')).body).toEqual([])
 
     calls = []
     const cancelled = await admin('POST', `/admin/api/subscriptions/${sub.orderId}/cancel`)
@@ -1093,7 +1099,7 @@ describe('revisão de segurança — limites no banco (valem entre isolates do W
   it('aparelhos novos por dia ficam no banco: outra instância do serviço não zera a conta', async () => {
     const other = createLicenseHandler({ db, now: () => clock, adminToken: 'x' })
     const hello = (h, n) =>
-      h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '10.8.8.8')
+      h(new Request('http://license.test/v1/hello', { method: 'POST', body: JSON.stringify({ deviceKey: `chave-aparelho-${String(n).padStart(4, '0')}`, platform: 'web' }) }), '2001:db8:8::8')
     for (let n = 0; n < 20; n++) expect((await hello(n % 2 ? handle : other, n)).status).toBe(200)
     expect((await hello(other, 99)).status).toBe(429)
   })

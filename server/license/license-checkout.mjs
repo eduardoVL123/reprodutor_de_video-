@@ -594,6 +594,10 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     try {
       await db.batch([
         db.prepare('INSERT INTO mp_deliveries (mp_ref, subscription_id, delivered_at) VALUES (?, ?, ?)').bind(`refund:authorized_payment:${charge.id}`, sub.id, at),
+        // Estorno da 1ª parcela (paga no mesmo instante do pedido de adesão): o pedido sai da receita, como no Pix.
+        db
+          .prepare("UPDATE orders SET status = 'refunded' WHERE id = ? AND status = 'delivered' AND paid_at = (SELECT delivered_at FROM mp_deliveries WHERE mp_ref = ?)")
+          .bind(sub.id, `authorized_payment:${charge.id}`),
         // Revoga o ano da parcela e puxa para trás o que foi empilhado depois (auditoria RFC-025, item 1).
         ...(last ? await revokeActivationStatements(db, last.device_key, [last.id], at) : []),
       ])
@@ -693,8 +697,12 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     cancelledAt: s.cancelled_at ?? null,
   })
 
-  async function listSubscriptions() {
-    const rows = await db.prepare('SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 200').all()
+  /** Mais novas primeiro (200); com `device`, só as daquele código (a de uma TV antiga some das 200). */
+  async function listSubscriptions(device = '') {
+    const code = String(device || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const rows = code
+      ? await db.prepare('SELECT * FROM subscriptions WHERE device_code = ? ORDER BY created_at DESC').bind(code).all()
+      : await db.prepare('SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 200').all()
     return rows.results.map(publicSubscription)
   }
 

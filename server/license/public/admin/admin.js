@@ -429,10 +429,14 @@
 
   async function loadPayments() {
     const filter = $('order-filter').value
+    const device = $('subscription-device').value.trim()
     let orders
     let subscriptions
     try {
-      ;[orders, subscriptions] = await Promise.all([api('GET', `orders${filter ? `?status=${filter}` : ''}`), api('GET', 'subscriptions')])
+      ;[orders, subscriptions] = await Promise.all([
+        api('GET', `orders${filter ? `?status=${filter}` : ''}`),
+        api('GET', `subscriptions${device ? `?device=${encodeURIComponent(device)}` : ''}`),
+      ])
     } catch (err) {
       return say(err.message, true)
     }
@@ -474,6 +478,7 @@
   }
 
   $('order-filter').addEventListener('change', loadPayments)
+  $('subscription-device').addEventListener('change', loadPayments)
 
   // Entrada e abas
   $('login-form').addEventListener('submit', (e) => {

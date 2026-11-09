@@ -47,13 +47,23 @@ export function createReportRoutes({ db, now, json, reportToken = '' }) {
     ).results
     const byKind = { device_annual: { orders: 0, cents: 0 }, credits: { orders: 0, cents: 0 } }
     for (const r of byKindRows) byKind[r.kind] = { orders: r.n, cents: r.cents }
+    // Renovações do cartão não criam pedido: cada parcela entregue vale o preço contratado na adesão. A 1ª parcela é o
+    // próprio pedido (mesmo instante do paid_at) e já está em byKind; parcela estornada fica de fora.
+    const renewals = await one(
+      `SELECT COUNT(*) AS n, COALESCE(SUM(o.amount_cents), 0) AS cents FROM mp_deliveries m JOIN orders o ON o.id = m.subscription_id
+       WHERE m.mp_ref LIKE 'authorized_payment:%' AND m.delivered_at >= ? AND m.delivered_at < ? AND m.delivered_at <> o.paid_at
+       AND NOT EXISTS (SELECT 1 FROM mp_deliveries r WHERE r.mp_ref = 'refund:' || m.mp_ref)`,
+      range.start,
+      range.end,
+    )
     return {
       month: range.month,
       activeDevices: active.n,
       trials: trials.n,
       activations: activations.n,
       paidOrders: byKindRows.reduce((sum, r) => sum + r.n, 0),
-      revenueCents: byKindRows.reduce((sum, r) => sum + r.cents, 0),
+      revenueCents: byKindRows.reduce((sum, r) => sum + r.cents, 0) + renewals.cents,
+      renewals: { count: renewals.n, cents: renewals.cents },
       byKind,
     }
   }

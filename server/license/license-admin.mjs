@@ -217,7 +217,7 @@ export function createAdminRoutes({ db, now, adminToken, json, checkout }) {
   }
 
   const routes = [
-    ['GET', /^\/admin\/api\/subscriptions$/, async () => json(200, await checkout.listSubscriptions())],
+    ['GET', /^\/admin\/api\/subscriptions$/, async (_m, _b, url) => json(200, await checkout.listSubscriptions(url.searchParams.get('device')))],
     ['POST', /^\/admin\/api\/subscriptions\/([A-Za-z0-9_-]{1,64})\/cancel$/, async (m) => json(200, await checkout.cancelSubscription(m[1]))],
     ['GET', /^\/admin\/api\/orders$/, async (_m, _b, url) => json(200, await checkout.listOrders(url.searchParams.get('status')))],
     ['POST', /^\/admin\/api\/orders\/([A-Za-z0-9_-]{22})\/reprocess$/, async (m) => json(200, await checkout.reprocessOrder(m[1]))],

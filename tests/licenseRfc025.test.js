@@ -215,6 +215,29 @@ describe('relatórios do sócio — GET /api/v1/reports/* (§7)', () => {
     expect((await req('GET', '/api/v1/reports/summary?month=2026-13', { token: REPORT })).status).toBe(400)
   })
 
+  it('renovação automática do cartão entra na receita do mês dela; parcela estornada não (auditoria 10)', async () => {
+    const code = await hello()
+    const year = 365 * DAY
+    await db
+      .prepare(
+        `INSERT INTO orders (id, kind, method, device_code, quantity, amount_cents, status, view_secret_hash, created_at, paid_at, expires_at)
+         VALUES ('sub1', 'device_annual', 'card', ?, 1, 2500, 'delivered', 'h', ?, ?, ?)`,
+      )
+      .bind(code, clock, clock, clock + DAY)
+      .run()
+    await subscribe(code)
+    const delivery = (ref, at) => db.prepare('INSERT INTO mp_deliveries (mp_ref, subscription_id, delivered_at) VALUES (?, ?, ?)').bind(ref, 'sub1', at).run()
+    await delivery('authorized_payment:1', clock) // 1ª parcela = o próprio pedido
+    await delivery('authorized_payment:2', clock + year) // renovação de 2027
+    await delivery('authorized_payment:3', clock + 2 * year) // renovação de 2028, estornada
+    await delivery('refund:authorized_payment:3', clock + 2 * year + DAY)
+
+    const month = async (m) => (await req('GET', `/api/v1/reports/summary?month=${m}`, { token: REPORT })).json()
+    expect(await month('2026-11')).toMatchObject({ revenueCents: 2500, renewals: { count: 0, cents: 0 } })
+    expect(await month('2027-11')).toMatchObject({ revenueCents: 2500, renewals: { count: 1, cents: 2500 } })
+    expect(await month('2028-11')).toMatchObject({ revenueCents: 0, renewals: { count: 0, cents: 0 } })
+  })
+
   it('10 chaves erradas travam a rede', async () => {
     for (let n = 0; n < 10; n++) expect((await req('GET', '/api/v1/reports/summary', { token: `errada${n}` })).status).toBe(401)
     expect((await req('GET', '/api/v1/reports/summary', { token: REPORT })).status).toBe(429)
