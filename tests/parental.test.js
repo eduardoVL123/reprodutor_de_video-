@@ -99,8 +99,13 @@ describe('parentalStore', () => {
     parental = useParentalStore()
     await parental.load('p1')
     expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
-    await parental.load('p2') // outro perfil: padrão de novo
-    expect(parental.blockedIds('vod', CATS)).toEqual(['2'])
+    await parental.load('p2') // outro perfil sem escolhas próprias: segue o Principal
+    expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
+    await parental.setStatus('vod', CATS[0], 'visible') // escolha própria do p2
+    await parental.load('p2')
+    expect(parental.blockedIds('vod', CATS)).toEqual([]) // herdou o '2' visível do Principal e agora tem o '1' visível
+    await parental.load('p1') // o Principal não muda
+    expect(parental.blockedIds('vod', CATS)).toEqual(['1'])
   })
 })
 
@@ -153,5 +158,18 @@ describe('catálogo com categorias fora da vista', () => {
 
     expect(catalog.countFor('vod')).toBe(4)
     expect((await catalog.getItems('vod', db.ALL_CATEGORIES, 0, 10)).map((i) => i.stream_id)).not.toContain(3)
+  })
+})
+
+describe('parentalStore — perfil novo', () => {
+  it('perfil sem escolhas próprias herda as do Principal (a criança não escapa criando outro perfil)', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const parental = useParentalStore()
+    await parental.load('p1', 'L')
+    await parental.setStatus('vod', CATS[2], 'hidden')
+
+    await parental.load('p-novo', 'L')
+
+    expect(parental.statusOf('vod', CATS[2])).toBe('hidden')
   })
 })

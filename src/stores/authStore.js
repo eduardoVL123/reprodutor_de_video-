@@ -119,9 +119,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const saved = await storage.get(SESSION_KEY)
       session.value = await restoreSession(saved)
-      if (session.value?.type === 'm3u' && !saved.urlEnc) {
-        await storage.set(SESSION_KEY, await toStoredSession(session.value)) // sessão legada: passa a cifrar a URL
-      }
+      // Sessão legada ou gravada quando a cifra falhou uma vez: passa a cifrar a URL (M3U) ou a senha (Xtream).
+      const plain = session.value && (session.value.type === 'm3u' ? !saved.urlEnc : saved.password && !saved.passwordEnc)
+      if (plain) await storage.set(SESSION_KEY, await toStoredSession(session.value))
     } catch (err) {
       console.error('[auth] Falha ao ler sessão salva:', err)
       session.value = null

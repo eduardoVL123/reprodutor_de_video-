@@ -15,6 +15,7 @@ const PIN_KEY = 'parental:pin'
 export const PIN_PATTERN = /^\d{4,8}$/
 // Por perfil E por lista: o id de categoria só vale dentro da lista (na M3U é a posição do grupo).
 const settingsKey = (profileId, listId) => `parental:categories:${profileId || 'default'}:${listId || 'none'}`
+const MAIN_PROFILE = 'p1' // perfil "Principal" (profileStore.js, DEFAULT_PROFILES)
 const UNREADABLE = '!' // nenhum hash é igual: com o storage falhando, nada abre e o PIN salvo não é sobrescrito
 const MAX_PIN_FAILS = 5
 const PIN_LOCK_MS = 30e3
@@ -47,7 +48,9 @@ export const useParentalStore = defineStore('parental', () => {
     unlocked.value = new Set() // desbloqueio do pai não passa para outro perfil nem outra lista
     settings.value = emptySettings()
     try {
-      const saved = await storage.get(key)
+      let saved = await storage.get(key)
+      // Perfil sem escolhas próprias (ex.: criado agora, sem PIN) segue as do Principal até o pai mudar algo nele.
+      if (!saved && profileId !== MAIN_PROFILE) saved = await storage.get(settingsKey(MAIN_PROFILE, listId))
       const savedPin = await storage.get(PIN_KEY)
       if (seq !== loadSeq) return // troca rápida: a leitura velha não sobrescreve a nova
       const next = emptySettings()

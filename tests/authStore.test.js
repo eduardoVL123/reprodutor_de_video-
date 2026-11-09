@@ -252,3 +252,19 @@ describe('authStore — hydrate resiliente', () => {
     vi.restoreAllMocks()
   })
 })
+
+describe('authStore — sessão Xtream gravada sem cifra', () => {
+  it('o boot recifra a senha que ficou em texto puro por uma falha passageira', async () => {
+    const { auth, storage } = await setup()
+    await storage.set('auth:session', {
+      id: 'x', type: 'xtream', label: 'X', baseUrl: SERVER, username: 'u', password: 'senha-exposta', passwordEnc: null,
+    })
+
+    await auth.hydrate()
+
+    expect(auth.session.password).toBe('senha-exposta')
+    const stored = await storage.get('auth:session')
+    expect(JSON.stringify(stored)).not.toContain('senha-exposta')
+    expect(stored.passwordEnc).toBeTruthy()
+  })
+})
