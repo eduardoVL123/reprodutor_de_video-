@@ -7,7 +7,9 @@ import {
   authenticate,
   resolveShortInput,
   fetchM3uText,
-  GENERIC_CONNECTION_ERROR,
+  describeError,
+  XtreamError,
+  ERROR_CODES,
   MISSING_CREDENTIALS_ERROR,
 } from '@/services/xtreamApi'
 import { importM3uCatalog, hashText } from '@/services/m3uParser'
@@ -120,7 +122,12 @@ export const useAuthStore = defineStore('auth', () => {
       if (session.value?.type === 'm3u' && !saved.urlEnc) {
         await storage.set(SESSION_KEY, await toStoredSession(session.value)) // sessão legada: passa a cifrar a URL
       }
-
+    } catch (err) {
+      console.error('[auth] Falha ao ler sessão salva:', err)
+      session.value = null
+    }
+    // Separado da sessão: falhar ao ler ou migrar as listas salvas não pode deslogar o usuário.
+    try {
       const lists = await storage.get(SAVED_LISTS_KEY)
       if (Array.isArray(lists) && lists.length > 0) {
         const protectedLists = await Promise.all(lists.map(protectListItem))
@@ -145,8 +152,7 @@ export const useAuthStore = defineStore('auth', () => {
         await storage.set(SAVED_LISTS_KEY, [initial])
       }
     } catch (err) {
-      console.error('[auth] Falha ao ler sessão salva:', err)
-      session.value = null
+      console.error('[auth] Falha ao ler listas salvas:', err)
     }
     hydrated.value = true
   }
@@ -207,7 +213,9 @@ export const useAuthStore = defineStore('auth', () => {
         try {
           const player = usePlayerStore()
           await player.reset()
-        } catch (_) {}
+        } catch (err) {
+          console.warn('[auth] Falha ao limpar o player:', err)
+        }
 
         await importM3uCatalog(resolved.m3uText)
 
@@ -310,7 +318,9 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const player = usePlayerStore()
         await player.reset()
-      } catch (_) {}
+      } catch (err) {
+        console.warn('[auth] Falha ao limpar o player:', err)
+      }
 
       session.value = next
       hydrated.value = true
@@ -320,9 +330,9 @@ export const useAuthStore = defineStore('auth', () => {
       if (err && (err.code === 'missing_credentials' || err.code === 'MISSING_CREDENTIALS')) {
         error.value = MISSING_CREDENTIALS_ERROR
       } else {
-        error.value = err?.userMessage || err?.message || GENERIC_CONNECTION_ERROR
+        error.value = describeError(err).message
       }
-      errorDetail.value = err?.technicalDetail || err?.detail || String(err?.message || err || '')
+      errorDetail.value = describeError(err).detail
       return false
     } finally {
       loading.value = false
@@ -344,7 +354,7 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       if (item.type === 'm3u') {
         const urls = await revealM3u(item)
-        if (!urls) throw new Error('URL da lista não recuperável')
+        if (!urls) throw new XtreamError(ERROR_CODES.SAVED_DATA_UNREADABLE, 'URL da lista não pôde ser decifrada')
         const next = {
           id: item.id,
           type: 'm3u',
@@ -368,7 +378,9 @@ export const useAuthStore = defineStore('auth', () => {
         try {
           const player = usePlayerStore()
           await player.reset()
-        } catch (_) {}
+        } catch (err) {
+          console.warn('[auth] Falha ao limpar o player:', err)
+        }
 
         try {
           const { text } = await fetchM3uText(next.resolvedUrl || next.baseUrl)
@@ -386,7 +398,7 @@ export const useAuthStore = defineStore('auth', () => {
         password = await decryptSecret(item.passwordEnc)
       }
       if (!password) {
-        throw new Error('Senha não recuperável')
+        throw new XtreamError(ERROR_CODES.SAVED_DATA_UNREADABLE, 'Senha salva não pôde ser decifrada')
       }
 
       const result = await authenticate({ dns: item.baseUrl, username: item.username, password })
@@ -414,14 +426,17 @@ export const useAuthStore = defineStore('auth', () => {
       try {
         const player = usePlayerStore()
         await player.reset()
-      } catch (_) {}
+      } catch (err) {
+        console.warn('[auth] Falha ao limpar o player:', err)
+      }
 
       session.value = next
       return true
     } catch (err) {
       console.warn('[auth] Falha ao alternar lista:', err)
-      error.value = err?.userMessage || err?.message || GENERIC_CONNECTION_ERROR
-      errorDetail.value = err?.technicalDetail || err?.detail || String(err?.message || err || '')
+      const described = describeError(err)
+      error.value = described.message
+      errorDetail.value = described.detail
       return false
     } finally {
       loading.value = false
@@ -467,7 +482,9 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       const player = usePlayerStore()
       await player.reset()
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[auth] Falha ao limpar o player:', err)
+    }
     try {
       await storage.remove(SESSION_KEY)
     } catch (err) {

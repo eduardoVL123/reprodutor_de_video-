@@ -178,3 +178,32 @@ describe('tela de ativação no celular (RFC-023)', () => {
     wrapper.unmount()
   })
 })
+
+describe('tela de ativação — retorno da nova tentativa', () => {
+  async function mountWith(props) {
+    const { createPinia, setActivePinia } = await import('pinia')
+    setActivePinia(createPinia())
+    vi.stubEnv('VITE_LICENSE_BASE_URL', 'https://licenca.test')
+    const { default: ActivationRequired } = await import('@/views/ActivationRequired.vue')
+    const wrapper = mount(ActivationRequired, { props: { code: 'QDU5NXY7', ...props }, attachTo: document.body })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('enquanto verifica, o botão diz "Verificando…" e não emite de novo', async () => {
+    const wrapper = await mountWith({ checking: true })
+    const retry = wrapper.find('#activation-retry')
+
+    expect(retry.text()).toBe('Verificando…')
+    await retry.trigger('click')
+    expect(wrapper.emitted('retry')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('verificou e continua bloqueado: explica o que fazer', async () => {
+    const wrapper = await mountWith({ checked: true, reason: 'offline' })
+
+    expect(wrapper.find('#activation-status').text()).toContain('Confira a internet')
+    wrapper.unmount()
+  })
+})

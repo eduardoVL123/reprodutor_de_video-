@@ -60,6 +60,19 @@ const showActivation = computed(
   () => !player.isOpen && !profileStore.isProfileGateOpen && license.shouldBlock(auth.session),
 )
 
+// Retorno visual do "verificar de novo": sem isto a tela continuava igual e parecia que o botão não fazia nada.
+const activationChecking = ref(false)
+const activationChecked = ref(false)
+async function retryActivation() {
+  activationChecking.value = true
+  try {
+    await license.refresh(auth.session)
+  } finally {
+    activationChecking.value = false
+    activationChecked.value = true
+  }
+}
+
 // Abas de Navegação ('home' | 'live' | 'vod' | 'series' | 'favorites' | 'search' | 'account')
 const activeTab = ref('home')
 
@@ -138,7 +151,9 @@ watch(
       }
       // Só aplica se o destaque ainda for este item (resposta antiga não sobrescreve a nova).
       if (info && my === heroRequest) heroInfo.value = info
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[home] Falha ao ler detalhes do destaque:', err)
+    }
   },
   { immediate: true },
 )
@@ -299,7 +314,9 @@ async function loadCatalogShowcase({ reset = false } = {}) {
         rawItem: item,
       }))
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[home] Falha ao montar a fileira de filmes:', err)
+  }
 
   try {
     const seriesItems = ready('series') ? await catalog.getItems('series', ALL_CATEGORIES, 0, 20) : null
@@ -314,7 +331,9 @@ async function loadCatalogShowcase({ reset = false } = {}) {
         rawItem: item,
       }))
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[home] Falha ao montar a fileira de séries:', err)
+  }
 
   try {
     const liveItems = ready('live') ? await catalog.getItems('live', ALL_CATEGORIES, 0, 20) : null
@@ -332,7 +351,9 @@ async function loadCatalogShowcase({ reset = false } = {}) {
         }
       })
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[home] Falha ao montar a fileira de canais:', err)
+  }
 }
 
 // Controle parental: categoria escondida/bloqueada some do Início assim que muda.
@@ -1095,7 +1116,9 @@ onBeforeUnmount(() => {
       v-if="showActivation"
       :code="license.code"
       :reason="license.blockReason(auth.session)"
-      @retry="license.refresh(auth.session)"
+      :checking="activationChecking"
+      :checked="activationChecked"
+      @retry="retryActivation"
       @manage-lists="openListModal"
     />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />

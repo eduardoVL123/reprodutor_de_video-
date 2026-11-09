@@ -158,7 +158,9 @@ async function removeSection(section) {
     await db.removeItem(catKey(section))
     await db.removeItem(idxKey(section))
     await db.removeItem(searchKey(section))
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[catalogDb] Falha ao apagar seção do banco local:', err)
+  }
   resetCaches(section)
 }
 
@@ -239,13 +241,15 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   if (replaced()) return
   try {
     await db.setItem(catKey(section), categories)
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[catalogDb] Categorias de "${section}" mantidas só em memória:`, err)
     catCache.set(section, categories)
     incomplete = true
   }
   try {
     await db.setItem(idxKey(section), index)
-  } catch (_) {
+  } catch (err) {
+    console.warn(`[catalogDb] Índice de "${section}" mantido só em memória:`, err)
     indexCache.set(section, index)
     incomplete = true
   }
@@ -258,7 +262,9 @@ export async function saveSection(section, { categories, streams, onProgress }) 
   if (!incomplete) {
     try {
       await db.setItem(metaKey(section), metaObj)
-    } catch (_) {}
+    } catch (err) {
+      console.warn('[catalogDb] Falha ao salvar o resumo da seção (vai baixar de novo na próxima vez):', err)
+    }
   }
   if (replaced()) return
 

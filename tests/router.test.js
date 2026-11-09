@@ -48,3 +48,29 @@ describe('router', () => {
     expect(router.currentRoute.value.name).toBe('login')
   })
 })
+
+describe('router — tela que não carrega', () => {
+  it('recarrega o app uma vez e não entra em laço', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    sessionStorage.clear()
+    const { recoverFromRouteError } = await setup({ ftueAccepted: true }).then(() => import('@/router'))
+    const reload = vi.fn()
+
+    recoverFromRouteError(new Error('Failed to fetch dynamically imported module'), reload)
+    recoverFromRouteError(new Error('Failed to fetch dynamically imported module'), reload)
+
+    expect(reload).toHaveBeenCalledTimes(1)
+  })
+
+  it('sem sessionStorage não recarrega (evita laço infinito)', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { recoverFromRouteError } = await setup({ ftueAccepted: true }).then(() => import('@/router'))
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('bloqueado') })
+    const reload = vi.fn()
+
+    recoverFromRouteError(new Error('x'), reload)
+
+    expect(reload).not.toHaveBeenCalled()
+    vi.restoreAllMocks()
+  })
+})

@@ -49,6 +49,7 @@ const query = ref('')
 const results = shallowRef([])
 const counts = ref({})
 const isSearching = ref(false)
+const searchFailed = ref(false)
 const activeFilter = ref('all')
 const recentSearches = ref([])
 const detailsTarget = ref(null) // { item, section } aberto na tela de detalhes
@@ -87,6 +88,7 @@ const visibleResults = computed(() =>
 // ---------- Busca ----------
 async function runSearch() {
   const my = ++searchSeq
+  searchFailed.value = false
   if (!hasMinQuery.value) {
     results.value = []
     counts.value = {}
@@ -104,6 +106,7 @@ async function runSearch() {
     if (my === searchSeq) {
       results.value = []
       counts.value = {}
+      searchFailed.value = true // sem isto a falha aparecia como "Nenhum resultado"
     }
   } finally {
     if (my === searchSeq) isSearching.value = false
@@ -470,6 +473,13 @@ onBeforeUnmount(() => {
             aria-hidden="true"
           >
             <div v-for="i in 4" :key="'search-skel-' + i" class="h-[16.5rem] phone-portrait:h-[10rem] rounded-xl bg-white/[0.05] animate-pulse" />
+          </div>
+
+          <!-- Busca falhou (ex.: banco local indisponível) -->
+          <div v-else-if="searchFailed" class="mt-12 text-center" data-focus-group="search-error">
+            <p class="text-tv-lg text-white font-semibold phone-portrait:text-[1.05rem]" role="alert">Não foi possível buscar agora.</p>
+            <p class="text-tv-base text-neutral-400 mt-2 phone-portrait:text-[0.9rem]">Tente de novo; se continuar, feche e abra o app.</p>
+            <button id="search-retry" type="button" class="tv-btn tv-btn-primary mt-5" @click="runSearch">Tentar novamente</button>
           </div>
 
           <!-- Nenhum resultado -->

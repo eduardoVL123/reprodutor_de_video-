@@ -69,4 +69,31 @@ router.beforeEach(async (to) => {
   return true
 })
 
+const RELOAD_FLAG = 'pulse:route-reload'
+
+/**
+ * Tela que não carrega (arquivo da versão anterior após atualizar, rede caiu, erro no guard):
+ * recarrega o app uma vez em vez de deixar a tela em branco. Sem sessionStorage não recarrega, para não entrar em laço.
+ */
+export function recoverFromRouteError(err, reload = () => window.location.reload()) {
+  console.error('[router] Falha ao abrir a tela:', err)
+  let alreadyReloaded = true
+  try {
+    alreadyReloaded = sessionStorage.getItem(RELOAD_FLAG) === '1'
+    if (!alreadyReloaded) sessionStorage.setItem(RELOAD_FLAG, '1')
+  } catch (_) {
+    alreadyReloaded = true
+  }
+  if (!alreadyReloaded) reload()
+}
+
+router.onError((err) => recoverFromRouteError(err))
+router.afterEach(() => {
+  try {
+    sessionStorage.removeItem(RELOAD_FLAG) // navegou bem: libera uma nova tentativa no futuro
+  } catch (_) {
+    /* sem sessionStorage: nada a limpar */
+  }
+})
+
 export default router

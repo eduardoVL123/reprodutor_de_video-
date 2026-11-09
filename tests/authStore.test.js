@@ -230,3 +230,25 @@ describe('authStore — excluir lista', () => {
     expect(auth.savedLists).toHaveLength(0)
   })
 })
+
+describe('authStore — hydrate resiliente', () => {
+  it('falha ao ler as listas salvas não derruba a sessão', async () => {
+    const { auth, storage } = await setup()
+    await auth.login({ dns: SERVER, username: 'user1', password: 'senha-secreta' })
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const realGet = storage.get.bind(storage)
+    vi.spyOn(storage, 'get').mockImplementation((key) =>
+      key === 'auth:savedLists' ? Promise.reject(new Error('IndexedDB fora')) : realGet(key),
+    )
+
+    const { createPinia, setActivePinia } = await import('pinia')
+    setActivePinia(createPinia())
+    const { useAuthStore } = await import('@/stores/authStore')
+    const reopened = useAuthStore()
+    await reopened.hydrate()
+
+    expect(reopened.isAuthenticated).toBe(true)
+    expect(reopened.username).toBe('user1')
+    vi.restoreAllMocks()
+  })
+})

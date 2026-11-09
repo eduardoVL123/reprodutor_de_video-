@@ -15,7 +15,12 @@ import { useAuthStore } from '@/stores/authStore'
  */
 // reason (licenseStore.blockReason): 'blocked' = teste acabou; 'suspended' = o dono bloqueou o aparelho (RFC-019),
 // só falar com o suporte; 'offline' = a licença não foi confirmada há mais de 7 dias (ou nunca), precisa de conexão.
-const props = defineProps({ code: { type: String, default: '' }, reason: { type: String, default: 'blocked' } })
+const props = defineProps({
+  code: { type: String, default: '' },
+  reason: { type: String, default: 'blocked' },
+  checking: { type: Boolean, default: false }, // nova tentativa em andamento
+  checked: { type: Boolean, default: false }, // já tentou de novo e continua bloqueado
+})
 const emit = defineEmits(['retry', 'manage-lists', 'demo-opened'])
 const auth = useAuthStore()
 const demoPlaylistUrl = String(import.meta.env.VITE_DEMO_PLAYLIST_URL || '').trim()
@@ -122,8 +127,8 @@ onBeforeUnmount(() => {
           >
             Ver planos e ativar
           </button>
-          <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="$emit('retry')">
-            {{ offline ? 'Tentar de novo' : storeBuild ? 'Verificar ativação' : 'Já paguei, verificar' }}
+          <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="!checking && $emit('retry')" :aria-busy="checking">
+            {{ checking ? 'Verificando…' : offline ? 'Tentar de novo' : storeBuild ? 'Verificar ativação' : 'Já paguei, verificar' }}
           </button>
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">
             Usar outra lista
@@ -132,6 +137,10 @@ onBeforeUnmount(() => {
             {{ auth.loading ? 'Abrindo demonstração…' : 'Experimentar demonstração' }}
           </button>
         </div>
+        <p v-if="checked && !checking" id="activation-status" role="status" class="mt-3 text-tv-sm text-tv-meta">
+          Ainda não foi possível confirmar a ativação.
+          {{ offline ? 'Confira a internet do aparelho e tente de novo.' : 'Se você já pagou, aguarde alguns minutos e verifique de novo.' }}
+        </p>
         <p v-if="auth.error" role="alert" class="mt-3 text-tv-sm text-red-400">{{ auth.error }}</p>
       </div>
     </div>

@@ -41,3 +41,19 @@ describe('useVideoEngine — diagnóstico sem vazar credenciais', () => {
     engine.destroyEngine()
   })
 })
+
+describe('useVideoEngine — erro inesperado ao iniciar', () => {
+  it('mostra a camada de erro em vez de ficar carregando para sempre', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { useVideoEngine, PLAYBACK_ERROR } = await import('@/composables/useVideoEngine')
+    const engine = useVideoEngine()
+    const video = document.createElement('video')
+    Object.defineProperty(video, 'src', { set() { throw new Error('src recusado') }, get: () => '' })
+
+    await engine.attachAndPlay(video, { primaryUrl: 'http://srv.test/1.mp4', fallbackUrl: null, isHls: false, containerExtension: 'mp4' })
+
+    expect(engine.error.value).toBe(PLAYBACK_ERROR)
+    expect(engine.errorDetail.value).toContain('src recusado')
+    engine.destroyEngine()
+  })
+})

@@ -120,3 +120,44 @@ describe('xtreamApi — corpo da resposta que para de chegar', () => {
     expect(data.user_info.auth).toBe(1)
   })
 })
+
+describe('xtreamApi — falhas no corpo da resposta', () => {
+  it('WebView sem leitura em partes: o corpo que nunca chega também tem tempo esgotado', async () => {
+    const res = new Response('x')
+    Object.defineProperty(res, 'body', { value: null })
+    res.text = () => new Promise(() => {})
+    vi.stubGlobal('fetch', vi.fn(async () => res))
+    const { fetchM3uText } = await import('@/services/xtreamApi')
+
+    await expect(fetchM3uText('http://srv.test/lista.m3u', { timeoutMs: 50 })).rejects.toMatchObject({ code: 'TIMEOUT_ERROR' })
+  })
+
+  it('link curto: queda no meio do download não vira "faltam usuário e senha"', async () => {
+    const broken = new Response(new ReadableStream({ start(c) { c.error(new TypeError('network error')) } }))
+    vi.stubGlobal('fetch', vi.fn(async () => broken))
+    const { resolveShortInput } = await import('@/services/xtreamApi')
+
+    await expect(resolveShortInput({ dns: 'http://srv.test/curto' })).rejects.toMatchObject({ code: 'CORS_OR_NETWORK_ERROR' })
+  })
+})
+
+describe('xtreamApi — describeError', () => {
+  it('erro feito para o usuário passa como está', async () => {
+    const { describeError, XtreamError } = await import('@/services/xtreamApi')
+    const err = new XtreamError('HTTP_ERROR', { status: 503, raw: 'HTTP 503' })
+
+    expect(describeError(err).message).toContain('Tente de novo em alguns minutos')
+    expect(describeError(err).detail).toContain('[HTTP_ERROR]')
+  })
+
+  it('erro inesperado não vai cru para a tela e não vaza senha no detalhe', async () => {
+    const { describeError, UNEXPECTED_ERROR } = await import('@/services/xtreamApi')
+    const err = new Error('QuotaExceededError em http://srv.test/get.php?username=u&password=senha-secreta')
+
+    const { message, detail } = describeError(err)
+
+    expect(message).toBe(UNEXPECTED_ERROR)
+    expect(detail).toContain('[UNEXPECTED]')
+    expect(detail).not.toContain('senha-secreta')
+  })
+})

@@ -26,6 +26,9 @@ import { createJsonArrayReader } from '@/utils/jsonArrayReader'
 export const GENERIC_CONNECTION_ERROR =
   'Falha ao conectar. Verifique seus dados ou a conexão com a internet.'
 
+export const UNEXPECTED_ERROR =
+  'Algo deu errado. Tente de novo; se continuar, fale com o suporte e informe a causa técnica.'
+
 export const DEFAULT_TIMEOUT_MS = 15000
 export const PLAYLIST_TIMEOUT_MS = 90000
 
@@ -44,6 +47,7 @@ export const ERROR_CODES = {
   MISSING_CREDENTIALS: 'MISSING_CREDENTIALS',
   INVALID_INPUT: 'INVALID_INPUT',
   NO_SESSION: 'NO_SESSION',
+  SAVED_DATA_UNREADABLE: 'SAVED_DATA_UNREADABLE',
 }
 
 // Compatibilidade com códigos antigos (minúsculos) ainda usados em chamadas legadas.
@@ -65,11 +69,16 @@ function buildUserMessage(code, ctx) {
     case ERROR_CODES.AUTH_ACCOUNT_EXPIRED:
       return `Conta inativa ou expirada no servidor (Status: ${ctx.accountStatus || 'desconhecido'}).`
     case ERROR_CODES.HTTP_ERROR:
-      return `O servidor retornou erro HTTP ${ctx.status || '?'} (${ctx.statusText || 'sem descrição'}).`
+      if (ctx.status >= 500) {
+        return `O servidor da lista está com problema (erro ${ctx.status}). Tente de novo em alguns minutos.`
+      }
+      return `O servidor recusou o pedido (erro ${ctx.status || '?'}). Confira o endereço da lista.`
     case ERROR_CODES.TIMEOUT_ERROR:
-      return `Tempo limite esgotado (${ctx.timeoutSec || '?'}s). O servidor demorou muito para responder.`
+      return `O servidor demorou mais de ${ctx.timeoutSec || '?'}s para responder. Confira sua internet e tente de novo.`
     case ERROR_CODES.CORS_OR_NETWORK_ERROR:
-      return 'Falha de conexão com o servidor (DNS incorreto, servidor fora do ar ou bloqueio de rede/CORS).'
+      return 'Não foi possível falar com o servidor. Confira sua internet e o endereço da lista; o servidor pode estar fora do ar.'
+    case ERROR_CODES.SAVED_DATA_UNREADABLE:
+      return 'Não foi possível ler os dados salvos desta lista. Exclua a lista e adicione de novo.'
     case ERROR_CODES.INVALID_FORMAT_ERROR:
       return 'O servidor respondeu, mas não enviou dados Xtream Codes nem uma lista #EXTM3U válida.'
     case ERROR_CODES.EMPTY_M3U_ERROR:
@@ -107,6 +116,16 @@ export class XtreamError extends Error {
     this.detail = this.technicalDetail // compatibilidade com logs antigos
     this.status = ctx.status || 0
   }
+}
+
+/**
+ * Texto para a tela e detalhe técnico de qualquer erro. Só mensagens feitas para o usuário (userMessage) vão para a
+ * tela; erro inesperado mostra `fallback` e leva o código UNEXPECTED no detalhe, para o suporte reconhecer.
+ */
+export function describeError(err, fallback = UNEXPECTED_ERROR) {
+  if (err && err.userMessage) return { message: err.userMessage, detail: err.technicalDetail || err.detail || '' }
+  const raw = `${(err && err.name) || 'Error'}: ${(err && err.message) || String(err)}`
+  return { message: fallback, detail: maskSecrets(`[UNEXPECTED] ${raw}`) }
 }
 
 /** Host e endpoint (sem credenciais) de uma URL, para diagnóstico. */
@@ -246,7 +265,25 @@ export async function smartFetch(url, { timeoutMs = DEFAULT_TIMEOUT_MS, accept }
  */
 async function readText(res, idleMs, where, onPiece) {
   if (!res.body || typeof res.body.getReader !== 'function') {
-    const all = await res.text()
+    // WebView antiga sem leitura em partes: não há como medir pausa, então o limite vale para o corpo inteiro.
+    let timer
+    const limit = new Promise((_, reject) => {
+      timer = setTimeout(() => {
+        reject(
+          new XtreamError(ERROR_CODES.TIMEOUT_ERROR, {
+            ...where,
+            timeoutSec: Math.round(idleMs / 1000),
+            raw: `Resposta não terminou em ${idleMs}ms`,
+          }),
+        )
+      }, idleMs)
+    })
+    let all
+    try {
+      all = await Promise.race([res.text(), limit])
+    } finally {
+      clearTimeout(timer)
+    }
     return onPiece ? onPiece(all) : all
   }
   const reader = res.body.getReader()
@@ -646,10 +683,12 @@ export async function resolveShortInput({ dns, username = '', password = '', tim
 
   // 3b. Lista #EXTM3U pura
   let text = ''
+  let readError = null
   try {
     text = await readText(res, Math.max(timeoutMs, PLAYLIST_TIMEOUT_MS), describeUrl(finalUrl))
   } catch (err) {
     if (err instanceof XtreamError) throw err
+    readError = err
   }
   if (text && text.replace(/^\uFEFF/, '').trim().indexOf('#EXTM3U') === 0) {
     return {
@@ -664,6 +703,13 @@ export async function resolveShortInput({ dns, username = '', password = '', tim
 
   // 3c. Servidor Xtream (link curto) sem credenciais informadas
   if (!user || !pass) {
+    if (readError) {
+      // A conexão caiu no meio do download: não sabemos se era lista ou servidor, então não pedimos usuário e senha.
+      throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, {
+        ...describeUrl(finalUrl),
+        raw: `${readError.name || 'Error'}: ${readError.message || 'falha ao ler a resposta'}`,
+      })
+    }
     throw new XtreamError(ERROR_CODES.MISSING_CREDENTIALS, {
       ...describeUrl(finalUrl),
       raw: 'O link não contém credenciais nem uma lista #EXTM3U',

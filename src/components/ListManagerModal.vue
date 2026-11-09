@@ -7,6 +7,7 @@ import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import { isPairingAvailable } from '@/services/pairingApi'
 import { useLicenseStore } from '@/stores/licenseStore'
 import { isStoreBuild } from '@/services/licenseApi'
+import { describeError } from '@/services/xtreamApi'
 
 /**
  * Gerenciador de listas (servidores/playlists salvos). O pai abre com `open()` (via ref) e é
@@ -113,8 +114,9 @@ async function switchList(listId) {
     close()
     emit('changed')
   } catch (err) {
-    formError.value = err.message || 'Falha ao alternar para a lista selecionada.'
-    formErrorDetail.value = err.detail || String(err)
+    const described = describeError(err)
+    formError.value = described.message
+    formErrorDetail.value = described.detail
   } finally {
     isSwitching.value = false
   }
@@ -148,8 +150,9 @@ async function removeList(listId) {
       emit('changed')
     }
   } catch (err) {
-    formError.value = err.message || 'Falha ao excluir a lista.'
-    formErrorDetail.value = err.detail || String(err)
+    const described = describeError(err)
+    formError.value = described.message
+    formErrorDetail.value = described.detail
   }
 }
 
@@ -177,8 +180,9 @@ async function addList() {
     close()
     emit('changed')
   } catch (err) {
-    formError.value = err.message || 'Falha ao conectar com o servidor.'
-    formErrorDetail.value = err.detail || String(err)
+    const described = describeError(err)
+    formError.value = described.message
+    formErrorDetail.value = described.detail
   } finally {
     isConnecting.value = false
   }

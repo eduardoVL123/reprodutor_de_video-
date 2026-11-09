@@ -37,3 +37,23 @@ describe('SearchScreen — celular em pé', () => {
     expect(document.getElementById('search-input').getAttribute('data-tv-editing')).toBe('false')
   })
 })
+
+describe('SearchScreen — busca que falha', () => {
+  it('avisa o erro com "Tentar novamente" em vez de dizer que não há resultado', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    Element.prototype.scrollIntoView = Element.prototype.scrollIntoView || (() => {}) // jsdom não tem
+    vi.doMock('@/services/catalogSearch', async (importOriginal) => ({
+      ...(await importOriginal()),
+      searchCatalog: vi.fn(async () => { throw new Error('IndexedDB fora') }),
+    }))
+    await mountSearch(true)
+    await wrapper.find('input').setValue('filme')
+    await new Promise((r) => setTimeout(r, 400))
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Nenhum resultado')
+    expect(wrapper.find('#search-retry').exists()).toBe(true)
+    vi.doUnmock('@/services/catalogSearch')
+    vi.restoreAllMocks()
+  })
+})

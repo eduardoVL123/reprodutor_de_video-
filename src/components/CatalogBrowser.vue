@@ -254,7 +254,9 @@ async function loadFeaturedInfo(it) {
       })
     }
     if (info) featuredInfo.value = info
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[catalog] Falha ao ler detalhes do destaque:', err)
+  }
 }
 
 async function unlockCategory(pin) {
