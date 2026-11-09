@@ -320,6 +320,10 @@ async function readText(res, idleMs, where, onPiece) {
 async function readJson(res, url, idleMs) {
   const where = describeUrl(url)
   if (!res.ok) {
+    // 502 montado pelo motor HTTP nativo do APK (MainActivity.java): o servidor nem respondeu (ex.: certificado inválido).
+    if (res.headers && res.headers.get('X-Pulse-Native-Error') === '1') {
+      throw new XtreamError(ERROR_CODES.CORS_OR_NETWORK_ERROR, { ...where, raw: `HTTP ${res.status} do motor nativo` })
+    }
     throw new XtreamError(ERROR_CODES.HTTP_ERROR, {
       ...where,
       status: res.status,
@@ -365,11 +369,12 @@ function baseFromFinalUrl(finalUrl, requestedBase) {
   }
 }
 
-/** Falha de transporte (rede/TLS/gateway) em vez de uma resposta legítima do servidor. */
+/**
+ * Falha de transporte (rede/TLS) em vez de uma resposta do servidor. Um 5xx de verdade (painel sobrecarregado) não
+ * conta: repetir em http mandaria usuário e senha sem cifra. O 502 do motor nativo já chega como erro de rede.
+ */
 function isTransportFailure(err) {
-  if (!err) return false
-  if (err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR) return true
-  return err.code === ERROR_CODES.HTTP_ERROR && err.status >= 500
+  return !!err && err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR
 }
 
 /**

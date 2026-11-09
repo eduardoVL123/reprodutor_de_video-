@@ -22,13 +22,16 @@ describe('parentalStore', () => {
     expect(parental.blockedIds('vod', CATS)).toEqual(['2'])
   })
 
-  it('sem PIN de fábrica: o primeiro PIN digitado vira o PIN; depois só ele desbloqueia (até fechar o app)', async () => {
+  it('sem PIN de fábrica: abrir a categoria não cria PIN (quem cria é o Controle parental); depois só ele desbloqueia', async () => {
     const { useParentalStore } = await import('@/stores/parentalStore')
     const parental = useParentalStore()
     await parental.load('p1')
     expect(parental.needsPin()).toBe(true)
-    expect(await parental.unlock('vod', CATS[1], '12')).toBe(false) // curto demais: não cria
-    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(true) // cria o PIN e desbloqueia
+    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(false) // a criança não vira dona do PIN
+    expect(parental.needsPin()).toBe(true)
+    expect(await parental.checkPin('12')).toBe(false) // curto demais: não cria
+    expect(await parental.checkPin('2580')).toBe(true) // Controle parental cria o PIN
+    expect(await parental.unlock('vod', CATS[1], '2580')).toBe(true)
     expect(parental.needsPin()).toBe(false)
     expect(parental.isLocked('vod', CATS[1])).toBe(false)
     expect(parental.blockedIds('vod', CATS)).toEqual([])
@@ -40,6 +43,7 @@ describe('parentalStore', () => {
     const parental = useParentalStore()
     await parental.load('p-lista', 'A')
     await parental.setStatus('vod', CATS[2], 'visible') // "3" = Esportes na lista A
+    await parental.checkPin('2580') // cria
     await parental.unlock('vod', CATS[1], '2580')
     await parental.load('p-lista', 'B')
     expect(parental.statusOf('vod', { category_id: '3', category_name: 'XXX Adultos' })).toBe('locked') // "3" na lista B

@@ -161,3 +161,28 @@ describe('xtreamApi — describeError', () => {
     expect(detail).not.toContain('senha-secreta')
   })
 })
+
+describe('xtreamApi — 5xx de verdade não rebaixa para http', () => {
+  it('painel https sobrecarregado (503) não recebe a senha em http', async () => {
+    const fetchMock = vi.fn(async () => jsonResponse({}, { status: 503, statusText: 'Service Unavailable' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    await expect(apiRequest('https://srv.test', { username: 'u', password: 'p' })).rejects.toMatchObject({ code: 'HTTP_ERROR' })
+    expect(fetchMock.mock.calls.some(([url]) => String(url).startsWith('http://'))).toBe(false)
+  })
+
+  it('502 do motor nativo do Android (certificado inválido) continua tentando http', async () => {
+    const fetchMock = vi.fn(async (url) =>
+      String(url).startsWith('http://srv.test')
+        ? jsonResponse({ user_info: { auth: 1 } })
+        : jsonResponse({ error: 'NativeHttp: cert' }, { status: 502, headers: { 'X-Pulse-Native-Error': '1' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    const result = await apiRequest('https://srv.test', { username: 'u', password: 'p' })
+    expect(result.downgraded).toBe(true)
+  })
+})

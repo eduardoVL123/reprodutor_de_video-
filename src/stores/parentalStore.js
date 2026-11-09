@@ -122,7 +122,8 @@ export const useParentalStore = defineStore('parental', () => {
 
   /** @returns {Promise<boolean>} PIN certo: a categoria abre até fechar o app. */
   async function unlock(section, category, pin) {
-    if (!(await checkPin(pin))) return false
+    // Sem PIN, quem tenta abrir a categoria (pode ser a criança) não pode virar dono do PIN: ele nasce no Controle parental.
+    if (needsPin() || !(await checkPin(pin))) return false
     unlocked.value = new Set(unlocked.value).add(`${section}:${category.category_id}`)
     return true
   }
