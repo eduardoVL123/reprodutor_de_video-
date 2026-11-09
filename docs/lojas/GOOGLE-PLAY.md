@@ -9,7 +9,7 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 |---|---|
 | "Facilita acesso a conteúdo sem licença" | Não traz conteúdo nem lista; aviso legal no primeiro acesso; descrição fala só em "suas próprias listas"; capturas só com a lista de demonstração (Blender, CC BY). Nada de logos de canais, filmes ou marcas na ficha. |
 | "Revisor não conseguiu testar" | Lista de demonstração (`docs/demo`) no botão do login e nas instruções de acesso abaixo. |
-| Conteúdo sexual acessível sem barreira | **Controle parental**: categorias com nome adulto começam bloqueadas (PIN), e qualquer categoria pode ser bloqueada ou escondida por perfil. Itens bloqueados não aparecem no Início nem na busca. |
+| Conteúdo sexual acessível sem barreira | **Controle parental**: categorias com nome adulto começam bloqueadas (PIN), e qualquer categoria pode ser bloqueada ou escondida por perfil. Itens bloqueados não aparecem no Início nem na busca. Desde a 2.3, o PIN só é criado no Controle parental (antes, o primeiro número digitado na categoria virava o PIN) e um perfil novo segue as escolhas do Principal. |
 | Pagamento fora do faturamento da Google | O AAB da Play é gerado com `VITE_LICENSE_STORE_BUILD=1`: sem preço, sem QR e sem link de pagamento dentro do app (a tela de ativação diz só "use o código abaixo para ativar este aparelho", sem citar vendedor). O CI já faz isso. |
 | Política de privacidade ausente ou genérica | [`PRIVACY.md`](../../PRIVACY.md), específica deste app, publicada em `https://pulseplayer.com.br/privacidade` e com link dentro do app (Conta → Política de privacidade). |
 
@@ -19,7 +19,10 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
       `PULSE_KEY_ALIAS`, `PULSE_KEY_PASSWORD` nos Secrets do GitHub. O CI gera o AAB assinado.
 - [ ] **Play App Signing**: aceite no console (a Google guarda a chave final; a sua vira chave de upload).
 - [x] **Variáveis do CI**: `PULSE_DEMO_PLAYLIST_URL`, `PULSE_LICENSE_BASE_URL` e `PULSE_LICENSE_PUBLIC_KEY`.
-- [x] **Versão gerada**: `versionCode` 5 / `versionName` 2.2, assinada pelo CI em 2026-11-06.
+- [ ] **Versão para enviar: 2.3 (`versionCode` 6)**, com as correções de 2026-11-09 (PIN parental, senha sem
+      rebaixar para http, licença revisada a cada 6 h, erros explicados). Sai do CI ao fazer merge na `main`; baixar o
+      artefato `app-release` da execução (traz o APK e o AAB) e enviar esse AAB. A 2.2 abaixo **não** tem essas correções.
+- [x] **Versão anterior**: `versionCode` 5 / `versionName` 2.2, assinada pelo CI em 2026-11-06.
       Para upload na Play, usar `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-play.aab`.
       Para instalação direta, usar `C:\dev\android\release-2.2-2026-11-06\pulse-player-2.2-release.apk`.
       [CI](https://github.com/eduardoVL123/reprodutor_de_video-/actions/runs/42304877362) com 1.103 testes,
@@ -31,7 +34,7 @@ Respostas prontas para o Play Console, na ordem em que ele pede. Complementa [`P
 
 | Pergunta | Resposta |
 |---|---|
-| Acesso ao app | "Todas ou algumas funcionalidades são restritas" → instruções: *"O app não traz conteúdo. Na tela de login, toque em 'Experimentar com vídeos de demonstração' (filmes Blender, CC BY). A lista de demonstração nunca pede ativação, mesmo depois dos 7 dias de teste. No controle parental, o primeiro PIN digitado (4 a 8 números) vira o PIN do aparelho."* (texto em inglês na seção 3 de `PUBLICACAO.md`). |
+| Acesso ao app | "Todas ou algumas funcionalidades são restritas" → instruções: *"O app não traz conteúdo. Na tela de login, toque em 'Experimentar com vídeos de demonstração' (filmes Blender, CC BY). A lista de demonstração nunca pede ativação, mesmo depois dos 7 dias de teste. Categorias com nome adulto começam bloqueadas e só abrem depois de criar um PIN (4 a 8 números) no botão 'Controle parental' (cadeado, no celular em pé) das abas Filmes, Séries ou TV."* (texto em inglês na seção 3 de `PUBLICACAO.md`). |
 | Anúncios | Não contém anúncios. |
 | Classificação do conteúdo (IARC) | Categoria "Todos os outros tipos de app" / utilitário de mídia. Conteúdo gerado pelo usuário/acesso a conteúdo de terceiros: **sim** (listas do usuário). Violência, sexo etc. no próprio app: não. Informe que há controle parental. |
 | Público-alvo | **18+** (ou 16+). Não marque crianças: evita as regras da Família, que o app não cumpre por tocar listas de terceiros. |
