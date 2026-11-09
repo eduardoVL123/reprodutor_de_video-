@@ -1,5 +1,5 @@
 {
-  "appId": "com.pulseplayer.app",
+  "appId": "com.playerpulse.app",
   "appName": "Pulse Player",
   "webDir": "dist",
   "server": {

@@ -165,7 +165,8 @@ jobs:
           PULSE_KEYSTORE_PASSWORD: ${{ secrets.PULSE_KEYSTORE_PASSWORD }}
           PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
           PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
-        run: ./gradlew bundleRelease
+        # Nome do pacote na Play: com.pulseplayer.app já era de outro desenvolvedor (ver android/app/build.gradle).
+        run: ./gradlew bundleRelease -PpulseApplicationId=com.playerpulse.app
 
       - name: Enviar release
         if: steps.release_key.outputs.available == 'true'
@@ -189,10 +190,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0
-          name: Pulse Player 2.3 (APK para instalação direta)
+          name: Pulse Player 2.3.1 (APK para instalação direta)
           body: |
-            ### Pulse Player 2.3 — Mais seguro e mensagens de erro claras
-            Versão 2.3, código 6. Controle parental mais firme, senha nunca rebaixada para http por erro do servidor, mensagens que dizem o que fazer e rolagem mais leve em listas grandes.
+            ### Pulse Player 2.3.1 — Vídeos de painéis sem https e mais segurança
+            Versão 2.3.1, código 7. Corrige filmes que não tocavam em listas digitadas com https:// cujo servidor só funciona em http. Controle parental mais firme, senha nunca rebaixada para http por erro do servidor, mensagens que dizem o que fazer e rolagem mais leve em listas grandes.
             
             **Como instalar na Smart TV com o app Downloader:**
             1. Abra o app **Downloader** na sua Android TV ou Fire TV.

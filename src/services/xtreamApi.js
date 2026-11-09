@@ -374,7 +374,11 @@ function baseFromFinalUrl(finalUrl, requestedBase) {
  * conta: repetir em http mandaria usuário e senha sem cifra. O 502 do motor nativo já chega como erro de rede.
  */
 function isTransportFailure(err) {
-  return !!err && err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR
+  if (!err) return false
+  if (err.code === ERROR_CODES.CORS_OR_NETWORK_ERROR) return true
+  // 525/526 do Cloudflare: o servidor de origem não tem TLS (ou o certificado é inválido); é o https que não existe,
+  // como um certificado quebrado, e não um painel sobrecarregado.
+  return err.code === ERROR_CODES.HTTP_ERROR && (err.status === 525 || err.status === 526)
 }
 
 /**
@@ -402,7 +406,10 @@ export async function apiRequest(baseUrl, credentials, { action, params, timeout
       const httpBase = baseUrl.replace(/^https:\/\//i, 'http://')
       try {
         console.warn(`[xtream] Chamada em ${baseUrl} (action=${action || 'auth'}) falhou (${err.message}). Tentando fallback em http://...`)
-        return { ...(await execute(httpBase)), downgraded: true }
+        const result = await execute(httpBase)
+        // A base http vira o endereço da lista: sem isto a sessão ficava em https e os vídeos (montados a partir dela)
+        // iam para o https quebrado, com a lista abrindo e nada tocando.
+        return { ...result, resolvedUrl: result.resolvedUrl || httpBase, downgraded: true }
       } catch (_) {
         // Se ambos falharem, propaga o erro original
         throw err

@@ -66,3 +66,13 @@ describe('Android — app ocupa a tela inteira do celular', () => {
     expect(activity).toMatch(/setOnApplyWindowInsetsListener[\s\S]*WindowInsetsCompat\.Type\.ime\(\)/)
   })
 })
+
+describe('Android — nome do pacote por destino', () => {
+  it('AAB da Play sai como com.playerpulse.app; o APK direto segue com.pulseplayer.app (TVs já instaladas atualizam)', () => {
+    const gradle = read('android/app/build.gradle')
+    const ci = read('.github/workflows/build-apk.yml')
+    expect(gradle).toMatch(/applicationId project\.findProperty\('pulseApplicationId'\) \?: "com\.pulseplayer\.app"/)
+    expect(ci).toMatch(/bundleRelease -PpulseApplicationId=com\.playerpulse\.app/)
+    expect(ci).toMatch(/run: \.\/gradlew assembleRelease\s*$/m)
+  })
+})

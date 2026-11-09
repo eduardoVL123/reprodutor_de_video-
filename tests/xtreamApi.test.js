@@ -186,3 +186,31 @@ describe('xtreamApi — 5xx de verdade não rebaixa para http', () => {
     expect(result.downgraded).toBe(true)
   })
 })
+
+describe('xtreamApi — painel sem https de verdade (Cloudflare 525)', () => {
+  const ok = () => jsonResponse({ user_info: { auth: 1, status: 'Active' }, server_info: {} })
+
+  it('login com https: 525 (origem sem TLS) cai para http e a sessão passa a usar http nos vídeos', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) =>
+      String(url).startsWith('https://') ? jsonResponse({}, { status: 525, statusText: '' }) : ok(),
+    ))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { authenticate } = await import('@/services/xtreamApi')
+
+    const result = await authenticate({ dns: 'https://srv.test', username: 'u', password: 'p' })
+
+    expect(result.resolvedUrl).toBe('http://srv.test') // os vídeos são montados a partir daqui
+    expect(result.insecure).toBe(true)
+  })
+
+  it('apiRequest que caiu para http devolve a base http (para não repetir o https quebrado)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (url) => {
+      if (String(url).startsWith('http://srv.test')) return ok()
+      throw new TypeError('Failed to fetch')
+    }))
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { apiRequest } = await import('@/services/xtreamApi')
+
+    expect((await apiRequest('https://srv.test', { username: 'u', password: 'p' })).resolvedUrl).toBe('http://srv.test')
+  })
+})

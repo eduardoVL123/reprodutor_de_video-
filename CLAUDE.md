@@ -18,7 +18,7 @@ Não faça commit/push sem pedido explícito.
   terceiros (há testes de guarda).
 
 ## Marca (RFC-015)
-- Pulse Player, appId `com.pulseplayer.app`. Kit em `../logo/kit` (leia `GUIA-DE-USO.md`).
+- Pulse Player, appId `com.pulseplayer.app` (APK direto, TVs, webOS); na Google Play o pacote é `com.playerpulse.app` (CI passa `-PpulseApplicationId`). Kit em `../logo/kit` (leia `GUIA-DE-USO.md`).
 - Cores: `tv-accent` verde-limão `#B8F000`, fundo grafite `#0B0F0C`. Texto sobre limão sólido é `text-tv-on-accent`
   (grafite), nunca branco; limão nunca sobre fundo claro. Símbolo: `src/components/BrandMark.vue` (tamanho em rem).
 - Ícones e splashes nativos: `npm run icons` (`scripts/make-tv-icons.mjs`). Segredos de assinatura: `PULSE_*`.
