@@ -6,7 +6,7 @@
  * quem muda o pedido para 'paid' (UPDATE condicional) é o único que entrega.
  */
 import { readJsonBody, timingSafeEqualStr } from '../pair/pair-core.mjs'
-import { findDeviceByCode, activationEndsAt, hitLimit, revokeActivationStatements } from './license-db.mjs'
+import { findDeviceByCode, activationEndsAt, hitLimit, lockedFor, revokeActivationStatements } from './license-db.mjs'
 import { hashKey, createReseller, rotateKey, toBase64Url } from './license-resellers.mjs'
 import { DAY_MS, extendActivation } from './license-rules.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, MAX_CREDITS, creditTotal } from './pricing.mjs'
@@ -114,20 +114,35 @@ async function validSignature(request, url, secret) {
 
 export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret = '', dbLimits = CHECKOUT_DB_LIMITS }) {
   /** Recusa (429) antes de criar o pedido se a rede, o aparelho ou o cartão em geral passaram do limite. */
+  /**
+   * Tetos que só contam cartão recusado de verdade (noteCardDecline): contar toda tentativa deixava qualquer um, com
+   * tokens inventados, pausar o cartão do site inteiro (cardAll) ou de uma TV (cardDevice).
+   */
+  const declineChecks = (deviceCode) => [
+    ...(deviceCode ? [{ bucket: 'cardDevice', key: deviceCode, limit: dbLimits.cardPerDeviceDay, windowMs: DAY_MS }] : []),
+    { bucket: 'cardAll', key: '*', limit: dbLimits.cardAllHour, windowMs: HOUR_MS },
+  ]
+
   async function guardCheckout(purchase, who) {
     const at = now()
     const checks = [{ bucket: 'checkout', key: who, limit: dbLimits.perNetworkHour, windowMs: HOUR_MS }]
-    if (purchase.method === 'card') {
-      checks.push({ bucket: 'card', key: who, limit: dbLimits.cardPerNetworkHour, windowMs: HOUR_MS })
-      if (purchase.deviceCode) checks.push({ bucket: 'cardDevice', key: purchase.deviceCode, limit: dbLimits.cardPerDeviceDay, windowMs: DAY_MS })
-      checks.push({ bucket: 'cardAll', key: '*', limit: dbLimits.cardAllHour, windowMs: HOUR_MS })
-    }
+    if (purchase.method === 'card') checks.push({ bucket: 'card', key: who, limit: dbLimits.cardPerNetworkHour, windowMs: HOUR_MS })
     for (const check of checks) {
-      if (await hitLimit(db, { ...check, now: at })) {
-        if (check.bucket === 'cardAll') console.warn('[checkout] teto geral de tentativas no cartão atingido: possível teste de cartões')
+      if (await hitLimit(db, { ...check, now: at })) throw new CheckoutError(429, 'Muitas tentativas. Aguarde um pouco.')
+    }
+    if (purchase.method !== 'card') return
+    for (const check of declineChecks(purchase.deviceCode)) {
+      if (await lockedFor(db, { ...check, now: at })) {
+        if (check.bucket === 'cardAll') console.warn('[checkout] teto geral de cartões recusados atingido: possível teste de cartões')
         throw new CheckoutError(429, check.bucket === 'cardAll' ? 'Cartão indisponível no momento. Pague com Pix.' : 'Muitas tentativas. Aguarde um pouco.')
       }
     }
+  }
+
+  /** Cartão recusado pelo banco (a order nasceu e falhou): é o sinal de teste de cartões roubados. */
+  async function noteCardDecline(deviceCode) {
+    const at = now()
+    for (const check of declineChecks(deviceCode)) await hitLimit(db, { ...check, now: at })
   }
 
   function throttled(bucket, ip) {
@@ -220,8 +235,9 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
       throw await startFailed(reply.orderId, err, 'card')
     }
     const status = String(pre.status || 'pending')
+    // OR IGNORE: o aviso do Mercado Pago pode chegar antes desta linha e já ter gravado a assinatura (adoptPreapproval).
     await db
-      .prepare('INSERT INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
+      .prepare('INSERT OR IGNORE INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
       .bind(reply.orderId, purchase.deviceCode, String(pre.id), status, now())
       .run()
     return { ...reply, subscription: { status } }
@@ -234,6 +250,10 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     const isSubscription = purchase.method === 'card' && purchase.kind === 'device_annual'
     // As parcelas da assinatura só chegam pelo webhook: sem o segredo dele, venderíamos sem conseguir entregar.
     if (isSubscription && !webhookSecret) throw new CheckoutError(503, 'Assinatura no cartão indisponível no momento. Pague com Pix.')
+    // Duas renovações no mesmo aparelho cobrariam duas vezes por ano.
+    if (isSubscription && (await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status <> 'cancelled'").bind(purchase.deviceCode).first())) {
+      throw new CheckoutError(409, 'Este aparelho já tem renovação automática no cartão. Para trocar o cartão, fale com o suporte pelo WhatsApp.')
+    }
     await guardCheckout(purchase, who)
     const at = now()
     const orderId = randomId(16)
@@ -264,7 +284,10 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     // A resposta da criação vem da própria API (com o nosso token): vale como a consulta da G15.
     await settle(order)
     const { status: current } = await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()
-    if (current === 'failed') throw new CheckoutError(402, DECLINED)
+    if (current === 'failed') {
+      await noteCardDecline(purchase.deviceCode)
+      throw new CheckoutError(402, DECLINED)
+    }
     const challengeUrl = paymentMethod.transaction_security && paymentMethod.transaction_security.url
     return { ...reply, status: current, ...(current === 'pending' && challengeUrl ? { challengeUrl } : {}) }
   }

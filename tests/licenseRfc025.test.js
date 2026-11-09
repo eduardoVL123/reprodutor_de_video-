@@ -146,6 +146,20 @@ describe('cancelar renovação — POST /v1/subscription/cancel (§3)', () => {
     expect((await db.prepare('SELECT status FROM subscriptions').first()).status).toBe('authorized')
   })
 
+  it('duas renovações no mesmo código: cancela só a do e-mail digitado (auditoria 13)', async () => {
+    const code = await hello()
+    await subscribe(code, 'authorized', 'sub1')
+    await subscribe(code, 'authorized', 'sub2')
+    mp.getPreapproval.mockImplementation(async (id) => ({ id, status: 'authorized', payer_email: id === 'pre-sub2' ? 'joao@exemplo.com' : 'maria@exemplo.com' }))
+
+    expect((await cancel(code, 'joao@exemplo.com')).status).toBe(200)
+
+    expect(mp.cancelPreapproval).toHaveBeenCalledTimes(1)
+    expect(mp.cancelPreapproval).toHaveBeenCalledWith('pre-sub2')
+    const rows = (await db.prepare('SELECT id, status FROM subscriptions ORDER BY id').all()).results
+    expect(rows).toEqual([{ id: 'sub1', status: 'authorized' }, { id: 'sub2', status: 'cancelled' }])
+  })
+
   it('sem renovação no cartão: 404', async () => {
     expect((await cancel(await hello(), 'maria@exemplo.com')).status).toBe(404)
   })
