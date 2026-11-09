@@ -4,11 +4,13 @@ android {
     namespace = "com.pulseplayer.app"
     compileSdk = rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.pulseplayer.app"
+        // Play: com.playerpulse.app (com.pulseplayer.app já era de outro desenvolvedor na loja). O APK direto (Downloader)
+        // segue com.pulseplayer.app para as TVs já instaladas atualizarem por cima. O CI passa -PpulseApplicationId no AAB.
+        applicationId project.findProperty('pulseApplicationId') ?: "com.pulseplayer.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 6
-        versionName "2.3"
+        versionCode 7
+        versionName "2.3.1"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
