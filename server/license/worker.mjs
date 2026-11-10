@@ -119,11 +119,12 @@ export default {
     return handle(request, request.headers.get('CF-Connecting-IP') || '0.0.0.0')
   },
 
-  // De hora em hora (wrangler.jsonc): limpeza da guarda de 24 meses e conferência de estornos sem webhook.
+  // De hora em hora (wrangler.jsonc): limpeza da guarda de 24 meses, estornos sem webhook e pedido pago parado.
   async scheduled(_event, env) {
     await migrate(env.DB)
     await purgeExpired(env.DB, Date.now())
     if (!handle) handle = buildHandle(env)
     await handle.recheckRefunds()
+    await handle.warnStuckOrders()
   },
 }

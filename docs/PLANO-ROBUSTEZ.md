@@ -46,13 +46,18 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 3. Ninguém avisa quando algo quebra
 
-- [ ] **Problema:** se o site cair ou um pedido ficar "pago, sem entrega", você só descobre pelo cliente.
-- **Causa:** existe `/healthz` nos dois servidores, mas nada consulta.
-- **Como corrigir:**
-  1. Monitor externo gratuito (UptimeRobot ou similar) em `https://pulseplayer.com.br/healthz` e no `/healthz` do
-     pareamento, avisando por e-mail ou WhatsApp.
-  2. No cron diário que já existe (`triggers.crons` em `wrangler.jsonc`), contar pedidos em `paid`/`delivering` há
-     mais de 30 minutos e registrar um aviso no log. Depois, se fizer falta, mandar por e-mail.
+- [x] (2026-11-10, código) **Problema:** se o site cair ou um pedido ficar "pago, sem entrega", você só descobre
+  pelo cliente.
+- **Causa:** existe `/healthz` nos dois servidores, mas nada consultava; pedido parado não gerava aviso.
+- **Feito:** a rotina de hora em hora escreve `[checkout] pago sem entrega há mais de 30 min: <pedidos>` no log
+  (`warnStuckOrders` em `server/license/license-checkout-orders.mjs`).
+- [ ] **Falta (você, 5 min):** monitor externo gratuito.
+  1. Crie conta em uptimerobot.com (plano grátis).
+  2. **Add New Monitor** → tipo **HTTP(s)** → URL `https://pulseplayer.com.br/healthz` → intervalo 5 min.
+  3. Em **Alert Contacts**, seu e-mail (o app deles também avisa no celular).
+  4. Repita para o pareamento, `https://pulse-pair.pulseplayer.workers.dev/healthz` (ou o domínio dele, se
+     tiver).
+- **Depois, se fizer falta:** mandar o aviso de pedido parado por e-mail em vez de só no log.
 
 ## 4. Cartão e assinatura anual sem validação
 
@@ -75,21 +80,19 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 6. O app não registra erros
 
-- [ ] **Problema:** travamento na TV de um cliente não deixa rastro.
-- **Causa:** não há captura global de erro em `src/` (nem `app.config.errorHandler` nem `unhandledrejection`).
-- **Como corrigir (menor versão que resolve):** guardar os últimos erros no aparelho (mensagem, tela, versão, sem
-  URL de lista nem senha: usar `maskSecrets` de `src/services/netEnv`) e mostrar em Conta → "Diagnóstico", com o
-  código do aparelho, para o cliente fotografar e mandar no WhatsApp. Envio automático ao servidor só se isso não
-  bastar.
+- [x] (2026-11-10, entra no próximo APK) **Problema:** travamento na TV de um cliente não deixava rastro.
+- **Causa:** não havia captura global de erro em `src/`.
+- **Feito:** `src/services/errorLog.js` guarda os últimos 20 erros do Vue, de script e de promessa no aparelho,
+  sem URL nem senha. A tela **Diagnóstico** (`src/components/DiagnosticsDialog.vue`) mostra o código do aparelho, a
+  plataforma e os erros, com botão Limpar. Abre pelo menu lateral na TV e pela aba Conta no celular. Nada é enviado.
+- **Falta:** a versão do app não aparece (o código web não sabe a versão do APK); conferir o foco do botão novo no
+  menu lateral numa TV de verdade.
 
 ## 7. Backup do banco
 
-- [ ] **Problema:** licenças e pedidos vivem só no D1 da Cloudflare; não há roteiro de restauração.
-- **Causa:** nunca foi escrito.
-- **Como corrigir:** documentar em `docs/` os dois comandos (bash): exportar
-  `npx wrangler d1 export pulse-license --remote --output backup.sql --config server/license/wrangler.jsonc` e
-  restaurar por data com `wrangler d1 time-travel` (o D1 guarda 30 dias). Rodar a exportação uma vez por mês e
-  guardar fora do projeto. O arquivo tem dados de clientes: nunca vai para o Git.
+- [x] (2026-11-10, roteiro) **Problema:** licenças e pedidos viviam só no D1, sem roteiro de restauração.
+- **Feito:** `docs/BACKUP-BANCO.md` (backup mensal, voltar no tempo até 30 dias, restaurar de arquivo).
+- [ ] **Falta (você):** rodar o primeiro backup do passo 1 e guardar fora do PC.
 
 ## 8. Publicações pendentes
 

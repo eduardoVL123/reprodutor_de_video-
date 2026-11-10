@@ -211,5 +211,6 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
     limiter.sweep()
   }
   handle.recheckRefunds = () => handleCheckout.recheckRefunds()
+  handle.warnStuckOrders = () => handleCheckout.warnStuckOrders()
   return handle
 }

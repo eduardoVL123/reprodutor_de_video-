@@ -15,6 +15,8 @@ const STUCK_DELIVERY_MS = 5 * 60 * 1000
 const REFUND_RECHECK_MS = 6 * 3600 * 1000
 const REFUND_WINDOW_MS = 180 * 24 * 3600 * 1000
 const REFUND_BATCH = 50
+// Pago e não entregue depois disso = algo travou (aparelho apagado, banco caiu): aviso no log a cada rodada do cron.
+const STUCK_PAID_MS = 30 * 60 * 1000
 // A chave do revendedor novo fica visível para quem tem o viewSecret por 1 h (recarregar a tela não a perde);
 // depois some da tela e o expurgo diário a apaga do banco (license-db.mjs, purgeExpired).
 export const KEY_VISIBLE_MS = 60 * 60 * 1000
@@ -314,5 +316,17 @@ export function createOrderFlow({ db, now, mp }) {
     return rows.length
   }
 
-  return { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds }
+  /** Plano de robustez, item 3: pedido pago sem entrega não pode passar despercebido. @returns {Promise<number>} */
+  async function warnStuckOrders() {
+    const rows = (
+      await db
+        .prepare("SELECT id FROM orders WHERE status IN ('paid', 'delivering') AND COALESCE(paid_at, created_at) < ? ORDER BY created_at LIMIT 20")
+        .bind(now() - STUCK_PAID_MS)
+        .all()
+    ).results
+    if (rows.length) console.warn(`[checkout] pago sem entrega há mais de 30 min: ${rows.map((r) => r.id).join(', ')}; resolva em Pagamentos no painel`)
+    return rows.length
+  }
+
+  return { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds, warnStuckOrders }
 }

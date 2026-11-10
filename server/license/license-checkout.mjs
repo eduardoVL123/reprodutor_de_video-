@@ -209,7 +209,7 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     return new CheckoutError(502, 'Não foi possível iniciar o pagamento agora. Tente de novo em instantes.')
   }
 
-  const { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds } = createOrderFlow({ db, now, mp })
+  const { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds, warnStuckOrders } = createOrderFlow({ db, now, mp })
   const { subscribe, syncPreapproval, deliverInstallment, listSubscriptions, cancelSubscription, cancelForPayer } = createSubscriptionFlow({ db, now, mp, startFailed, declineChecks })
 
   /** Cria o pedido e a cobrança. Cartão: a order já volta aprovada, recusada ou pedindo o desafio 3DS. */
@@ -320,6 +320,7 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
   handleCheckout.reprocessOrder = reprocessOrder
   // Rotina periódica (worker.mjs, scheduled): estorno cujo webhook se perdeu.
   handleCheckout.recheckRefunds = recheckRefunds
+  handleCheckout.warnStuckOrders = warnStuckOrders
   // Área do cliente (license-customer.mjs).
   handleCheckout.cancelForPayer = cancelForPayer
   return handleCheckout

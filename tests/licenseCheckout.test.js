@@ -1012,6 +1012,19 @@ describe('painel do dono — pedidos (etapa 6)', () => {
     spy.mockRestore()
   })
 
+  it('rotina periódica avisa no log pedido pago sem entrega há mais de 30 min (plano de robustez, item 3)', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
+    await db.prepare("UPDATE orders SET status = 'paid', paid_at = ? WHERE id = ?").bind(clock, orderId).run()
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await handle.warnStuckOrders()).toBe(0) // acabou de pagar: a entrega ainda pode estar acontecendo
+    clock += 31 * 60 * 1000
+    expect(await handle.warnStuckOrders()).toBe(1)
+    const logged = spy.mock.calls.flat().join(' ')
+    spy.mockRestore()
+    expect(logged).toMatch(/pago sem entrega/)
+    expect(logged).toContain(orderId)
+  })
+
   it('webhook recusado por assinatura deixa aviso no log, sem a assinatura nem o segredo', async () => {
     const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
