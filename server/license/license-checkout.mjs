@@ -6,11 +6,16 @@
  * quem muda o pedido para 'paid' (UPDATE condicional) é o único que entrega.
  */
 import { readJsonBody, timingSafeEqualStr } from '../pair/pair-core.mjs'
-import { findDeviceByCode, activationEndsAt, hitLimit, lockedFor, revokeActivationStatements } from './license-db.mjs'
-import { hashKey, createReseller, rotateKey, toBase64Url } from './license-resellers.mjs'
-import { DAY_MS, extendActivation } from './license-rules.mjs'
+import { findDeviceByCode, hitLimit, lockedFor } from './license-db.mjs'
+import { hashKey, toBase64Url } from './license-resellers.mjs'
+import { DAY_MS } from './license-rules.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, MAX_CREDITS, creditTotal } from './pricing.mjs'
 import { MpError, toAmount } from './mp-client.mjs'
+import { CheckoutError, ALREADY_RENEWING } from './license-checkout-shared.mjs'
+import { createOrderFlow } from './license-checkout-orders.mjs'
+import { createSubscriptionFlow } from './license-checkout-subscriptions.mjs'
+
+export { KEY_VISIBLE_MS } from './license-checkout-orders.mjs'
 
 export const PIX_TTL_MS = 30 * 60 * 1000
 const PIX_EXPIRATION = 'PT30M' // mesmo prazo de PIX_TTL_MS, em ISO 8601 (o Mercado Pago aceita de 30 min a 30 dias)
@@ -19,7 +24,6 @@ export const CARD_TTL_MS = 45 * 60 * 1000
 // Assinatura: a 1ª parcela sai em até ~1 h e, recusada, tem novas tentativas por 10 dias (documentação oficial).
 export const FIRST_CHARGE_TTL_MS = 11 * DAY_MS
 const STALE_RESERVE_MS = 10 * 60e3
-const ALREADY_RENEWING = 'Este aparelho já tem renovação automática no cartão. Para trocar o cartão, fale com o suporte pelo WhatsApp.'
 export const CHECKOUT_LIMITS = { checkout: 10, checkoutStatus: 60 }
 /**
  * Freio contra teste de cartões roubados (carding), no D1 para valer no serviço todo: por rede, por aparelho e um teto
@@ -33,13 +37,6 @@ export const CHECKOUT_DB_LIMITS = {
   cardAllHour: 300,
 }
 const HOUR_MS = 60 * 60 * 1000
-const RECHECK_MS = 60 * 1000
-const STUCK_DELIVERY_MS = 5 * 60 * 1000
-// A chave do revendedor novo fica visível para quem tem o viewSecret por 1 h (recarregar a tela não a perde);
-// depois some da tela e o expurgo diário a apaga do banco (license-db.mjs, purgeExpired).
-export const KEY_VISIBLE_MS = 60 * 60 * 1000
-// Status de estorno do Mercado Pago (pedido, pagamento ou parcela). shortcut: confirmar os nomes na etapa 7 (teste).
-const REVERSED = ['refunded', 'charged_back']
 const KINDS = ['device_annual', 'credits']
 const METHODS = ['pix', 'card']
 const EMAIL = /^[^\s@]{1,64}@[^\s@]+\.[^\s@]+$/
@@ -73,14 +70,6 @@ export const PAY_CSP = [
   "form-action 'none'",
   "frame-ancestors 'none'",
 ].join('; ')
-const DELIVERED_BY = 'mercadopago'
-
-class CheckoutError extends Error {
-  constructor(status, message) {
-    super(message)
-    this.status = status
-  }
-}
 
 const randomId = (bytes) => toBase64Url(crypto.getRandomValues(new Uint8Array(bytes)))
 
@@ -220,45 +209,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     return new CheckoutError(502, 'Não foi possível iniciar o pagamento agora. Tente de novo em instantes.')
   }
 
-  /** Aparelho no cartão (R1): assinatura anual no Mercado Pago; cada parcela aprovada soma 1 ano (webhook). */
-  async function subscribe(purchase, reply, origin) {
-    // Reserva num comando só (vale entre Workers): dois pedidos juntos não criam duas assinaturas no Mercado Pago.
-    const reserved = await db
-      .prepare(
-        `INSERT INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) SELECT ?, ?, ?, 'creating', ?
-         WHERE NOT EXISTS (SELECT 1 FROM subscriptions WHERE device_code = ? AND status <> 'cancelled')`,
-      )
-      .bind(reply.orderId, purchase.deviceCode, `pending:${reply.orderId}`, now(), purchase.deviceCode)
-      .run()
-    if (!reserved.meta.changes) {
-      await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(reply.orderId).run()
-      throw new CheckoutError(409, ALREADY_RENEWING)
-    }
-    let pre
-    try {
-      pre = await mp.createPreapproval({
-        reason: 'Pulse Player — ativação anual',
-        external_reference: reply.orderId,
-        payer_email: purchase.email,
-        card_token_id: purchase.card.token,
-        auto_recurring: { frequency: 12, frequency_type: 'months', transaction_amount: DEVICE_ANNUAL_PRICE / 100, currency_id: 'BRL' },
-        back_url: `${origin}/assinar`,
-        status: 'authorized',
-      })
-    } catch (err) {
-      const failure = await startFailed(reply.orderId, err, 'card')
-      // Recusa: nada nasceu lá, a reserva sai. Rede ou 5xx: fica (pode ter nascido) e o aviso do Mercado Pago a adota.
-      if (failure.status === 402) {
-        await db.prepare("DELETE FROM subscriptions WHERE id = ? AND status = 'creating'").bind(reply.orderId).run()
-        // Só o freio da TV: aqui o 4xx não separa cartão recusado de token inventado, e esse não pode pausar o site (cardAll).
-        await hitLimit(db, { ...declineChecks(purchase.deviceCode)[0], now: now() })
-      }
-      throw failure
-    }
-    const status = String(pre.status || 'pending')
-    await db.prepare('UPDATE subscriptions SET mp_preapproval_id = ?, status = ? WHERE id = ?').bind(String(pre.id), status, reply.orderId).run()
-    return { ...reply, subscription: { status } }
-  }
+  const { settle, confirm, status, listOrders, reprocessOrder } = createOrderFlow({ db, now, mp })
+  const { subscribe, syncPreapproval, deliverInstallment, listSubscriptions, cancelSubscription, cancelForPayer } = createSubscriptionFlow({ db, now, mp, startFailed, declineChecks })
 
   /** Cria o pedido e a cobrança. Cartão: a order já volta aprovada, recusada ou pedindo o desafio 3DS. */
   async function start(body, { resellerId = null, origin = '', who = '' } = {}) {
@@ -313,326 +265,6 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     return { ...reply, status: current, ...(current === 'pending' && challengeUrl ? { challengeUrl } : {}) }
   }
 
-  /** Statements que entregam o pedido e o marcam como entregue, no mesmo batch (tudo ou nada). */
-  async function deliveryStatements(row, at) {
-    const delivered = (delivery) =>
-      db.prepare("UPDATE orders SET status = 'delivered', delivery = ? WHERE id = ?").bind(JSON.stringify(delivery), row.id)
-
-    if (row.kind === 'device_annual') {
-      const device = await findDeviceByCode(db, row.device_code)
-      if (!device) return null
-      // shortcut: dois pagamentos do MESMO aparelho entregues no mesmo instante (ou um Pix e uma ativação da revenda)
-      // partem do mesmo fim e somam 1 ano só; raro, o dono vê no painel; resolver com o cálculo no SQL se aparecer.
-      const endsAt = extendActivation(await activationEndsAt(db, device.device_key), at)
-      return [
-        db
-          .prepare('INSERT INTO activations (device_key, starts_at, ends_at, source, note, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(device.device_key, at, endsAt, 'purchase', row.id, DELIVERED_BY),
-        delivered({ activationEndsAt: endsAt }),
-      ]
-    }
-
-    // Primeira compra pelo site cria o revendedor (R2); o id fica no pedido antes, para um reprocesso não criar outro.
-    // Compra pelo site = tem nome do comprador (a do painel já nasce com reseller_id e sem nome).
-    let resellerKey = null
-    let resellerId = row.reseller_id
-    if (!resellerId) {
-      const created = await createReseller(db, { name: row.buyer_name, contact: row.buyer_contact, now: at })
-      resellerId = created.id
-      resellerKey = created.key
-      await db.prepare('UPDATE orders SET reseller_id = ? WHERE id = ?').bind(resellerId, row.id).run()
-    } else if (row.buyer_name) {
-      // Tentativa anterior criou o revendedor e caiu antes de entregar: a chave dele nunca saiu, então trocar é seguro.
-      resellerKey = await rotateKey(db, resellerId)
-    }
-    return [
-      db.prepare('UPDATE resellers SET credits = credits + ? WHERE id = ?').bind(row.quantity, resellerId),
-      db
-        .prepare('INSERT INTO credit_movements (reseller_id, delta, kind, amount_cents, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-        .bind(resellerId, row.quantity, 'purchase', row.amount_cents, `pedido ${row.id}`, DELIVERED_BY, at),
-      // A chave fica para quem tem o viewSecret (G18) só por KEY_VISIBLE_MS.
-      delivered({ credits: row.quantity, ...(resellerKey ? { resellerKey, keyUntil: at + KEY_VISIBLE_MS } : {}) }),
-    ]
-  }
-
-  /**
-   * Trava o pedido em 'delivering' e entrega tudo ou nada. Se a entrega falhar, volta para 'paid', que o webhook
-   * repetido, a consulta da tela e o Reprocessar retomam (antes, um pedido 'paid' ficava parado para sempre).
-   * `fromPending`: o pagamento acabou de ser confirmado (pending/expired também valem). Devolve false se outro já entrega.
-   */
-  async function deliver(row, at, { fromPending = false, mpOrderId = null } = {}) {
-    const from = fromPending ? "status IN ('pending', 'expired', 'paid')" : "status = 'paid'"
-    const claim = await db
-      .prepare(
-        `UPDATE orders SET status = 'delivering', checked_at = ?, paid_at = COALESCE(paid_at, ?), mp_order_id = COALESCE(mp_order_id, ?)
-         WHERE id = ? AND (${from} OR (status = 'delivering' AND COALESCE(checked_at, 0) < ?))`,
-      )
-      .bind(at, at, mpOrderId, row.id, at - STUCK_DELIVERY_MS)
-      .run()
-    if (claim.meta.changes !== 1) return false
-    const release = () => db.prepare("UPDATE orders SET status = 'paid' WHERE id = ? AND status = 'delivering'").bind(row.id).run()
-    let statements
-    try {
-      statements = await deliveryStatements(row, at)
-      if (statements) await db.batch(statements)
-    } catch (err) {
-      await release()
-      throw err
-    }
-    if (!statements) {
-      await release()
-      throw new CheckoutError(409, 'Pago, mas o aparelho não existe mais. Libere o novo aparelho do cliente na aba Aparelhos.')
-    }
-    return true
-  }
-
-  /** Consulta a order no Mercado Pago, confere e entrega uma única vez. Erro da API sobe (o webhook responde 500). */
-  async function confirm(mpOrderId) {
-    await settle(await mp.getOrder(mpOrderId))
-  }
-
-  /** Confere a order vinda da API: paga → entrega uma vez; recusada ou cancelada → pedido falho. */
-  async function settle(order) {
-    const row = await db.prepare('SELECT * FROM orders WHERE id = ?').bind(String(order.external_reference || '')).first()
-    // Sem mp_order_id = a criação deu erro ambíguo (rede/5xx); a referência é nossa (só o nosso token cria orders).
-    if (!row || (row.mp_order_id && row.mp_order_id !== String(order.id))) return
-    if (REVERSED.includes(order.status) || REVERSED.includes(order.status_detail)) {
-      await reverseOrder(row, `${order.status}/${order.status_detail}`)
-      return
-    }
-    // Devolução de parte do valor (desconto, acerto): a entrega continua; o dono decide no painel.
-    if (order.status === 'partially_refunded' || order.status_detail === 'partially_refunded') {
-      console.warn(`[checkout] pedido ${row.id}: estorno parcial no Mercado Pago; entrega mantida, confira no painel`)
-      return
-    }
-    if (order.status === 'failed' || order.status === 'canceled') {
-      await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ? AND status = 'pending'").bind(row.id).run()
-      return
-    }
-    if (order.status !== 'processed' || order.status_detail !== 'accredited') return
-    // A notificação traz `currency_id`; a order consultada traz `currency` (documentação oficial, 2026-10-28).
-    // Em centavos: "25.0" ou 25 no lugar de "25.00" é o mesmo valor pago.
-    if (Math.round(Number(order.total_amount) * 100) !== row.amount_cents || (order.currency || order.currency_id) !== 'BRL') {
-      console.warn(`[checkout] pedido ${row.id}: valor ou moeda não conferem; não entregue`)
-      return
-    }
-    // Pix pago no limite do prazo pode já estar 'expired' aqui; o Mercado Pago é quem diz se foi pago.
-    try {
-      await deliver(row, now(), { fromPending: true, mpOrderId: String(order.id) })
-    } catch (err) {
-      if (!(err instanceof CheckoutError)) throw err // banco falhou: 500, o Mercado Pago reenvia e a entrega é retomada
-      console.warn(`[checkout] pedido ${row.id}: pago, mas o aparelho não existe mais; fica 'paid' para o dono resolver`)
-    }
-  }
-
-  /**
-   * Estorno ou contestação (Pix devolvido, chargeback): o pedido vira 'refunded' uma única vez e o que foi entregue
-   * volta. Aparelho: a ativação deste pedido é revogada. Créditos: tira o que ainda houver; se a revenda já gastou,
-   * ela é suspensa (active = 0) para o dono resolver, porque ativações feitas não voltam.
-   */
-  async function reverseOrder(row, reason) {
-    if (row.status === 'refunded') return
-    // Entrega em andamento: erro → webhook 500 → o Mercado Pago reenvia o estorno depois que a entrega terminar.
-    if (row.status === 'delivering') throw new Error(`pedido ${row.id}: estorno chegou durante a entrega`)
-    const claim = await db.prepare("UPDATE orders SET status = 'refunded' WHERE id = ? AND status = ?").bind(row.id, row.status).run()
-    if (claim.meta.changes !== 1) throw new Error(`pedido ${row.id}: mudou de estado durante o estorno`)
-    if (row.status !== 'delivered') return
-    try {
-      await undoDelivery(row)
-    } catch (err) {
-      // Sem desfazer, o pedido não pode ficar 'refunded': o reenvio do webhook tenta de novo com o saldo atual.
-      await db.prepare("UPDATE orders SET status = ? WHERE id = ? AND status = 'refunded'").bind(row.status, row.id).run()
-      throw err
-    }
-    console.warn(`[checkout] pedido ${row.id}: estornado no Mercado Pago (${reason}); entrega desfeita, confira no painel`)
-  }
-
-  async function undoDelivery(row) {
-    const at = now()
-    if (row.kind === 'device_annual') {
-      const revoked = (await db.prepare("SELECT id, device_key FROM activations WHERE note = ? AND source = 'purchase' AND revoked_at IS NULL").bind(row.id).all()).results
-      for (const key of new Set(revoked.map((r) => r.device_key))) {
-        const ids = revoked.filter((r) => r.device_key === key).map((r) => r.id)
-        await db.batch(await revokeActivationStatements(db, key, ids, at))
-      }
-    } else if (row.reseller_id) {
-      const reseller = await db.prepare('SELECT credits FROM resellers WHERE id = ?').bind(row.reseller_id).first()
-      const taken = Math.min(row.quantity, reseller ? reseller.credits : 0)
-      const short = taken < row.quantity
-      await db.batch([
-        db.prepare('UPDATE resellers SET credits = credits - ?, active = CASE WHEN ? THEN 0 ELSE active END WHERE id = ?').bind(taken, short ? 1 : 0, row.reseller_id),
-        db
-          .prepare('INSERT INTO credit_movements (reseller_id, delta, kind, amount_cents, note, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-          .bind(row.reseller_id, -taken, 'refund', -row.amount_cents, `estorno do pedido ${row.id}`, DELIVERED_BY, at),
-        // Créditos do estorno já repassados (auditoria RFC-025, item 2): suspende quem recebeu repasse desta revenda desde
-        // o pagamento, e as revendas abaixo delas, para o dono resolver; senão os créditos estornados seguem gastáveis.
-        ...(short
-          ? [
-              db
-                .prepare(
-                  `WITH RECURSIVE hit(id) AS (
-                     SELECT counterpart_id FROM credit_movements
-                     WHERE reseller_id = ? AND kind = 'transfer_out' AND counterpart_id IS NOT NULL AND created_at >= ?
-                     UNION SELECT r.id FROM resellers r JOIN hit ON r.parent_id = hit.id)
-                   UPDATE resellers SET active = 0 WHERE id IN (SELECT id FROM hit)`,
-                )
-                .bind(row.reseller_id, row.paid_at || row.created_at),
-            ]
-          : []),
-      ])
-    }
-  }
-
-  /** Resultado da entrega para quem tem o viewSecret; a chave do revendedor novo aparece até `keyUntil` e depois some. */
-  async function publicResult(row, at) {
-    if (row.status !== 'delivered' || !row.delivery) return undefined
-    const { keyUntil, ...delivery } = JSON.parse(row.delivery)
-    if (delivery.resellerKey && !(at < keyUntil)) {
-      delete delivery.resellerKey
-      await db.prepare('UPDATE orders SET delivery = ? WHERE id = ?').bind(JSON.stringify(delivery), row.id).run()
-    }
-    return delivery
-  }
-
-  async function status(orderId, secret) {
-    let row = await db.prepare('SELECT * FROM orders WHERE id = ?').bind(orderId).first()
-    if (!row || !secret || row.view_secret_hash !== (await hashKey(secret))) return null
-    const at = now()
-    // Webhook perdido ou entrega que caiu no meio ('paid', ou 'delivering' parado): a consulta da tela pergunta ao
-    // Mercado Pago, no máximo uma vez por minuto por pedido, e retoma a entrega.
-    const resumable = row.status === 'pending' || row.status === 'paid' || (row.status === 'delivering' && at - (row.checked_at || 0) >= STUCK_DELIVERY_MS)
-    if (resumable && mp && row.mp_order_id && at - (row.checked_at || row.created_at) >= RECHECK_MS) {
-      // 'delivering' não: renovar checked_at aqui fecharia a própria trava de 5 min que a entrega usa para retomar.
-      if (row.status !== 'delivering') await db.prepare('UPDATE orders SET checked_at = ? WHERE id = ?').bind(at, orderId).run()
-      try {
-        await confirm(row.mp_order_id)
-      } catch (err) {
-        console.warn(`[checkout] pedido ${orderId}: consulta ao Mercado Pago falhou (${err.message})`)
-      }
-      row = await db.prepare('SELECT * FROM orders WHERE id = ?').bind(orderId).first()
-    }
-    if (row.status === 'pending' && at >= row.expires_at) {
-      await db.prepare("UPDATE orders SET status = 'expired' WHERE id = ? AND status = 'pending'").bind(orderId).run()
-      row.status = 'expired'
-    }
-    const result = await publicResult(row, at)
-    return { orderId, kind: row.kind, method: row.method, status: row.status, amountCents: row.amount_cents, expiresAt: row.expires_at, ...(result ? { result } : {}) }
-  }
-
-  async function findSubscription(preapprovalId) {
-    return db.prepare('SELECT * FROM subscriptions WHERE mp_preapproval_id = ?').bind(String(preapprovalId)).first()
-  }
-
-  /**
-   * Assinatura que existe no Mercado Pago mas não aqui (a criação deu timeout/5xx ou o INSERT falhou depois): o
-   * `external_reference` é o id do nosso pedido de adesão, então a linha é recriada a partir dele. Sem isso, o cartão
-   * seria cobrado todo ano e nada seria entregue.
-   */
-  async function adoptPreapproval(pre) {
-    const order = pre && pre.external_reference
-      ? await db.prepare("SELECT * FROM orders WHERE id = ? AND kind = 'device_annual' AND method = 'card'").bind(String(pre.external_reference)).first()
-      : null
-    if (!order) return null
-    // A reserva da adesão (subscribe) ganha o id de verdade; sem reserva, a linha é criada.
-    await db.prepare("UPDATE subscriptions SET mp_preapproval_id = ?, status = ? WHERE id = ? AND status = 'creating'").bind(String(pre.id), String(pre.status || 'pending'), order.id).run()
-    await db
-      .prepare('INSERT OR IGNORE INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(order.id, order.device_code, String(pre.id), String(pre.status || 'pending'), now())
-      .run()
-    console.warn(`[checkout] assinatura ${pre.id}: não estava registrada; recuperada pelo pedido ${order.id}`)
-    return findSubscription(pre.id)
-  }
-
-  /** Situação da assinatura vinda da API; cancelada antes da 1ª parcela → pedido de adesão falho. */
-  async function syncPreapproval(preapprovalId) {
-    const pre = await mp.getPreapproval(preapprovalId)
-    const sub = (await findSubscription(pre.id)) || (await adoptPreapproval(pre))
-    if (!sub) return
-    const status = String(pre.status || sub.status)
-    if (status !== 'cancelled') {
-      await db.prepare('UPDATE subscriptions SET status = ? WHERE id = ?').bind(status, sub.id).run()
-      return
-    }
-    await db.batch([
-      db.prepare('UPDATE subscriptions SET status = ?, cancelled_at = COALESCE(cancelled_at, ?) WHERE id = ?').bind(status, now(), sub.id),
-      db.prepare("UPDATE orders SET status = 'failed' WHERE id = ? AND status IN ('pending', 'expired')").bind(sub.id),
-    ])
-  }
-
-  /**
-   * Parcela da assinatura (G15/G16): consultada na API, aprovada, desta assinatura, R$ 25 em BRL → soma 1 ano.
-   * `mp_deliveries` (chave = id da parcela) no mesmo batch garante uma entrega por parcela.
-   */
-  async function deliverInstallment(authorizedPaymentId) {
-    const charge = await mp.getAuthorizedPayment(authorizedPaymentId)
-    let sub = await findSubscription(charge.preapproval_id)
-    if (!sub && charge.preapproval_id) sub = await adoptPreapproval(await mp.getPreapproval(charge.preapproval_id))
-    if (!sub || !charge.payment) return
-    if (REVERSED.includes(charge.payment.status)) return reverseInstallment(sub, charge)
-    if (charge.payment.status !== 'approved') return
-    // Valor contratado na adesão (o pedido tem o mesmo id da assinatura), não o preço de hoje da tabela.
-    const signup = await db.prepare('SELECT amount_cents FROM orders WHERE id = ?').bind(sub.id).first()
-    const expected = signup ? signup.amount_cents : DEVICE_ANNUAL_PRICE
-    if (Math.round(Number(charge.transaction_amount) * 100) !== expected || charge.currency_id !== 'BRL') {
-      console.warn(`[checkout] assinatura ${sub.id}: valor ou moeda da parcela não conferem; não entregue`)
-      return
-    }
-    const ref = `authorized_payment:${charge.id}`
-    if (await db.prepare('SELECT 1 FROM mp_deliveries WHERE mp_ref = ?').bind(ref).first()) return
-    const device = await findDeviceByCode(db, sub.device_code)
-    if (!device) {
-      console.warn(`[checkout] assinatura ${sub.id}: parcela paga, mas o aparelho não existe mais`)
-      return
-    }
-    const at = now()
-    const endsAt = extendActivation(await activationEndsAt(db, device.device_key), at)
-    try {
-      await db.batch([
-        db.prepare('INSERT INTO mp_deliveries (mp_ref, subscription_id, delivered_at) VALUES (?, ?, ?)').bind(ref, sub.id, at),
-        db
-          .prepare('INSERT INTO activations (device_key, starts_at, ends_at, source, note, created_by) VALUES (?, ?, ?, ?, ?, ?)')
-          .bind(device.device_key, at, endsAt, 'subscription', sub.id, DELIVERED_BY),
-        // 1ª parcela: o pedido de adesão vira entregue (as seguintes não mexem nele).
-        db
-          .prepare("UPDATE orders SET status = 'delivered', paid_at = ?, delivery = ? WHERE id = ? AND status IN ('pending', 'expired')")
-          .bind(at, JSON.stringify({ activationEndsAt: endsAt }), sub.id),
-      ])
-    } catch (err) {
-      if (/UNIQUE constraint/i.test(String(err && err.message))) return // a mesma parcela chegou junto: já entregue
-      throw err
-    }
-  }
-
-  /**
-   * Parcela estornada ou contestada: revoga o ano que ela entregou (uma vez, pela trava em mp_deliveries) e para a
-   * renovação, para o cartão não ser cobrado de novo por um serviço contestado.
-   */
-  async function reverseInstallment(sub, charge) {
-    const delivered = await db.prepare('SELECT 1 FROM mp_deliveries WHERE mp_ref = ?').bind(`authorized_payment:${charge.id}`).first()
-    if (!delivered) return
-    const at = now()
-    const last = await db
-      .prepare("SELECT id, device_key FROM activations WHERE note = ? AND source = 'subscription' AND revoked_at IS NULL ORDER BY id DESC LIMIT 1")
-      .bind(sub.id)
-      .first()
-    try {
-      await db.batch([
-        db.prepare('INSERT INTO mp_deliveries (mp_ref, subscription_id, delivered_at) VALUES (?, ?, ?)').bind(`refund:authorized_payment:${charge.id}`, sub.id, at),
-        // Estorno da 1ª parcela (paga no mesmo instante do pedido de adesão): o pedido sai da receita, como no Pix.
-        db
-          .prepare("UPDATE orders SET status = 'refunded' WHERE id = ? AND status = 'delivered' AND paid_at = (SELECT delivered_at FROM mp_deliveries WHERE mp_ref = ?)")
-          .bind(sub.id, `authorized_payment:${charge.id}`),
-        // Revoga o ano da parcela e puxa para trás o que foi empilhado depois (auditoria RFC-025, item 1).
-        ...(last ? await revokeActivationStatements(db, last.device_key, [last.id], at) : []),
-      ])
-    } catch (err) {
-      if (/UNIQUE constraint/i.test(String(err && err.message))) return // estorno já tratado
-      throw err
-    }
-    console.warn(`[checkout] assinatura ${sub.id}: parcela ${charge.id} estornada (${charge.payment.status}); ano revogado`)
-    if (sub.status !== 'cancelled') await cancelSubscription(sub.id).catch((err) => console.warn(`[checkout] assinatura ${sub.id}: não cancelou a renovação (${err.message})`))
-  }
-
   const WEBHOOK_TOPICS = { order: confirm, subscription_preapproval: syncPreapproval, subscription_authorized_payment: deliverInstallment }
 
   async function webhook(request, url) {
@@ -650,134 +282,6 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
       return json(500, { error: 'Tente de novo.' })
     }
     return json(200, { received: true })
-  }
-
-  /** Pedido para o painel do dono; a chave do revendedor novo nunca sai daqui (só para o comprador, G18). */
-  function adminOrder(o) {
-    const delivery = o.delivery ? JSON.parse(o.delivery) : null
-    if (delivery) {
-      delete delivery.resellerKey
-      delete delivery.keyUntil
-    }
-    return {
-      id: o.id,
-      kind: o.kind,
-      method: o.method,
-      status: o.status,
-      amountCents: o.amount_cents,
-      quantity: o.quantity,
-      deviceCode: o.device_code,
-      resellerId: o.reseller_id ?? null,
-      buyerName: o.buyer_name,
-      buyerContact: o.buyer_contact,
-      mpOrderId: o.mp_order_id,
-      createdAt: o.created_at,
-      paidAt: o.paid_at ?? null,
-      delivery,
-    }
-  }
-
-  const ORDER_STATUSES = ['pending', 'paid', 'delivering', 'delivered', 'expired', 'failed', 'refunded']
-
-  async function listOrders(status) {
-    const rows = ORDER_STATUSES.includes(status)
-      ? await db.prepare('SELECT * FROM orders WHERE status = ? ORDER BY created_at DESC, rowid DESC LIMIT 200').bind(status).all()
-      : await db.prepare('SELECT * FROM orders ORDER BY created_at DESC, rowid DESC LIMIT 200').all()
-    return rows.results.map(adminOrder)
-  }
-
-  /**
-   * Painel do dono: pago sem entrega → entrega agora (uma vez: o status 'delivering' trava cliques juntos);
-   * pendente → consulta o Mercado Pago (cobre webhook perdido). Entregue ou falho não se reprocessa.
-   */
-  async function reprocessOrder(id) {
-    const find = () => db.prepare('SELECT * FROM orders WHERE id = ?').bind(id).first()
-    const row = await find()
-    if (!row) throw new CheckoutError(404, 'Pedido não encontrado.')
-    if (row.status === 'pending' || row.status === 'expired') {
-      if (!mp || !row.mp_order_id) throw new CheckoutError(409, 'Este pedido não tem cobrança no Mercado Pago para consultar.')
-      try {
-        await confirm(row.mp_order_id)
-      } catch (err) {
-        if (!(err instanceof MpError)) throw err
-        throw new CheckoutError(502, 'Não foi possível consultar o Mercado Pago agora. Tente de novo.')
-      }
-      return adminOrder(await find())
-    }
-    if (row.status !== 'paid' && row.status !== 'delivering') {
-      throw new CheckoutError(409, row.status === 'delivered' ? 'Este pedido já foi entregue.' : 'Este pedido não pode ser reprocessado.')
-    }
-    // 'delivering' trava cliques juntos; se o servidor caiu no meio (marca com mais de 5 min), retoma a entrega.
-    if (!(await deliver(row, now()))) throw new CheckoutError(409, 'Este pedido já está sendo entregue.')
-    return adminOrder(await find())
-  }
-
-  const publicSubscription = (s) => ({
-    id: s.id,
-    deviceCode: s.device_code,
-    status: s.status,
-    mpPreapprovalId: s.mp_preapproval_id,
-    createdAt: s.created_at,
-    cancelledAt: s.cancelled_at ?? null,
-  })
-
-  /** Mais novas primeiro (200); com `device`, só as daquele código (a de uma TV antiga some das 200). */
-  async function listSubscriptions(device = '') {
-    const code = String(device || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-    const rows = code
-      ? await db.prepare('SELECT * FROM subscriptions WHERE device_code = ? ORDER BY created_at DESC').bind(code).all()
-      : await db.prepare('SELECT * FROM subscriptions ORDER BY created_at DESC LIMIT 200').all()
-    return rows.results.map(publicSubscription)
-  }
-
-  /** Painel do dono: para a renovação no Mercado Pago (a ativação já paga continua valendo). */
-  async function cancelSubscription(id) {
-    const sub = await db.prepare('SELECT * FROM subscriptions WHERE id = ?').bind(id).first()
-    if (!sub) throw new CheckoutError(404, 'Assinatura não encontrada.')
-    if (sub.status !== 'cancelled') {
-      if (!mp) throw new CheckoutError(503, 'Pagamento indisponível: defina MP_ACCESS_TOKEN.')
-      try {
-        await mp.cancelPreapproval(sub.mp_preapproval_id)
-      } catch (err) {
-        if (!(err instanceof MpError)) throw err
-        // Já cancelada lá (pelo cliente ou pelo próprio Mercado Pago): o PUT é recusado; basta acertar aqui.
-        const remote = await mp.getPreapproval(sub.mp_preapproval_id).catch(() => null)
-        if (!remote || remote.status !== 'cancelled') {
-          throw new CheckoutError(502, 'Não foi possível cancelar no Mercado Pago agora. Tente de novo.')
-        }
-      }
-      await db.prepare("UPDATE subscriptions SET status = 'cancelled', cancelled_at = ? WHERE id = ?").bind(now(), id).run()
-    }
-    return publicSubscription(await db.prepare('SELECT * FROM subscriptions WHERE id = ?').bind(id).first())
-  }
-
-  /**
-   * Cliente cancela a renovação pelo site (RFC-025 §3): prova de posse é o e-mail do pagamento, que o Mercado Pago
-   * guarda na assinatura (payer_email). Cancela as renovações abertas do código cujo e-mail confere.
-   * shortcut: confirmar no teste com a conta de teste do MP que GET /preapproval traz payer_email; se não vier,
-   * guardar o hash do e-mail em subscriptions na criação (subscribe).
-   */
-  async function cancelForPayer(code, email) {
-    const subs = (await db.prepare("SELECT * FROM subscriptions WHERE device_code = ? AND status <> 'cancelled'").bind(code).all()).results
-    if (!subs.length) throw new CheckoutError(404, 'Este código não tem renovação automática.')
-    if (!mp) throw new CheckoutError(503, 'Não foi possível cancelar agora. Fale com o suporte pelo WhatsApp.')
-    const typed = String(email || '').trim().toLowerCase()
-    let cancelled = 0
-    for (const sub of subs) {
-      let remote
-      try {
-        remote = await mp.getPreapproval(sub.mp_preapproval_id)
-      } catch (err) {
-        if (!(err instanceof MpError)) throw err
-        throw new CheckoutError(502, 'Não foi possível consultar o pagamento agora. Tente de novo em instantes.')
-      }
-      const payer = String((remote && remote.payer_email) || '').trim().toLowerCase()
-      if (!payer || !timingSafeEqualStr(payer, typed)) continue
-      await cancelSubscription(sub.id)
-      cancelled++
-    }
-    if (!cancelled) throw new CheckoutError(403, 'Este e-mail não é o do pagamento. Confira e tente de novo, ou fale com o suporte.')
-    return { cancelled: true }
   }
 
   async function handleCheckout(request, url, ip) {
