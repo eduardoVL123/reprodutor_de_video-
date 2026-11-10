@@ -443,7 +443,7 @@
     $('order-rows').textContent = ''
     for (const o of orders) {
       const action = REPROCESSABLE.includes(o.status) ? button('Reprocessar', (e) => reprocess(e.currentTarget, o)) : ''
-      $('order-rows').appendChild(row([fmtDate(o.createdAt), orderWhat(o), PAY_METHOD[o.method] || o.method, fmtMoney(o.amountCents), ORDER_STATUS[o.status] || o.status, action]))
+      $('order-rows').appendChild(row([fmtDate(o.createdAt), orderWhat(o), PAY_METHOD[o.method] || o.method, fmtMoney(o.amountCents), ORDER_STATUS[o.status] || o.status, o.mpOrderId || '—', action]))
     }
     $('subscription-rows').textContent = ''
     for (const s of subscriptions) {
