@@ -14,7 +14,7 @@ const props = defineProps({
   listLabel: { type: String, default: '' },
 })
 
-const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile'])
+const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile', 'diagnostics'])
 
 const license = useLicenseStore()
 const licensed = isLicenseEnabled()
@@ -107,6 +107,13 @@ const status = computed(() => {
             <span>Enviar lista pelo site</span>
           </button>
         </template>
+      </section>
+
+      <section class="acc-card mt-6">
+        <button id="acc-diagnostics" type="button" class="acc-row tv-focusable" @click="emit('diagnostics')">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" /><path d="M12 11v5M12 7.5v.01" /></svg>
+          <span>Diagnóstico</span>
+        </button>
       </section>
 
       <section v-if="privacyUrl" class="acc-card mt-6">

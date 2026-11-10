@@ -14,6 +14,7 @@ import BrandMark from '@/components/BrandMark.vue'
 import HorizontalRail from '@/components/ui/HorizontalRail.vue'
 import CatalogBrowser from '@/components/CatalogBrowser.vue'
 import ListManagerModal from '@/components/ListManagerModal.vue'
+import DiagnosticsDialog from '@/components/DiagnosticsDialog.vue'
 import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
 import MediaDetailsModal from '@/components/MediaDetailsModal.vue'
 import ProfileGate from '@/components/ProfileGate.vue'
@@ -78,6 +79,7 @@ const activeTab = ref('home')
 
 // Gerenciador de listas
 const listModal = ref(null)
+const diagnostics = ref(null)
 
 // Tela de Detalhes aberta a partir da aba Início ou Minha Lista: { item, index, section } | null
 const homeDetails = ref(null)
@@ -589,6 +591,7 @@ onBeforeUnmount(() => {
       @manage-lists="openListModal"
       @demo-opened="onListChanged"
       @switch-profile="openProfileGate"
+      @diagnostics="diagnostics?.open()"
     />
 
     <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
@@ -621,6 +624,7 @@ onBeforeUnmount(() => {
         @navigate="activeTab = $event"
         @manage-lists="openListModal"
         @switch-profile="openProfileGate"
+        @diagnostics="diagnostics?.open()"
       />
 
       <!-- Aba Minha lista (Favoritos) -->
@@ -1122,6 +1126,7 @@ onBeforeUnmount(() => {
       @manage-lists="openListModal"
     />
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
+    <DiagnosticsDialog ref="diagnostics" />
     <!-- RFC-021/025: lista enviada pelo site (ou pela automação do sócio) aparece em qualquer tela, não só no Gerenciador -->
     <SiteInboxPrompt :hint="false" @done="onListChanged" />
 

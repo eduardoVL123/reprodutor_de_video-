@@ -57,6 +57,7 @@ describe('SideMenu — menu lateral recolhido (layout B)', () => {
       'nav-favorites',
       'btn-manage-lists',
       'btn-switch-profile',
+      'btn-diagnostics',
     ])
     expect(new Set(ids).size).toBe(ids.length)
   })
