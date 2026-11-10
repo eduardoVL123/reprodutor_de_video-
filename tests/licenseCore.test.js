@@ -193,6 +193,7 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
         .bind(id, at, at)
         .run()
     await order('velho', clock)
+    await db.prepare("INSERT INTO device_events (device_key, action, actor, created_at) VALUES (?, 'block', 'admin', ?)").bind(old, clock).run()
 
     clock += RETENTION_MS + 24 * 3600e3
     await order('novo', clock)
@@ -203,6 +204,7 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     const count = async (table) => (await db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).first()).n
     expect(await count('partner_cycle_entries')).toBe(0)
     expect(await count('activations')).toBe(0)
+    expect(await count('device_events')).toBe(0) // o histórico vai junto com o aparelho
     expect((await db.prepare('SELECT device_key FROM devices').all()).results.map((r) => r.device_key)).toEqual([fresh])
     expect((await db.prepare('SELECT id FROM orders').all()).results.map((r) => r.id)).toEqual(['novo']) // pedidos também
   })

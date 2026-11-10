@@ -320,15 +320,15 @@ describe('pareamento: limites por IP', () => {
     }
   }, 30_000) // 300 chamadas HTTP seguidas: com a suíte inteira disputando CPU passam dos 5 s padrão
 
-  it('consultas em excesso (mais de 120 por minuto do mesmo IP) levam 429', async () => {
+  it('várias TVs atrás do mesmo IP (CGNAT, loja): 1200 consultas por minuto passam; acima disso, 429', async () => {
     const { base } = await start({ trustProxy: true })
     const { json: s } = await createSession(base, asIp('203.0.113.61'))
     const poll = () => call(base, `/v1/sessions/${s.code}/payload`, { secret: s.secret, ...asIp('203.0.113.61') })
 
-    for (let i = 0; i < 120; i++) await poll()
+    for (let i = 0; i < 1200; i++) expect((await poll()).status).toBe(204)
 
     expect((await poll()).status).toBe(429)
-  })
+  }, 60_000)
 })
 
 describe('pareamento: página do celular', () => {

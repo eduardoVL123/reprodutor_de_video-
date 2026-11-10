@@ -217,6 +217,11 @@ export async function revokeActivationStatements(db, deviceKey, revokeIds, at) {
   for (const row of rows) {
     // Quanto esta ativação somou ao fim que existia quando ela foi criada.
     const own = Math.max(0, row.ends_at - Math.max(row.starts_at, prevOld))
+    // Liberação "até a data" que não esticou o fim vigente: vale por si, não anda com a fila.
+    if (!revoke.has(row.id) && row.ends_at <= prevOld) {
+      prevNew = Math.max(prevNew, row.ends_at)
+      continue
+    }
     prevOld = Math.max(prevOld, row.ends_at)
     if (revoke.has(row.id)) {
       statements.push(db.prepare('UPDATE activations SET revoked_at = ? WHERE id = ?').bind(at, row.id))
@@ -265,6 +270,7 @@ export async function purgeExpired(db, now) {
     )
     .bind(cutoff)
     .run()
+  await db.prepare('DELETE FROM device_events WHERE device_key NOT IN (SELECT device_key FROM devices)').run()
 }
 
 /** Grava a entrada: a primeira do ciclo fica, a última é atualizada (repetir não infla nada). */

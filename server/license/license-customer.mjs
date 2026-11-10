@@ -55,7 +55,8 @@ export function createCustomerRoutes({ db, now, json, limiter, checkout, dbLimit
     const usable = device && !device.blocked_at
     if (usable && activationEnd && activationEnd > at) return json(200, { state: 'active', until: activationEnd, renews: !!sub })
     if (usable && device.trial_ends_at > at) return json(200, { state: 'trial', until: device.trial_ends_at, renews: false })
-    await hitLimit(db, { ...miss, now: at })
+    // Só código que não existe conta como chute; TV vencida ou suspensa é o cliente vindo renovar.
+    if (!device) await hitLimit(db, { ...miss, now: at })
     return json(200, { state: 'none', until: null, renews: false })
   }
 

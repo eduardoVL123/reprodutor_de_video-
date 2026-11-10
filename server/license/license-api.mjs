@@ -96,11 +96,12 @@ export function createApiRoutes({ db, now, json, limiter, checkout, limitPerMinu
 
   return async function handleApi(request, url, ip = '') {
     const failKey = { bucket: 'apiFail', key: ip, limit: API_FAIL_LIMIT, windowMs: API_FAIL_WINDOW_MS }
-    const locked = await lockedFor(db, { ...failKey, now: now() })
-    if (locked) return json(429, { error: 'Muitas tentativas com chave inválida. Aguarde.' }, { 'Retry-After': String(locked) })
     const auth = request.headers.get('Authorization') || ''
     const reseller = auth.startsWith('Bearer ') ? await findResellerByKey(db, auth.slice(7).trim()) : null
     if (!reseller) {
+      // A trava só barra quem erra: a chave certa (256 bits, não se acha no chute) passa mesmo com o IP da operadora travado.
+      const locked = await lockedFor(db, { ...failKey, now: now() })
+      if (locked) return json(429, { error: 'Muitas tentativas com chave inválida. Aguarde.' }, { 'Retry-After': String(locked) })
       await hitLimit(db, { ...failKey, now: now() })
       return json(401, { error: 'Chave inválida.' })
     }

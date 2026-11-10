@@ -18,6 +18,8 @@ const PIX_EXPIRATION = 'PT30M' // mesmo prazo de PIX_TTL_MS, em ISO 8601 (o Merc
 export const CARD_TTL_MS = 45 * 60 * 1000
 // Assinatura: a 1ª parcela sai em até ~1 h e, recusada, tem novas tentativas por 10 dias (documentação oficial).
 export const FIRST_CHARGE_TTL_MS = 11 * DAY_MS
+const STALE_RESERVE_MS = 10 * 60e3
+const ALREADY_RENEWING = 'Este aparelho já tem renovação automática no cartão. Para trocar o cartão, fale com o suporte pelo WhatsApp.'
 export const CHECKOUT_LIMITS = { checkout: 10, checkoutStatus: 60 }
 /**
  * Freio contra teste de cartões roubados (carding), no D1 para valer no serviço todo: por rede, por aparelho e um teto
@@ -220,6 +222,18 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
 
   /** Aparelho no cartão (R1): assinatura anual no Mercado Pago; cada parcela aprovada soma 1 ano (webhook). */
   async function subscribe(purchase, reply, origin) {
+    // Reserva num comando só (vale entre Workers): dois pedidos juntos não criam duas assinaturas no Mercado Pago.
+    const reserved = await db
+      .prepare(
+        `INSERT INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) SELECT ?, ?, ?, 'creating', ?
+         WHERE NOT EXISTS (SELECT 1 FROM subscriptions WHERE device_code = ? AND status <> 'cancelled')`,
+      )
+      .bind(reply.orderId, purchase.deviceCode, `pending:${reply.orderId}`, now(), purchase.deviceCode)
+      .run()
+    if (!reserved.meta.changes) {
+      await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(reply.orderId).run()
+      throw new CheckoutError(409, ALREADY_RENEWING)
+    }
     let pre
     try {
       pre = await mp.createPreapproval({
@@ -232,14 +246,17 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
         status: 'authorized',
       })
     } catch (err) {
-      throw await startFailed(reply.orderId, err, 'card')
+      const failure = await startFailed(reply.orderId, err, 'card')
+      // Recusa: nada nasceu lá, a reserva sai. Rede ou 5xx: fica (pode ter nascido) e o aviso do Mercado Pago a adota.
+      if (failure.status === 402) {
+        await db.prepare("DELETE FROM subscriptions WHERE id = ? AND status = 'creating'").bind(reply.orderId).run()
+        // Só o freio da TV: aqui o 4xx não separa cartão recusado de token inventado, e esse não pode pausar o site (cardAll).
+        await hitLimit(db, { ...declineChecks(purchase.deviceCode)[0], now: now() })
+      }
+      throw failure
     }
     const status = String(pre.status || 'pending')
-    // OR IGNORE: o aviso do Mercado Pago pode chegar antes desta linha e já ter gravado a assinatura (adoptPreapproval).
-    await db
-      .prepare('INSERT OR IGNORE INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
-      .bind(reply.orderId, purchase.deviceCode, String(pre.id), status, now())
-      .run()
+    await db.prepare('UPDATE subscriptions SET mp_preapproval_id = ?, status = ? WHERE id = ?').bind(String(pre.id), status, reply.orderId).run()
     return { ...reply, subscription: { status } }
   }
 
@@ -250,9 +267,13 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     const isSubscription = purchase.method === 'card' && purchase.kind === 'device_annual'
     // As parcelas da assinatura só chegam pelo webhook: sem o segredo dele, venderíamos sem conseguir entregar.
     if (isSubscription && !webhookSecret) throw new CheckoutError(503, 'Assinatura no cartão indisponível no momento. Pague com Pix.')
+    // Reserva que o Mercado Pago nunca confirmou (o aviso dele chega em segundos): não prende o aparelho para sempre.
+    if (isSubscription) {
+      await db.prepare("DELETE FROM subscriptions WHERE device_code = ? AND status = 'creating' AND created_at < ?").bind(purchase.deviceCode, now() - STALE_RESERVE_MS).run()
+    }
     // Duas renovações no mesmo aparelho cobrariam duas vezes por ano.
     if (isSubscription && (await db.prepare("SELECT 1 FROM subscriptions WHERE device_code = ? AND status <> 'cancelled'").bind(purchase.deviceCode).first())) {
-      throw new CheckoutError(409, 'Este aparelho já tem renovação automática no cartão. Para trocar o cartão, fale com o suporte pelo WhatsApp.')
+      throw new CheckoutError(409, ALREADY_RENEWING)
     }
     await guardCheckout(purchase, who)
     const at = now()
@@ -390,7 +411,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     }
     if (order.status !== 'processed' || order.status_detail !== 'accredited') return
     // A notificação traz `currency_id`; a order consultada traz `currency` (documentação oficial, 2026-10-28).
-    if (order.total_amount !== toAmount(row.amount_cents) || (order.currency || order.currency_id) !== 'BRL') {
+    // Em centavos: "25.0" ou 25 no lugar de "25.00" é o mesmo valor pago.
+    if (Math.round(Number(order.total_amount) * 100) !== row.amount_cents || (order.currency || order.currency_id) !== 'BRL') {
       console.warn(`[checkout] pedido ${row.id}: valor ou moeda não conferem; não entregue`)
       return
     }
@@ -511,6 +533,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
       ? await db.prepare("SELECT * FROM orders WHERE id = ? AND kind = 'device_annual' AND method = 'card'").bind(String(pre.external_reference)).first()
       : null
     if (!order) return null
+    // A reserva da adesão (subscribe) ganha o id de verdade; sem reserva, a linha é criada.
+    await db.prepare("UPDATE subscriptions SET mp_preapproval_id = ?, status = ? WHERE id = ? AND status = 'creating'").bind(String(pre.id), String(pre.status || 'pending'), order.id).run()
     await db
       .prepare('INSERT OR IGNORE INTO subscriptions (id, device_code, mp_preapproval_id, status, created_at) VALUES (?, ?, ?, ?, ?)')
       .bind(order.id, order.device_code, String(pre.id), String(pre.status || 'pending'), now())
