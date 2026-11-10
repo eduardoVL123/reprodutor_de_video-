@@ -16,7 +16,8 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 1. Logs dos servidores estão desligados
 
-- [x] (2026-11-10, só avisos do código, sem log por requisição) **Problema:** se um webhook falhar, uma entrega travar ou alguém tentar forjar assinatura, não fica registro.
+- [x] (2026-11-10, só no servidor de licença: avisos do código, sem log por requisição; o pareamento fica sem logs
+  porque a política de privacidade promete isso) **Problema:** se um webhook falhar, uma entrega travar ou alguém tentar forjar assinatura, não fica registro.
 - **Causa:** `"observability": { "enabled": false }` em `server/license/wrangler.jsonc:29` e em
   `server/pair/wrangler.jsonc:25`. O código já escreve os avisos (`console.warn` em
   `license-checkout.mjs`, `license-checkout-orders.mjs`, `license-checkout-subscriptions.mjs`), mas a Cloudflare

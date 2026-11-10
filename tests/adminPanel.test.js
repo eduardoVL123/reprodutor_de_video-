@@ -182,7 +182,8 @@ describe('painel — pagamentos (RFC-020)', () => {
     const fetchMock = mock()
     await openPayments(fetchMock)
     const buttons = [...document.getElementById('order-rows').querySelectorAll('button')]
-    expect(buttons.map((b) => b.textContent)).toEqual(['Reprocessar'])
+    // Entregue ganha "Conferir estorno": consulta o Mercado Pago se o webhook do estorno se perdeu.
+    expect(buttons.map((b) => b.textContent)).toEqual(['Reprocessar', 'Conferir estorno'])
     buttons[0].click()
     await vi.waitFor(() => expect(posted(fetchMock)).toHaveLength(1))
     expect(posted(fetchMock)[0][0]).toBe(`/admin/api/orders/${'o'.repeat(22)}/reprocess`)

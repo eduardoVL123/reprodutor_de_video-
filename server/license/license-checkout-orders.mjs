@@ -257,13 +257,14 @@ export function createOrderFlow({ db, now, mp }) {
 
   /**
    * Painel do dono: pago sem entrega → entrega agora (uma vez: o status 'delivering' trava cliques juntos);
-   * pendente → consulta o Mercado Pago (cobre webhook perdido). Entregue ou falho não se reprocessa.
+   * pendente ou entregue → consulta o Mercado Pago (cobre webhook perdido, inclusive o do estorno). Falho não se
+   * reprocessa.
    */
   async function reprocessOrder(id) {
     const find = () => db.prepare('SELECT * FROM orders WHERE id = ?').bind(id).first()
     const row = await find()
     if (!row) throw new CheckoutError(404, 'Pedido não encontrado.')
-    if (row.status === 'pending' || row.status === 'expired') {
+    if (row.status === 'pending' || row.status === 'expired' || row.status === 'delivered') {
       if (!mp || !row.mp_order_id) throw new CheckoutError(409, 'Este pedido não tem cobrança no Mercado Pago para consultar.')
       try {
         await confirm(row.mp_order_id)
@@ -274,7 +275,7 @@ export function createOrderFlow({ db, now, mp }) {
       return adminOrder(await find())
     }
     if (row.status !== 'paid' && row.status !== 'delivering') {
-      throw new CheckoutError(409, row.status === 'delivered' ? 'Este pedido já foi entregue.' : 'Este pedido não pode ser reprocessado.')
+      throw new CheckoutError(409, 'Este pedido não pode ser reprocessado.')
     }
     // 'delivering' trava cliques juntos; se o servidor caiu no meio (marca com mais de 5 min), retoma a entrega.
     if (!(await deliver(row, now()))) throw new CheckoutError(409, 'Este pedido já está sendo entregue.')

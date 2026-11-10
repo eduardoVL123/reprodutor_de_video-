@@ -22,6 +22,6 @@
       "new_sqlite_classes": ["PairHub"]
     }
   ],
-  // Só os avisos do código (console.warn); sem log por requisição, que guardaria a URL com códigos de aparelho.
-  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
+  // Desligado de propósito: a política de privacidade (PRIVACY.md, "Use o seu celular") promete o serviço sem logs.
+  "observability": { "enabled": false }
 }

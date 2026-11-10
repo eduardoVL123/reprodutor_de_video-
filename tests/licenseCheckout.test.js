@@ -956,7 +956,34 @@ describe('painel do dono — pedidos (etapa 6)', () => {
     expect([a.status, b.status].sort()).toEqual([200, 409])
     expect(await status(orderId)).toBe('delivered')
     expect(await credits()).toBe(20)
-    expect((await admin('POST', `/admin/api/orders/${orderId}/reprocess`)).status).toBe(409)
+    // Entregue: reprocessar só consulta o Mercado Pago (ainda pendente lá) e não entrega de novo.
+    expect((await admin('POST', `/admin/api/orders/${orderId}/reprocess`)).body.status).toBe('delivered')
+    expect(await credits()).toBe(20)
+  })
+
+  it('estorno sem webhook (2026-11-10): reprocessar o pedido entregue consulta o Mercado Pago e revoga o ano', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const endsAt = await activationEndsAt(db, KEY)
+    expect((await admin('POST', `/admin/api/orders/${orderId}/reprocess`)).body.status).toBe('delivered')
+    expect(await activationEndsAt(db, KEY)).toBe(endsAt) // ainda pago lá: nada muda, nem soma outro ano
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' })
+    const done = await admin('POST', `/admin/api/orders/${orderId}/reprocess`)
+    spy.mockRestore()
+    expect(done.body.status).toBe('refunded')
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+  })
+
+  it('webhook recusado por assinatura deixa aviso no log, sem a assinatura nem o segredo', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await webhook(`ORD-${orderId}`, { secret: 'outro-segredo' })).status).toBe(401)
+    const logged = spy.mock.calls.flat().join(' ')
+    spy.mockRestore()
+    expect(logged).toMatch(/assinatura/)
+    expect(logged).not.toContain(SECRET)
   })
 
   it('reprocessar pedido pendente consulta o Mercado Pago: pago lá → entregue; ainda não pago → continua pendente', async () => {

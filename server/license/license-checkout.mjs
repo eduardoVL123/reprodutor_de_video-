@@ -269,7 +269,11 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
 
   async function webhook(request, url) {
     if (!mp || !webhookSecret) return json(503, { error: 'Pagamento indisponível.' })
-    if (!(await validSignature(request, url, webhookSecret))) return json(401, { error: 'Assinatura inválida.' })
+    if (!(await validSignature(request, url, webhookSecret))) {
+      // Segredo errado no painel do Mercado Pago (teste x produção) também cai aqui: sem este aviso, o estorno some calado.
+      console.warn(`[checkout] webhook recusado: assinatura não confere (tipo ${url.searchParams.get('type') || '-'}, id ${url.searchParams.get('data.id') || '-'})`)
+      return json(401, { error: 'Assinatura inválida.' })
+    }
     const body = await readJsonBody(request, 16384).catch(() => ({}))
     const type = url.searchParams.get('type') || body.type
     const dataId = url.searchParams.get('data.id') || (body.data && body.data.id)
