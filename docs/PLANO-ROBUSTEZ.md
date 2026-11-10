@@ -29,11 +29,11 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 2. Estorno não derrubava a licença (achado no teste real de 2026-11-10)
 
-- [ ] **Problema:** o Pix foi devolvido, o dinheiro voltou, e o aparelho `DZDQ2Q29` continuou ativado.
+- [x] (2026-11-10, publicado; o botão revogou o DZDQ2Q29) **Problema:** o Pix foi devolvido, o dinheiro voltou, e o aparelho `DZDQ2Q29` continuou ativado.
 - **Causa:** o servidor só ficava sabendo do estorno pelo webhook, e ele não chegou (ou foi recusado sem deixar
   rastro). O pagamento tinha plano B (a tela `/pagar` consulta o Mercado Pago a cada minuto); o estorno não tinha,
   e o "Reprocessar" do painel recusava pedido entregue.
-- **Correção (commitada, falta publicar da pasta certa):**
+- **Correção (publicada em 2026-11-10):**
   1. Automático: o cron do Worker roda de hora em hora e confere cada pedido entregue a cada 6 h, por 180 dias
      (`recheckRefunds` em `server/license/license-checkout-orders.mjs`). Estorno é percebido em até ~7 h mesmo
      sem webhook.
