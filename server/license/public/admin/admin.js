@@ -420,7 +420,8 @@
   const SUBSCRIPTION_STATUS = { pending: 'Aguardando 1ª cobrança', authorized: 'Ativa', paused: 'Pausada', cancelled: 'Cancelada' }
   const PAY_METHOD = { pix: 'Pix', card: 'Cartão' }
   // Pago sem entrega: entrega agora; pendente/expirado: pergunta ao Mercado Pago (webhook perdido).
-  const REPROCESSABLE = ['paid', 'pending', 'expired']
+  // Entregue também: consulta o Mercado Pago e desfaz a entrega se o webhook do estorno se perdeu.
+  const REPROCESSABLE = ['paid', 'pending', 'expired', 'delivered']
 
   function orderWhat(o) {
     if (o.kind === 'device_annual') return `Aparelho ${o.deviceCode}`
@@ -442,8 +443,9 @@
     }
     $('order-rows').textContent = ''
     for (const o of orders) {
-      const action = REPROCESSABLE.includes(o.status) ? button('Reprocessar', (e) => reprocess(e.currentTarget, o)) : ''
-      $('order-rows').appendChild(row([fmtDate(o.createdAt), orderWhat(o), PAY_METHOD[o.method] || o.method, fmtMoney(o.amountCents), ORDER_STATUS[o.status] || o.status, action]))
+      const label = o.status === 'delivered' ? 'Conferir estorno' : 'Reprocessar'
+      const action = REPROCESSABLE.includes(o.status) ? button(label, (e) => reprocess(e.currentTarget, o)) : ''
+      $('order-rows').appendChild(row([fmtDate(o.createdAt), orderWhat(o), PAY_METHOD[o.method] || o.method, fmtMoney(o.amountCents), ORDER_STATUS[o.status] || o.status, o.mpOrderId || '—', action]))
     }
     $('subscription-rows').textContent = ''
     for (const s of subscriptions) {
@@ -456,7 +458,8 @@
     btn.disabled = true
     try {
       const fresh = await api('POST', `orders/${o.id}/reprocess`, {})
-      say(fresh.status === 'delivered' ? 'Pedido entregue.' : `Situação no Mercado Pago: ${ORDER_STATUS[fresh.status] || fresh.status}.`)
+      if (o.status === 'delivered' && fresh.status === 'delivered') say('Continua pago no Mercado Pago: nada mudou.')
+      else say(fresh.status === 'delivered' ? 'Pedido entregue.' : `Situação no Mercado Pago: ${ORDER_STATUS[fresh.status] || fresh.status}.`)
       loadPayments()
     } catch (err) {
       say(err.message, true)

@@ -14,6 +14,7 @@ const FALLBACK_KEY = 'license:deviceKey'
 const STABLE_KEY = 'license:deviceKeyStable'
 const WEBOS_TIMEOUT_MS = 3000
 let cached = null
+let pending = null
 
 export function devicePlatform() {
   if (isNativeApp()) return 'android'
@@ -80,7 +81,18 @@ async function fallbackKey() {
  * na LG o ID do sistema às vezes demora mais que WEBOS_TIMEOUT_MS, e trocar de chave faria o servidor ver um aparelho
  * novo (cliente ativado bloqueado, ou teste de 7 dias de novo). Reinstalar apaga o guardado e recalcula pelo ID.
  */
-export async function getDeviceKey() {
+export function getDeviceKey() {
+  // Uma leitura só para quem chamar junto no primeiro boot: duas sorteavam chaves diferentes.
+  if (!pending) {
+    pending = resolveKey().catch((err) => {
+      pending = null
+      throw err
+    })
+  }
+  return pending
+}
+
+async function resolveKey() {
   if (cached) return cached
   const saved = await storage.get(STABLE_KEY)
   if (typeof saved === 'string' && saved) return (cached = saved)

@@ -9,7 +9,8 @@ export const CODE_LENGTH = 6
 export const DEFAULT_TTL_MS = 10 * 60 * 1000
 export const DEFAULT_DELIVERY_TTL_MS = 60 * 1000
 export const DEFAULT_MAX_SESSIONS = 10000
-export const DEFAULT_LIMITS = { create: 10, poll: 120, write: 30, miss: 20 }
+// poll: cada TV consulta 30 vezes por minuto; 1200 deixa 40 TVs no mesmo IP (CGNAT, loja). O chute de código para em 'miss'.
+export const DEFAULT_LIMITS = { create: 10, poll: 1200, write: 30, miss: 20 }
 export const WINDOW_MS = 60 * 1000
 export const MAX_BODY_BYTES = 4096
 export const MAX_PUB_CHARS = 128

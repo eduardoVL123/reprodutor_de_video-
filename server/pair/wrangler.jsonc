@@ -22,7 +22,6 @@
       "new_sqlite_classes": ["PairHub"]
     }
   ],
-  "observability": {
-    "enabled": false
-  }
+  // Desligado de propósito: a política de privacidade (PRIVACY.md, "Use o seu celular") promete o serviço sem logs.
+  "observability": { "enabled": false }
 }

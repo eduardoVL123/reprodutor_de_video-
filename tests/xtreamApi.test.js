@@ -141,6 +141,36 @@ describe('xtreamApi — falhas no corpo da resposta', () => {
   })
 })
 
+describe('xtreamApi — endereço final e detalhe técnico (auditoria 10 e 14)', () => {
+  it('APK: o endereço final vem do cabeçalho X-Final-Url do motor nativo (res.url é o digitado)', async () => {
+    const final = 'http://novo.test:8080/get.php?username=u&password=p&type=m3u_plus'
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('#EXTM3U', { headers: { 'X-Final-Url': final } })))
+    const { smartFetch } = await import('@/services/xtreamApi')
+
+    expect((await smartFetch('http://curto.test/get.php?x=1')).finalUrl).toBe(final)
+  })
+
+  it('link com usuário e senha no caminho não aparece inteiro no detalhe que vai para o suporte', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    const { fetchM3uText } = await import('@/services/xtreamApi')
+
+    const err = await fetchM3uText('http://srv.test/playlist/USUARIO/SENHA123/m3u_plus').catch((e) => e)
+
+    expect(err.technicalDetail).not.toMatch(/USUARIO|SENHA123/)
+    expect(err.technicalDetail).toContain('http://srv.test')
+    expect(err.technicalDetail).toContain('m3u_plus')
+  })
+
+  it('caminho de API (.php) continua inteiro no detalhe', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })))
+    const { fetchM3uText } = await import('@/services/xtreamApi')
+
+    const err = await fetchM3uText('http://srv.test/painel/get.php?username=u&password=p').catch((e) => e)
+
+    expect(err.technicalDetail).toContain('/painel/get.php')
+  })
+})
+
 describe('xtreamApi — describeError', () => {
   it('erro feito para o usuário passa como está', async () => {
     const { describeError, XtreamError } = await import('@/services/xtreamApi')

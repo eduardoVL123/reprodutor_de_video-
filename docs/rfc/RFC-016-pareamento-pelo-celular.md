@@ -86,7 +86,7 @@ TV  → GET  /v1/sessions/:code/payload   (header X-Pair-Secret) → 204 (ainda 
   prazo, então não precisa distinguir); `403` para `secret` errado; `409` para segundo envio; `413` corpo grande;
   `429` com `Retry-After` no limite; `503` quando há sessões demais.
 - O servidor limita: corpo de até 4 KB, 1 envio por sessão (o segundo recebe `409`) e, **por IP e por minuto**,
-  10 sessões novas, 120 consultas da TV (a TV consulta a cada 2 s = 30/min, e vários aparelhos podem dividir um IP),
+  10 sessões novas, 1200 consultas da TV (a TV consulta a cada 2 s = 30/min, e vários aparelhos podem dividir um IP),
   30 chamadas do celular e 20 códigos errados (contra quem tenta adivinhar). CORS `Access-Control-Allow-Origin: *`
   (sem cookies) só nas rotas da API, e **não registra corpo nem `secret` em log**.
 - **Formato do `box`** (contrato com a Fase 2, a TV): `base64url( chavePúblicaEfêmeraDoCelular[65 bytes, ponto P-256

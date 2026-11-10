@@ -124,6 +124,20 @@ describe('authStore — listas M3U', () => {
     expect(await storage.get('auth:session')).toBeFalsy()
   })
 
+  it('lista M3U vazia não apaga o catálogo da lista que estava aberta', async () => {
+    const { auth } = await setupM3u(PLAYLIST)
+    expect(await auth.login({ dns: TOKEN_URL })).toBe(true)
+    const { getMeta } = await import('@/services/catalogDb')
+    const before = await getMeta('live')
+    expect(before).toBeTruthy()
+    const { resolveShortInput } = await import('@/services/xtreamApi')
+    resolveShortInput.mockResolvedValueOnce({ mode: 'm3u', m3uText: '#EXTM3U', resolvedUrl: 'http://outra.test/x.m3u', baseUrl: 'http://outra.test/x.m3u', username: 'M3U Playlist', password: '' })
+
+    expect(await auth.login({ dns: 'http://outra.test/x.m3u' })).toBe(false)
+
+    expect(await getMeta('live')).toEqual(before)
+  })
+
   it('não grava a URL com token em texto puro, nem no id da lista', async () => {
     const { auth, storage } = await setupM3u(PLAYLIST)
 
@@ -266,5 +280,26 @@ describe('authStore — sessão Xtream gravada sem cifra', () => {
     const stored = await storage.get('auth:session')
     expect(JSON.stringify(stored)).not.toContain('senha-exposta')
     expect(stored.passwordEnc).toBeTruthy()
+  })
+})
+
+describe('authStore — ordem ao trocar de conta (auditoria 11)', () => {
+  it('limpa o catálogo antes de gravar a sessão nova: fechar o app no meio não mostra o catálogo da conta antiga', async () => {
+    const { auth, storage } = await setup()
+    const { useCatalogStore } = await import('@/stores/catalogStore')
+    const order = []
+    vi.spyOn(useCatalogStore(), 'resetCatalogState').mockImplementation(async () => void order.push('catalogo'))
+    const set = storage.set.bind(storage)
+    vi.spyOn(storage, 'set').mockImplementation(async (key, value) => {
+      if (key === 'auth:session') order.push('sessao')
+      return set(key, value)
+    })
+
+    await auth.login({ dns: SERVER, username: 'user1', password: 'senha-secreta' })
+    expect(order).toEqual(['catalogo', 'sessao'])
+
+    order.length = 0
+    await auth.switchList(auth.savedLists[0].id)
+    expect(order).toEqual(['catalogo', 'sessao'])
   })
 })

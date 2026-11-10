@@ -21,4 +21,10 @@ describe('buildStreamUrl: o formato alternativo nunca rebaixa https para http (s
     expect(build('https://p.test', 'vod', { container_extension: 'mkv' }).fallbackUrl).toBe('https://p.test/movie/joao/segredo/7.mp4')
     expect(build('http://p.test', 'vod', { container_extension: 'mp4' }).fallbackUrl).toBe('http://p.test/movie/joao/segredo/7.m3u8')
   })
+
+  it('o descritor leva a seção: o motor decide a reconexão do canal ao vivo por ela', () => {
+    expect(build('https://p.test', 'live', {}).section).toBe('live')
+    expect(build('https://p.test', 'vod', {}).section).toBe('vod')
+    expect(build('', 'live', { directUrl: 'http://m3u.test/live/1.m3u8' }).section).toBe('live')
+  })
 })

@@ -156,12 +156,18 @@ export async function parseM3u(text) {
   return { liveStreams, vodStreams, liveCategories, vodCategories }
 }
 
+/** Lê a lista e recusa a vazia. Quem vai apagar o catálogo atual chama antes de apagar. */
+export async function readM3u(m3uText) {
+  const parsed = await parseM3u(m3uText)
+  if (!parsed.liveStreams.length && !parsed.vodStreams.length) throw new XtreamError(ERROR_CODES.EMPTY_M3U_ERROR)
+  return parsed
+}
+
 /**
  * Processa a lista M3U e salva as seções 'live', 'vod' e 'series' (sempre vazia) no IndexedDB.
  */
-export async function importM3uCatalog(m3uText, { onProgress } = {}) {
-  const { liveStreams, vodStreams, liveCategories, vodCategories } = await parseM3u(m3uText)
-  if (!liveStreams.length && !vodStreams.length) throw new XtreamError(ERROR_CODES.EMPTY_M3U_ERROR)
+export async function importM3uCatalog(m3uText, { onProgress, parsed } = {}) {
+  const { liveStreams, vodStreams, liveCategories, vodCategories } = parsed || (await readM3u(m3uText))
 
   // Salva 'live'
   await saveSection('live', {

@@ -3,6 +3,7 @@ import { openSqlite } from '../server/license/sqlite-d1.mjs'
 import { migrate, purgeExpired } from '../server/license/license-db.mjs'
 import { createLicenseHandler, LIMITS } from '../server/license/license-core.mjs'
 import { API_FAIL_LIMIT } from '../server/license/license-api.mjs'
+import { createReseller } from '../server/license/license-resellers.mjs'
 
 /** RFC-025: site de vendas, área do cliente e rotas fechadas. */
 
@@ -55,6 +56,13 @@ describe('chave errada na API das revendas (§4)', () => {
     clock += 15 * 60 * 1000
     expect((await req('GET', '/api/v1/me', { token: 'pk_x' })).status).toBe(401)
   })
+
+  it('rede travada por chaves erradas de um vizinho (CGNAT) não barra a revenda com a chave certa', async () => {
+    const { key } = await createReseller(db, { name: 'Revenda', contact: 'x', now: clock })
+    for (let i = 0; i < API_FAIL_LIMIT; i++) await req('GET', '/api/v1/me', { token: `pk_errada${i}` })
+    expect((await req('GET', '/api/v1/me', { token: 'pk_outra' })).status).toBe(429)
+    expect((await req('GET', '/api/v1/me', { token: key })).status).toBe(200)
+  })
 })
 
 const DAY = 24 * 3600 * 1000
@@ -93,6 +101,14 @@ describe('Minha TV — POST /v1/device-status (§3)', () => {
     }
     expect(new Set(texts).size).toBe(1)
     expect(JSON.parse(texts[0])).toEqual({ state: 'none', until: null, renews: false })
+  })
+
+  it('TV vencida consultada várias vezes (cliente vindo renovar) não trava a rede como chute de código', async () => {
+    const expired = await hello('e'.repeat(40))
+    clock += 8 * DAY
+    const fresh = await hello('f'.repeat(40))
+    for (let i = 0; i < 16; i++) expect((await status(expired)).status).toBe(200) // o teto de chutes é 15 por hora
+    expect(await (await status(fresh)).json()).toMatchObject({ state: 'trial' })
   })
 
   it('código com formato errado: 400 (o formato não é segredo)', async () => {

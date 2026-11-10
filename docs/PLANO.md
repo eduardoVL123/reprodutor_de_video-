@@ -30,7 +30,7 @@ sem nenhuma rota de dados aberta.
       16 capas, 7 grupos, dois HLS atuais e aviso em Séries no APK/AAB 2.2. Os 26 arquivos responderam 200/206;
       um clipe reproduziu no Chromium direto do GitHub. Falta validar no aparelho e fazer as capturas finais.
 - [x] Ícone 512×512, imagem de destaque 1024×500 e banner da TV 320×180 em `docs/lojas/play/`.
-- [ ] Play App Signing, formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores
+- [x] (feito pelo dono, 2026-11-10) Play App Signing, formulários do console (respostas em `GOOGLE-PLAY.md`) e teste fechado de 12 testadores
       por 14 dias.
 - [x] `versionCode` 5 / 2.2 gerado e assinado em 2026-11-06. Modo loja confirmado no AAB; APK direto com modo completo.
 - [x] Revisão do código para a Play (2026-11-05): targetSdk 36, sem bibliotecas nativas (16 KB ok), só INTERNET e ACCESS_NETWORK_STATE (permissões normais),

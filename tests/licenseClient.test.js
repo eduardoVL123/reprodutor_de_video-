@@ -88,6 +88,17 @@ describe('identidade do aparelho', () => {
     expect(await (await import('@/services/deviceIdentity')).getDeviceKey()).toBe(key)
   })
 
+  it('duas telas pedindo a chave ao mesmo tempo no primeiro boot recebem a mesma (auditoria 12)', async () => {
+    const { getDeviceKey } = await import('@/services/deviceIdentity')
+    const writes = vi.spyOn(memory, 'set')
+    const [a, b] = await Promise.all([getDeviceKey(), getDeviceKey()])
+    const stable = writes.mock.calls.filter(([key]) => key === 'license:deviceKeyStable')
+    writes.mockRestore()
+    expect(a).toBe(b)
+    // Uma só chave sorteada e gravada: com duas, a que foi para o servidor podia não ser a que ficou no aparelho.
+    expect(stable).toEqual([['license:deviceKeyStable', a]])
+  })
+
   it('na LG pede o LGUDID ao sistema pela ponte nativa e usa o hash dele', async () => {
     const calls = []
     window.PalmSystem = {}
@@ -342,6 +353,32 @@ describe('bloqueio (G2: falha aberta)', () => {
     expect(license.blockReason(LIST)).toBe('offline')
   })
 
+  it('relógio adiantado uma vez por engano: a próxima resposta do serviço devolve a carência sem conexão', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    const start = Date.UTC(2026, 9, 1)
+    vi.setSystemTime(start)
+    let up = true
+    setup({
+      fetchImpl: async () => {
+        if (!up) throw new TypeError('Failed to fetch')
+        return reply(200, { access: 'activated', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: start + 900 * DAY, serverTime: Date.now() })
+      },
+    })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    await license.refresh(LIST)
+    up = false
+    vi.setSystemTime(start + 400 * DAY) // TV ligou com a data errada
+    await license.refresh(LIST)
+    up = true
+    vi.setSystemTime(start + DAY) // data corrigida, serviço confirma
+    await license.refresh(LIST)
+    up = false
+    vi.setSystemTime(start + 2 * DAY)
+    await license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('')
+  })
+
   it('sem serviço: relógio voltado para trás depois de já ter andado não reabre a carência (TV "congelada")', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     const start = Date.UTC(2026, 9, 1)
@@ -390,6 +427,25 @@ describe('bloqueio (G2: falha aberta)', () => {
     const license = useLicenseStore()
     await license.refresh(LIST)
     expect(license.shouldBlock(LIST)).toBe(true)
+  })
+
+  it('leitura lenta do estado salvo não passa por cima da resposta nova do serviço (auditoria 13)', async () => {
+    setup({ fetchImpl: async () => reply(200, { access: 'blocked', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
+    let { useLicenseStore } = await import('@/stores/licenseStore')
+    await useLicenseStore().refresh(LIST)
+    const saved = memory.get('license:state')
+    memory.set('license:state', new Promise((resolve) => setTimeout(() => resolve(saved), 30)))
+    vi.resetModules()
+    setActivePinia(createPinia())
+    vi.stubGlobal('fetch', vi.fn(async () => reply(200, { access: 'activated', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: Date.now() + DAY, serverTime: Date.now() })))
+    ;({ useLicenseStore } = await import('@/stores/licenseStore'))
+    const license = useLicenseStore()
+    const announcing = license.announce()
+    await license.refresh(LIST)
+    await announcing
+    await new Promise((resolve) => setTimeout(resolve, 60))
+    expect(license.access).toBe('activated')
+    expect(license.shouldBlock(LIST)).toBe(false)
   })
 })
 

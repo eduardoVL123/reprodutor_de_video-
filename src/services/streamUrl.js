@@ -30,6 +30,7 @@ export function buildStreamUrl({ apiBase, credentials, section, item } = {}) {
       fallbackUrl: null,
       isHls,
       containerExtension: ext,
+      section,
     }
   }
 
@@ -55,6 +56,7 @@ export function buildStreamUrl({ apiBase, credentials, section, item } = {}) {
       fallbackUrl: `${base}/live/${user}/${pass}/${id}.ts`,
       isHls: true,
       containerExtension: 'm3u8',
+      section,
     }
   }
 
@@ -81,6 +83,7 @@ export function buildStreamUrl({ apiBase, credentials, section, item } = {}) {
       fallbackUrl,
       isHls: ext === 'm3u8',
       containerExtension: ext,
+      section,
     }
   }
 

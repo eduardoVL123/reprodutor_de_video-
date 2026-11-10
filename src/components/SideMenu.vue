@@ -9,7 +9,7 @@ defineProps({
   listLabel: { type: String, default: '' },
 })
 
-const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile'])
+const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile', 'diagnostics'])
 
 const isOpen = ref(false)
 
@@ -277,6 +277,26 @@ function onSelectTab(tab) {
         >
           <div class="text-tv-sm text-white font-medium truncate">{{ profile.name }}</div>
           <div class="text-tv-xs text-neutral-400">Trocar perfil</div>
+        </div>
+      </button>
+
+      <!-- 9. Diagnóstico (TV; no celular fica na aba Conta) -->
+      <button
+        id="btn-diagnostics"
+        type="button"
+        class="phone:hidden tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
+        title="Diagnóstico"
+        @click="emit('diagnostics')"
+      >
+        <div class="w-8 h-8 flex items-center justify-center shrink-0">
+          <svg class="w-6 h-6 stroke-current fill-none stroke-[2]" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="9" />
+            <line x1="12" y1="11" x2="12" y2="16" />
+            <circle cx="12" cy="7.5" r="1" fill="currentColor" />
+          </svg>
+        </div>
+        <div class="ml-4 min-w-0 transition-opacity duration-150" :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'">
+          <div class="text-tv-sm text-white font-medium truncate">Diagnóstico</div>
         </div>
       </button>
     </div>
