@@ -22,7 +22,6 @@
       "new_sqlite_classes": ["PairHub"]
     }
   ],
-  "observability": {
-    "enabled": false
-  }
+  // Só os avisos do código (console.warn); sem log por requisição, que guardaria a URL com códigos de aparelho.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

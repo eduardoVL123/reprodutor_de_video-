@@ -26,5 +26,6 @@
     "MP_PUBLIC_KEY": "APP_USR-008728eb-19f1-4312-9799-65f15ea3684b" },
   // Limpeza diária da guarda de 24 meses (PRIVACY.md), às 06:00 UTC.
   "triggers": { "crons": ["0 6 * * *"] },
-  "observability": { "enabled": false }
+  // Só os avisos do código (console.warn); sem log por requisição, que guardaria a URL com códigos de aparelho.
+  "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

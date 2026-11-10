@@ -16,7 +16,7 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 1. Logs dos servidores estão desligados
 
-- [ ] **Problema:** se um webhook falhar, uma entrega travar ou alguém tentar forjar assinatura, não fica registro.
+- [x] (2026-11-10, só avisos do código, sem log por requisição) **Problema:** se um webhook falhar, uma entrega travar ou alguém tentar forjar assinatura, não fica registro.
 - **Causa:** `"observability": { "enabled": false }` em `server/license/wrangler.jsonc:29` e em
   `server/pair/wrangler.jsonc:25`. O código já escreve os avisos (`console.warn` em
   `license-checkout.mjs`, `license-checkout-orders.mjs`, `license-checkout-subscriptions.mjs`), mas a Cloudflare
@@ -90,7 +90,7 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 
 ## 8. Publicações pendentes
 
-- [ ] Worker de pareamento: recebeu correções na auditoria de 2026-11-10 e ainda não foi republicado.
+- [x] (2026-11-10) Worker de pareamento: recebeu correções na auditoria de 2026-11-10 e ainda não foi republicado.
 - [ ] Commits desta rodada ainda não estão no GitHub (branch `claude/project-review-updates-1b0035`).
 - [ ] As correções do app só chegam aos aparelhos no próximo APK/AAB (gerado pelo CI no merge da `main`).
 
