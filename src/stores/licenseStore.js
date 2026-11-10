@@ -54,14 +54,17 @@ export const useLicenseStore = defineStore('license', () => {
   const lastSeen = ref(0)
   // A última consulta da lista aberta falhou (sem rede ou resposta não assinada): vale a carência.
   const offline = ref(false)
-  let loaded = false
+  let loading = null
   let entryTimer = null
   let refreshSeq = 0 // só a consulta mais nova grava: a resposta atrasada de outra lista não libera a atual
 
   /** Estado salvo só vale se a assinatura conferir para ESTE aparelho (editar o armazenamento não libera nada). */
-  async function load() {
-    if (loaded) return
-    loaded = true
+  function load() {
+    // Todos esperam a mesma leitura: quem voltava antes dela gravava a resposta nova e a leitura passava por cima.
+    return (loading = loading || readSaved())
+  }
+
+  async function readSaved() {
     try {
       lastSeen.value = Number(await storage.get(LAST_SEEN_KEY)) || 0
       const saved = await storage.get(STATE_KEY)
@@ -144,6 +147,9 @@ export const useLicenseStore = defineStore('license', () => {
       }
       apply(state)
       offline.value = false
+      // O serviço confirmou agora: um relógio que já esteve adiantado não tira a carência para sempre.
+      lastSeen.value = state.checkedAt
+      storage.set(LAST_SEEN_KEY, state.checkedAt).catch(() => {})
       await storage.set(STATE_KEY, state)
     } catch (err) {
       if (my !== refreshSeq) return

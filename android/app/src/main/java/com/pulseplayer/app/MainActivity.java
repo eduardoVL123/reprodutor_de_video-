@@ -136,7 +136,9 @@ public class MainActivity extends BridgeActivity {
                 String urlStr = request.getUrl().toString();
                 String scheme = request.getUrl().getScheme();
                 if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                    boolean isApi = urlStr.contains("player_api.php") || urlStr.contains("get.php");
+                    // Pelo fim do caminho: "contains" casava com widget.php ou com um get.php perdido na query.
+                    String path = request.getUrl().getPath();
+                    boolean isApi = path != null && (path.endsWith("/player_api.php") || path.endsWith("/get.php"));
                     boolean isPlaylist = urlStr.contains(".m3u8") || urlStr.contains(".m3u");
                     if (isApi || isPlaylist) {
                         WebResourceResponse response = interceptWithNativeHttp(request, urlStr, isPlaylist);

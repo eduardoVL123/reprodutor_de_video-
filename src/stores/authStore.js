@@ -12,7 +12,7 @@ import {
   ERROR_CODES,
   MISSING_CREDENTIALS_ERROR,
 } from '@/services/xtreamApi'
-import { importM3uCatalog, hashText } from '@/services/m3uParser'
+import { importM3uCatalog, readM3u, hashText } from '@/services/m3uParser'
 import { usePlayerStore } from '@/stores/playerStore'
 import { useCatalogStore } from '@/stores/catalogStore'
 import { useProfileStore } from '@/stores/profileStore'
@@ -203,6 +203,9 @@ export const useAuthStore = defineStore('auth', () => {
           savedAt: new Date().toISOString(),
         }
 
+        // Lista vazia ou ilegível falha aqui, antes de apagar o catálogo da lista que está aberta.
+        const parsed = await readM3u(resolved.m3uText)
+
         // Descarta catálogo anterior e importa a lista M3U diretamente (só salva a lista se a importação der certo)
         try {
           const catalogStore = useCatalogStore()
@@ -217,7 +220,7 @@ export const useAuthStore = defineStore('auth', () => {
           console.warn('[auth] Falha ao limpar o player:', err)
         }
 
-        await importM3uCatalog(resolved.m3uText)
+        await importM3uCatalog(resolved.m3uText, { parsed })
 
         const storedItem = await protectListItem(listItem)
         const nextSaved = [...savedLists.value]
@@ -302,12 +305,6 @@ export const useAuthStore = defineStore('auth', () => {
         savedAt: new Date().toISOString(),
       }
 
-      try {
-        await storage.set(SESSION_KEY, await toStoredSession(next))
-      } catch (err) {
-        console.warn('[auth] Não foi possível persistir a sessão:', err)
-      }
-
       // Conta/servidor possivelmente diferente: descarta o catálogo anterior.
       try {
         const catalogStore = useCatalogStore()
@@ -320,6 +317,13 @@ export const useAuthStore = defineStore('auth', () => {
         await player.reset()
       } catch (err) {
         console.warn('[auth] Falha ao limpar o player:', err)
+      }
+
+      // Sessão só depois da limpeza: se o app fechar no meio, não reabre na conta nova com o catálogo da antiga.
+      try {
+        await storage.set(SESSION_KEY, await toStoredSession(next))
+      } catch (err) {
+        console.warn('[auth] Não foi possível persistir a sessão:', err)
       }
 
       session.value = next
@@ -368,7 +372,6 @@ export const useAuthStore = defineStore('auth', () => {
           savedAt: new Date().toISOString(),
         }
 
-        await storage.set(SESSION_KEY, await toStoredSession(next))
         try {
           const catalogStore = useCatalogStore()
           await catalogStore.resetCatalogState()
@@ -381,6 +384,7 @@ export const useAuthStore = defineStore('auth', () => {
         } catch (err) {
           console.warn('[auth] Falha ao limpar o player:', err)
         }
+        await storage.set(SESSION_KEY, await toStoredSession(next))
 
         try {
           const { text } = await fetchM3uText(next.resolvedUrl || next.baseUrl)
@@ -416,7 +420,6 @@ export const useAuthStore = defineStore('auth', () => {
         savedAt: new Date().toISOString(),
       }
 
-      await storage.set(SESSION_KEY, await toStoredSession(next))
       try {
         const catalogStore = useCatalogStore()
         await catalogStore.resetCatalogState()
@@ -429,6 +432,7 @@ export const useAuthStore = defineStore('auth', () => {
       } catch (err) {
         console.warn('[auth] Falha ao limpar o player:', err)
       }
+      await storage.set(SESSION_KEY, await toStoredSession(next))
 
       session.value = next
       return true

@@ -133,7 +133,9 @@ function describeUrl(url) {
   try {
     const u = new URL(url)
     const action = u.searchParams.get('action')
-    return { host: u.origin, endpoint: `${u.pathname}${action ? `?action=${action}` : ''}` }
+    // Fora de .php o caminho pode levar usuário e senha (/playlist/USUARIO/SENHA/m3u_plus): só o último trecho aparece.
+    const path = /\.php$/i.test(u.pathname) ? u.pathname : u.pathname.replace(/[^/]+(?=\/)/g, '***')
+    return { host: u.origin, endpoint: `${path}${action ? `?action=${action}` : ''}` }
   } catch (_) {
     return { host: String(url || '-'), endpoint: '-' }
   }
@@ -237,7 +239,8 @@ function fetchWithTimeout(url, timeoutMs, accept, diagUrl) {
 export async function smartFetch(url, { timeoutMs = DEFAULT_TIMEOUT_MS, accept } = {}) {
   try {
     const res = await fetchWithTimeout(url, timeoutMs, accept)
-    return { res, finalUrl: res.url || url, viaProxy: false }
+    // No APK o motor nativo segue os redirecionamentos por conta própria e diz onde parou neste cabeçalho.
+    return { res, finalUrl: (res.headers && res.headers.get('X-Final-Url')) || res.url || url, viaProxy: false }
   } catch (err) {
     if (!(err instanceof XtreamError) || err.code !== ERROR_CODES.CORS_OR_NETWORK_ERROR || !canUseDevProxy()) {
       throw err
