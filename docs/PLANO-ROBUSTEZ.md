@@ -51,7 +51,7 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 - **Causa:** existe `/healthz` nos dois servidores, mas nada consultava; pedido parado não gerava aviso.
 - **Feito:** a rotina de hora em hora escreve `[checkout] pago sem entrega há mais de 30 min: <pedidos>` no log
   (`warnStuckOrders` em `server/license/license-checkout-orders.mjs`).
-- [ ] **Falta (você, 5 min):** monitor externo gratuito.
+- [x] (2026-11-10, UptimeRobot: site e /healthz da licença; falta o do pareamento, passo 4) **Monitor externo gratuito.**
   1. Crie conta em uptimerobot.com (plano grátis).
   2. **Add New Monitor** → tipo **HTTP(s)** → URL `https://pulseplayer.com.br/healthz` → intervalo 5 min.
   3. Em **Alert Contacts**, seu e-mail (o app deles também avisa no celular).

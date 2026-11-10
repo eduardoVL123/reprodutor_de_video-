@@ -190,10 +190,10 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v2.0.0
-          name: Pulse Player 2.3.1 (APK para instalação direta)
+          name: Pulse Player 2.4.0 (APK para instalação direta)
           body: |
-            ### Pulse Player 2.3.1 — Vídeos de painéis sem https e mais segurança
-            Versão 2.3.1, código 7. Corrige filmes que não tocavam em listas digitadas com https:// cujo servidor só funciona em http. Controle parental mais firme, senha nunca rebaixada para http por erro do servidor, mensagens que dizem o que fazer e rolagem mais leve em listas grandes.
+            ### Pulse Player 2.4.0 — Diagnóstico de erros e correções
+            Versão 2.4.0, código 8. Nova tela Diagnóstico (menu lateral na TV, aba Conta no celular) com o código do aparelho e os últimos erros, para mandar ao suporte. Correções da auditoria: troca de conta e de lista mais segura, ativação que não se perde ao abrir o app e leitura de listas mais estável.
             
             **Como instalar na Smart TV com o app Downloader:**
             1. Abra o app **Downloader** na sua Android TV ou Fire TV.
