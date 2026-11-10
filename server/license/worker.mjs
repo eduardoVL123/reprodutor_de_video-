@@ -58,6 +58,30 @@ async function ownerGate(request, env) {
   return (await verifyOwner(request.headers.get('Cf-Access-Jwt-Assertion'))) ? null : notFound()
 }
 
+/** Monta o servidor com os segredos e variáveis do Worker (fetch e rotina periódica). */
+function buildHandle(env) {
+  // Segredos colados no terminal podem vir com BOM/espaço/quebra de linha (o BOM na LICENSE_SIGNING_KEY derrubou o
+  // /v1/access em 2026-11-04): limpa todos ao ler.
+  // \u0000 = UTF-16 do pipe do PowerShell; \uFEFF/\uFFFD/\uFFFE = BOM e o lixo que ele vira.
+  // eslint-disable-next-line no-control-regex -- o byte nulo é justamente o que precisa sair
+  const v = (name) => String(env[name] || '').replace(/[\u0000\uFEFF\uFFFD\uFFFE]/g, '').trim()
+  const mp = v('MP_ACCESS_TOKEN') ? createMpClient({ accessToken: v('MP_ACCESS_TOKEN') }) : null
+  if (v('LICENSE_ADMIN_TOKEN') && v('LICENSE_ADMIN_TOKEN').length < 32) {
+    console.warn('[licença] LICENSE_ADMIN_TOKEN curto: use 32+ caracteres aleatórios (README, "Painel do dono").')
+  }
+  return createLicenseHandler({
+    db: env.DB,
+    adminToken: v('LICENSE_ADMIN_TOKEN'),
+    reportToken: v('LICENSE_REPORT_TOKEN'),
+    contactUrl: v('LICENSE_CONTACT_URL'),
+    playUrl: v('PLAY_URL'),
+    mp,
+    mpWebhookSecret: v('MP_WEBHOOK_SECRET'),
+    mpPublicKey: v('MP_PUBLIC_KEY'),
+    signingKey: v('LICENSE_SIGNING_KEY'),
+  })
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url)
@@ -87,28 +111,7 @@ export default {
       await migrate(env.DB)
       migrated = true
     }
-    if (!handle) {
-      // Segredos colados no terminal podem vir com BOM/espaço/quebra de linha (o BOM na LICENSE_SIGNING_KEY derrubou o
-      // /v1/access em 2026-11-04): limpa todos ao ler.
-      // \u0000 = UTF-16 do pipe do PowerShell; \uFEFF/\uFFFD/\uFFFE = BOM e o lixo que ele vira.
-      // eslint-disable-next-line no-control-regex -- o byte nulo é justamente o que precisa sair
-      const v = (name) => String(env[name] || '').replace(/[\u0000\uFEFF\uFFFD\uFFFE]/g, '').trim()
-      const mp = v('MP_ACCESS_TOKEN') ? createMpClient({ accessToken: v('MP_ACCESS_TOKEN') }) : null
-      if (v('LICENSE_ADMIN_TOKEN') && v('LICENSE_ADMIN_TOKEN').length < 32) {
-        console.warn('[licença] LICENSE_ADMIN_TOKEN curto: use 32+ caracteres aleatórios (README, "Painel do dono").')
-      }
-      handle = createLicenseHandler({
-        db: env.DB,
-        adminToken: v('LICENSE_ADMIN_TOKEN'),
-        reportToken: v('LICENSE_REPORT_TOKEN'),
-        contactUrl: v('LICENSE_CONTACT_URL'),
-        playUrl: v('PLAY_URL'),
-        mp,
-        mpWebhookSecret: v('MP_WEBHOOK_SECRET'),
-        mpPublicKey: v('MP_PUBLIC_KEY'),
-        signingKey: v('LICENSE_SIGNING_KEY'),
-      })
-    }
+    if (!handle) handle = buildHandle(env)
     if (Date.now() - lastSweep > SWEEP_EVERY_MS) {
       lastSweep = Date.now()
       handle.sweep()
@@ -116,8 +119,11 @@ export default {
     return handle(request, request.headers.get('CF-Connecting-IP') || '0.0.0.0')
   },
 
+  // De hora em hora (wrangler.jsonc): limpeza da guarda de 24 meses e conferência de estornos sem webhook.
   async scheduled(_event, env) {
     await migrate(env.DB)
     await purgeExpired(env.DB, Date.now())
+    if (!handle) handle = buildHandle(env)
+    await handle.recheckRefunds()
   },
 }

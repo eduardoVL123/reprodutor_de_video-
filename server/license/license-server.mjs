@@ -70,6 +70,8 @@ export function createLicenseServer({ dbPath, adminToken = '', reportToken = '',
   setInterval(purge, PURGE_EVERY_MS).unref()
   const handle = createLicenseHandler({ db, now, adminToken, reportToken, contactUrl, playUrl, mp, mpWebhookSecret, mpPublicKey, signingKey })
   setInterval(handle.sweep, 60 * 1000).unref()
+  // Como o cron do Worker: estorno cujo webhook se perdeu.
+  setInterval(() => handle.recheckRefunds().catch((err) => console.warn('[license] Conferência de estornos falhou:', err && err.message)), 3600 * 1000).unref()
 
   async function route(req, res) {
     await ready

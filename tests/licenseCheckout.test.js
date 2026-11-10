@@ -976,6 +976,42 @@ describe('painel do dono — pedidos (etapa 6)', () => {
     expect(await activationEndsAt(db, KEY)).toBeNull()
   })
 
+  it('estorno automático sem webhook (2026-11-10): a conferência periódica pergunta ao Mercado Pago e revoga o ano', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const endsAt = await activationEndsAt(db, KEY)
+    pay(orderId, { status: 'refunded', status_detail: 'refunded' }) // estornado no Mercado Pago; o webhook não chega
+    expect(await handle.recheckRefunds()).toBe(0) // entregue agora há pouco: ainda não é hora de conferir
+    clock += 7 * 3600 * 1000
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await handle.recheckRefunds()).toBe(1)
+    spy.mockRestore()
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('refunded')
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+    expect(endsAt).not.toBeNull()
+    clock += 7 * 3600 * 1000
+    expect(await handle.recheckRefunds()).toBe(0) // estornado sai da conferência
+  })
+
+  it('conferência periódica: pedido ainda pago não muda; erro do Mercado Pago só avisa e tenta na próxima rodada', async () => {
+    const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
+    pay(orderId)
+    await webhook(`ORD-${orderId}`)
+    const endsAt = await activationEndsAt(db, KEY)
+    clock += 7 * 3600 * 1000
+    expect(await handle.recheckRefunds()).toBe(1)
+    expect(await activationEndsAt(db, KEY)).toBe(endsAt)
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('delivered')
+    expect(await handle.recheckRefunds()).toBe(0) // conferido agora: espera a próxima janela
+    mpOrders.delete(`ORD-${orderId}`) // a consulta falha (404 no Mercado Pago falso)
+    clock += 7 * 3600 * 1000
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await handle.recheckRefunds()).toBe(1)
+    expect(spy.mock.calls.flat().join(' ')).toMatch(/conferência de estorno falhou/)
+    spy.mockRestore()
+  })
+
   it('webhook recusado por assinatura deixa aviso no log, sem a assinatura nem o segredo', async () => {
     const { orderId } = (await req('POST', '/v1/checkout', { kind: 'device_annual', method: 'pix', code: await tvCode(), email: EMAIL })).body
     const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})

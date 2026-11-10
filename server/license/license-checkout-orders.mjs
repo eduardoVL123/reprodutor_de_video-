@@ -10,6 +10,11 @@ import { CheckoutError, REVERSED, DELIVERED_BY } from './license-checkout-shared
 
 const RECHECK_MS = 60 * 1000
 const STUCK_DELIVERY_MS = 5 * 60 * 1000
+// Plano B do webhook do estorno: cada pedido entregue é conferido a cada 6 h por 180 dias (prazo de contestação do
+// cartão), no máximo 50 por rodada; os menos conferidos primeiro.
+const REFUND_RECHECK_MS = 6 * 3600 * 1000
+const REFUND_WINDOW_MS = 180 * 24 * 3600 * 1000
+const REFUND_BATCH = 50
 // A chave do revendedor novo fica visível para quem tem o viewSecret por 1 h (recarregar a tela não a perde);
 // depois some da tela e o expurgo diário a apaga do banco (license-db.mjs, purgeExpired).
 export const KEY_VISIBLE_MS = 60 * 60 * 1000
@@ -282,5 +287,32 @@ export function createOrderFlow({ db, now, mp }) {
     return adminOrder(await find())
   }
 
-  return { settle, confirm, status, listOrders, reprocessOrder }
+  /**
+   * Estorno real de 2026-11-10 não chegou pelo webhook e o aparelho ficou liberado: a rotina periódica (cron do Worker)
+   * pergunta ao Mercado Pago pelos pedidos entregues; `settle` desfaz a entrega se houve estorno ou contestação.
+   * @returns {Promise<number>} quantos pedidos foram conferidos
+   */
+  async function recheckRefunds() {
+    if (!mp) return 0
+    const at = now()
+    const rows = (
+      await db
+        .prepare(
+          "SELECT id, mp_order_id FROM orders WHERE status = 'delivered' AND mp_order_id IS NOT NULL AND paid_at >= ? AND COALESCE(checked_at, 0) < ? ORDER BY COALESCE(checked_at, 0) LIMIT ?",
+        )
+        .bind(at - REFUND_WINDOW_MS, at - REFUND_RECHECK_MS, REFUND_BATCH)
+        .all()
+    ).results
+    for (const row of rows) {
+      await db.prepare('UPDATE orders SET checked_at = ? WHERE id = ?').bind(at, row.id).run()
+      try {
+        await confirm(row.mp_order_id)
+      } catch (err) {
+        console.warn(`[checkout] pedido ${row.id}: conferência de estorno falhou (${err.message}); tenta na próxima rodada`)
+      }
+    }
+    return rows.length
+  }
+
+  return { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds }
 }

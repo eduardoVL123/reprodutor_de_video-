@@ -24,8 +24,8 @@
   "vars": { "LICENSE_CONTACT_URL": "https://wa.me/5516992791692", "ACCESS_TEAM": "shy-mountain-9579",
     // Chave PÚBLICA do Mercado Pago (cartão em /pagar). De PRODUÇÃO desde 2026-11-10 (scripts/mp-producao.sh).
     "MP_PUBLIC_KEY": "APP_USR-008728eb-19f1-4312-9799-65f15ea3684b" },
-  // Limpeza diária da guarda de 24 meses (PRIVACY.md), às 06:00 UTC.
-  "triggers": { "crons": ["0 6 * * *"] },
+  // De hora em hora: limpeza da guarda de 24 meses (PRIVACY.md) e conferência de estornos cujo webhook se perdeu.
+  "triggers": { "crons": ["0 * * * *"] },
   // Só os avisos do código (console.warn); sem log por requisição, que guardaria a URL com códigos de aparelho.
   "observability": { "enabled": true, "logs": { "invocation_logs": false } }
 }

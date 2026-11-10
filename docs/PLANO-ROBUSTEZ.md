@@ -27,20 +27,22 @@ Marque `[x]` quando fechar. O plano geral do projeto continua em `docs/PLANO.md`
 - **Cuidado:** antes de ligar, conferir que nenhum `console.*` escreve token, chave de aparelho inteira ou contato do
   comprador. Log não pode ter dado sensível.
 
-## 2. Estorno real nunca foi exercitado
+## 2. Estorno não derrubava a licença (achado no teste real de 2026-11-10)
 
-- [ ] **Problema:** devolver o dinheiro tem de derrubar a licença. Só há teste automático disso.
-- **Causa:** até hoje só existiam credenciais de teste.
-- **Como testar:**
-  1. No Mercado Pago (site ou app da conta, não o painel de desenvolvedor): **Atividade** → abrir o recebimento de
-     R$ 25,00 → **Devolver dinheiro** → devolução total.
-  2. Esperar o webhook (segundos). No painel `dono.pulseplayer.com.br/admin` → **Pagamentos**, o pedido deve virar
-     "Estornado (entrega desfeita)" e o aparelho deve perder o "Ativado até".
-  3. Na TV, o app deve voltar para o teste de 7 dias ou para a tela de ativação.
-- **Se não cair:** o pedido fica como "Entregue". Ver os logs (item 1) e usar **Reprocessar** no painel. O código
-  que trata isso é `reverseOrder` em `server/license/license-checkout-orders.mjs:131`.
-- **Observação:** o painel do Pulse não tem botão de estorno de propósito: o dinheiro só volta pelo Mercado Pago, e o
-  servidor apenas reage.
+- [ ] **Problema:** o Pix foi devolvido, o dinheiro voltou, e o aparelho `DZDQ2Q29` continuou ativado.
+- **Causa:** o servidor só ficava sabendo do estorno pelo webhook, e ele não chegou (ou foi recusado sem deixar
+  rastro). O pagamento tinha plano B (a tela `/pagar` consulta o Mercado Pago a cada minuto); o estorno não tinha,
+  e o "Reprocessar" do painel recusava pedido entregue.
+- **Correção (commitada, falta publicar da pasta certa):**
+  1. Automático: o cron do Worker roda de hora em hora e confere cada pedido entregue a cada 6 h, por 180 dias
+     (`recheckRefunds` em `server/license/license-checkout-orders.mjs`). Estorno é percebido em até ~7 h mesmo
+     sem webhook.
+  2. Manual: botão **Conferir estorno** nos pedidos entregues do painel.
+  3. Webhook recusado por assinatura agora deixa `[checkout] webhook recusado` no log.
+- **Ainda conferir:** no painel de desenvolvedor do Mercado Pago, aba **Webhooks**, o código HTTP das tentativas.
+  401 = assinatura secreta errada (rodar `scripts/mp-producao.sh` de novo com a de produção).
+- **Assinatura anual no cartão:** parcela estornada é tratada pelo webhook `subscription_authorized_payment`; ainda
+  sem conferência periódica (só quando o cartão for validado).
 
 ## 3. Ninguém avisa quando algo quebra
 
