@@ -75,4 +75,25 @@ describe('Android — nome do pacote por destino', () => {
     expect(ci).toMatch(/bundleRelease -PpulseApplicationId=com\.playerpulse\.app/)
     expect(ci).toMatch(/run: \.\/gradlew assembleRelease\s*$/m)
   })
+
+  it('APK da Amazon: versão de loja com com.playerpulse.app, sem sobrescrever o APK do Downloader', () => {
+    const ci = read('.github/workflows/build-apk.yml')
+    const at = (text) => {
+      const i = ci.indexOf(text)
+      expect(i, text).toBeGreaterThan(-1)
+      return i
+    }
+    const keepDownloader = at('cp android/app/build/outputs/apk/release/*.apk pulse-player.apk')
+    const storeWeb = at("VITE_LICENSE_STORE_BUILD: '1'")
+    const amazon = at('assembleRelease -PpulseApplicationId=com.playerpulse.app')
+
+    // O APK do Downloader (versão completa, com.pulseplayer.app) é guardado antes de a pasta release ser reaproveitada.
+    expect(keepDownloader).toBeLessThan(storeWeb)
+    expect(storeWeb).toBeLessThan(amazon)
+    expect(ci).toContain('pulse-player-amazon.apk')
+    // O Release do GitHub (link do Downloader) continua publicando só o APK completo.
+    const publish = ci.slice(at('Publicar Release com APK para Smart TV (Downloader)'))
+    expect(publish).toContain('files: pulse-player.apk')
+    expect(publish).not.toContain('amazon')
+  })
 })
