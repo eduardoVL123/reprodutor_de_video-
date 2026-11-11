@@ -1,6 +1,6 @@
 <script setup>
 import { ref, nextTick, onBeforeUnmount } from 'vue'
-import { useAuthStore } from '@/stores/authStore'
+import { useAuthStore, listDisplayName } from '@/stores/authStore'
 import { registerBackHandler, pushFocusScope, focusFirstIn } from '@/utils/spatialNavigation'
 import PairPanel from '@/components/PairPanel.vue'
 import SiteInboxPrompt from '@/components/SiteInboxPrompt.vue'
@@ -32,7 +32,7 @@ const form = ref(emptyForm())
 const pairingOn = isPairingAvailable()
 const view = ref('form') // 'form' | 'pair'
 
-let triggerId = 'btn-manage-lists'
+let triggerId = 'acc-lists'
 let popScope = null
 let cleanupBack = null
 
@@ -53,7 +53,7 @@ function release() {
 }
 
 function open() {
-  triggerId = document.activeElement?.id || 'btn-manage-lists'
+  triggerId = document.activeElement?.id || 'acc-lists'
   isOpen.value = true
   view.value = 'form'
   clearErrors()
@@ -95,7 +95,7 @@ function onPairDone() {
 function close() {
   isOpen.value = false
   release()
-  const idToFocus = triggerId || 'btn-manage-lists'
+  const idToFocus = triggerId || 'acc-lists'
   nextTick(() => {
     document.getElementById(idToFocus)?.focus()
   })
@@ -210,7 +210,7 @@ defineExpose({ open, close })
   >
     <!-- No celular deitado o modal inteiro rola (as partes não disputam a altura da tela). -->
     <div
-      class="w-full max-w-[70rem] max-h-[44rem] bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl phone:p-4 phone:overflow-y-auto phone-portrait:max-h-full"
+      class="w-full max-w-[70rem] max-h-full bg-[#121215] border border-white/10 rounded-2xl p-8 flex flex-col shadow-2xl phone:p-4 phone:overflow-y-auto phone-portrait:max-h-full"
     >
       <!-- Topo do modal -->
       <header class="flex items-center justify-between gap-4 pb-5 border-b border-white/[0.08] phone:pb-3">
@@ -266,15 +266,16 @@ defineExpose({ open, close })
 
       <!-- Conteúdo do modal: 2 colunas -->
       <div class="grid grid-cols-2 gap-8 flex-1 min-h-0 pt-6 phone:flex-none phone:gap-4 phone:pt-3 phone-portrait:grid-cols-1 phone-portrait:gap-6">
-        <!-- Coluna 1: listas salvas -->
-        <div class="flex flex-col min-h-0">
+        <!-- Coluna 1: listas salvas. Cada coluna é um grupo de foco: Esquerda/Direita atravessam de uma para a outra
+             mesmo quando os botões não estão na mesma altura. -->
+        <div class="flex flex-col min-h-0" data-focus-group="modal-lists-saved">
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-3 uppercase tracking-wider">
             Listas Salvas ({{ auth.savedLists.length }})
           </h3>
 
           <div class="flex-1 overflow-y-auto pr-3 space-y-3">
             <div
-              v-for="list in auth.savedLists"
+              v-for="(list, index) in auth.savedLists"
               :id="'saved-list-card-' + list.id"
               :key="list.id"
               class="rounded-xl border p-4 flex items-center justify-between transition-colors"
@@ -285,9 +286,9 @@ defineExpose({ open, close })
               "
             >
               <div class="min-w-0 pr-3">
-                <div class="flex items-center gap-2.5 mb-1 phone-portrait:flex-wrap phone-portrait:gap-y-1">
+                <div class="flex items-center gap-2.5 phone-portrait:flex-wrap phone-portrait:gap-y-1">
                   <span class="text-tv-sm font-bold text-white truncate">
-                    {{ list.label || list.username }}
+                    {{ listDisplayName(list, index) }}
                   </span>
                   <span
                     v-if="list.id === auth.currentListId"
@@ -302,9 +303,6 @@ defineExpose({ open, close })
                     SEM CRIPTOGRAFIA
                   </span>
                 </div>
-                <p class="text-tv-xs text-neutral-400 truncate">
-                  {{ list.username }} @ {{ list.baseUrl }}
-                </p>
               </div>
 
               <div class="flex items-center gap-2 shrink-0">
@@ -364,13 +362,16 @@ defineExpose({ open, close })
         </div>
 
         <!-- Coluna 2: adicionar nova lista -->
-        <div class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08] phone:pl-4 phone-portrait:pl-0 phone-portrait:border-l-0 phone-portrait:pt-5 phone-portrait:border-t">
+        <div
+          class="flex flex-col min-h-0 pl-6 border-l border-white/[0.08] phone:pl-4 phone-portrait:pl-0 phone-portrait:border-l-0 phone-portrait:pt-5 phone-portrait:border-t"
+          data-focus-group="modal-lists-add"
+        >
           <h3 class="text-tv-sm font-bold text-neutral-200 mb-1 uppercase tracking-wider">
             Adicionar Nova Lista
           </h3>
 
-          <div v-if="view === 'pair'" class="overflow-y-auto pr-2 pb-2">
-            <PairPanel :qr-rem="11" compact show-manual @manual="showForm" @done="onPairDone" />
+          <div v-if="view === 'pair'" class="flex-1 min-h-0 flex flex-col overflow-y-auto pr-2 pb-2">
+            <PairPanel class="flex-1" :qr-rem="11" compact show-manual @manual="showForm" @done="onPairDone" />
           </div>
 
           <template v-else>
@@ -385,8 +386,8 @@ defineExpose({ open, close })
               <p class="mb-3 text-center text-tv-xs text-neutral-500">ou digite</p>
             </template>
 
-            <!-- pb-[20rem]: espaço para o teclado da TV; no celular o teclado do aparelho já empurra a tela -->
-            <form class="space-y-3.5 overflow-y-auto pr-2 pb-[20rem] phone:pb-2" @submit.prevent="addList">
+            <!-- pb-[20rem]: espaço para o teclado da TV, só enquanto ele está aberto (body.tv-keyboard-open) -->
+            <form class="space-y-3.5 overflow-y-auto pr-2 pb-2 [.tv-keyboard-open_&]:pb-[20rem]" @submit.prevent="addList">
               <div>
                 <label for="new-list-label" class="block text-tv-xs text-neutral-400 mb-1 font-medium">
                   Nome / Apelido (opcional)

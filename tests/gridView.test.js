@@ -24,6 +24,29 @@ describe('GridView — grade virtualizada', () => {
     wrapper.unmount()
   })
 
+  it('na TV a grade de canais desce além do 12º item (o pool cobre a tela inteira)', async () => {
+    const { default: GridView } = await import('@/components/GridView.vue')
+    const root = document.documentElement
+    root.style.fontSize = '8px' // Android TV 1080p: viewport CSS 960x540
+    const channels = Array.from({ length: 32 }, (_, i) => ({ stream_id: i, name: `Canal ${i}` }))
+    const wrapper = mount(GridView, {
+      // Mesmos números da grade de canais da TV em CatalogBrowser.vue: 5 linhas de 90px cabem em 445px.
+      props: { count: channels.length, loadItems: async (s, n) => channels.slice(s, s + n), columns: 3, rowHeight: 10, gap: 1.25 },
+      slots: { item: ({ index }) => h('button', { id: `g-${index}`, 'data-grid-index': index }) },
+      attachTo: document.body,
+    })
+    const vp = wrapper.element
+    Object.defineProperty(vp, 'clientHeight', { configurable: true, value: 445 })
+    Object.defineProperty(vp, 'scrollTop', { configurable: true, writable: true, value: 0 })
+    wrapper.vm.measure()
+    await flushPromises()
+
+    expect(await wrapper.vm.focusIndex(12)).toBe(true)
+    expect(document.activeElement.id).toBe('g-12')
+    wrapper.unmount()
+    root.style.fontSize = ''
+  })
+
   it('linhas fundas continuam na tela se a fonte da raiz muda sem resize (celular em pé)', async () => {
     const { default: GridView } = await import('@/components/GridView.vue')
     const root = document.documentElement
@@ -31,7 +54,7 @@ describe('GridView — grade virtualizada', () => {
     const many = Array.from({ length: 30000 }, (_, i) => ({ stream_id: i, name: `Item ${i}` }))
     const wrapper = mount(GridView, {
       // Mesmos números do celular em pé em CatalogBrowser.vue (pôster, 3 colunas).
-      props: { count: many.length, loadItems: async (s, n) => many.slice(s, s + n), columns: 3, rowHeight: 10, gap: 0.6, maxDomItems: 27 },
+      props: { count: many.length, loadItems: async (s, n) => many.slice(s, s + n), columns: 3, rowHeight: 10, gap: 0.6 },
       slots: { item: ({ index }) => h('button', { id: `g-${index}` }) },
       attachTo: document.body,
     })

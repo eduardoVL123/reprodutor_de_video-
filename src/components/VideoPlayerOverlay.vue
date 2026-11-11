@@ -1303,7 +1303,6 @@ onBeforeUnmount(() => {
             :columns="1"
             :row-height="8.5"
             :gap="1"
-            :max-dom-items="7"
             reset-key="player-queue-drawer"
             @select="selectQueueItem"
           >

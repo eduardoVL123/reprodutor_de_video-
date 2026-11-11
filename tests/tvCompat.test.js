@@ -30,6 +30,14 @@ describe('fallback de gap em flexbox para TVs com Chromium < 84', () => {
     expect(css).toContain('.no-flex-gap.gap-2.flex.flex-col>*+*{margin-top:0.5rem;}')
   })
 
+  it('gap-x e gap-y também existem (sem eles o Diagnóstico grudava "código" e "plataforma")', async () => {
+    const css = await buildCss('<div class="flex flex-wrap gap-x-8 gap-y-1"></div>')
+
+    expect(css).toContain('.gap-x-8{column-gap:2rem;}')
+    expect(css).toContain('.gap-y-1{row-gap:0.25rem;}')
+    expect(css).toContain('.no-flex-gap.gap-x-8.flex:not(.flex-col)>*+*{margin-left:2rem;}')
+  })
+
   it('não mexe em grades (grid gap tem suporte desde o Chromium 57)', async () => {
     const css = await buildCss('<div class="grid grid-cols-4 gap-5"></div>')
 

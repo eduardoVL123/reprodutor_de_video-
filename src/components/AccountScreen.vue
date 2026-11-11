@@ -4,10 +4,12 @@ import { PROFILE_COLORS, avatarTextColor } from '@/stores/profileStore'
 import { useLicenseStore } from '@/stores/licenseStore'
 import { isLicenseEnabled, isStoreBuild, plansPageUrl, privacyPageUrl, sendListPageUrl } from '@/services/licenseApi'
 import { canExitApp, exitApp, openExternal } from '@/services/platform'
+import { isPhone } from '@/utils/compat'
 
 /**
- * Aba Conta do celular/tablet: tudo do usuário num lugar só (perfil, assinatura, lista, Favoritos, sair).
- * Substitui a folha "Mais". Na versão das lojas não há link de renovar (o app não pode levar a pagamento).
+ * Aba Conta: tudo do usuário num lugar só (perfil, assinatura, lista, Favoritos, diagnóstico, sair). No celular
+ * abre pela barra de baixo; na TV, pelo menu lateral. Na versão das lojas não há link de renovar (o app não pode
+ * levar a pagamento). Os tamanhos sem prefixo são os da TV (leitura a 3 m); `phone:` devolve os do celular.
  */
 const props = defineProps({
   profile: { type: Object, default: () => ({ name: 'Perfil', color: PROFILE_COLORS[0] }) },
@@ -19,10 +21,12 @@ const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile', 'diagnos
 const license = useLicenseStore()
 const licensed = isLicenseEnabled()
 const showExit = canExitApp()
+/** A TV não tem navegador: os links externos (renovar, site, privacidade) só existem no celular. */
+const onPhone = isPhone()
 const profileColor = computed(() => props.profile.color || PROFILE_COLORS[0])
-const siteUrl = computed(() => sendListPageUrl(license.code))
-const privacyUrl = privacyPageUrl()
-const renewUrl = computed(() => (licensed && !isStoreBuild() && license.code ? plansPageUrl(license.code) : ''))
+const siteUrl = computed(() => (onPhone ? sendListPageUrl(license.code) : ''))
+const privacyUrl = onPhone ? privacyPageUrl() : ''
+const renewUrl = computed(() => (onPhone && licensed && !isStoreBuild() && license.code ? plansPageUrl(license.code) : ''))
 
 const fmtDate = (ms) => new Date(ms).toLocaleDateString('pt-BR')
 const status = computed(() => {
@@ -44,20 +48,20 @@ const status = computed(() => {
 
 <template>
   <div class="h-full overflow-y-auto" data-focus-group="account">
-    <div class="max-w-xl mx-auto px-4 pt-6 pb-10">
-      <h1 class="text-[1.6rem] font-extrabold tracking-tight mb-5">Conta</h1>
+    <div class="max-w-[56rem] mx-auto px-24 py-14 phone:max-w-xl phone:px-4 phone:pt-6 phone:pb-10">
+      <h1 class="text-tv-xl phone:text-[1.6rem] font-extrabold tracking-tight mb-5">Conta</h1>
 
       <!-- Perfil -->
-      <section class="acc-card flex items-center px-4 py-4">
+      <section class="acc-card flex items-center px-6 py-5 phone:px-4 phone:py-4">
         <span
-          class="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black shrink-0 mr-3.5"
+          class="w-16 h-16 text-tv-lg phone:w-12 phone:h-12 phone:text-xl rounded-xl flex items-center justify-center font-black shrink-0 mr-5 phone:mr-3.5"
           :style="{ backgroundColor: profileColor, color: avatarTextColor(profileColor) }"
         >{{ (profile.name || 'P').charAt(0).toUpperCase() }}</span>
         <div class="min-w-0 flex-1">
-          <div class="text-[0.78rem] text-neutral-400">Perfil</div>
-          <div class="font-extrabold text-[1.1rem] truncate">{{ profile.name }}</div>
+          <div class="text-tv-xs phone:text-[0.78rem] text-neutral-400">Perfil</div>
+          <div class="font-extrabold text-tv-base phone:text-[1.1rem] truncate">{{ profile.name }}</div>
         </div>
-        <button id="acc-profile" type="button" class="tv-focusable tv-btn !px-4 !py-2 text-[0.9rem]" @click="emit('switch-profile')">
+        <button id="acc-profile" type="button" class="tv-focusable tv-btn !px-4 !py-2 text-tv-sm phone:text-[0.9rem]" @click="emit('switch-profile')">
           Trocar
         </button>
       </section>
@@ -65,15 +69,15 @@ const status = computed(() => {
       <!-- Assinatura -->
       <template v-if="licensed">
         <h2 class="acc-title">Assinatura</h2>
-        <section class="acc-card px-4 py-4">
+        <section class="acc-card px-6 py-5 phone:px-4 phone:py-4">
           <div class="flex items-center">
             <span class="w-2.5 h-2.5 rounded-full mr-2.5 shrink-0" :class="status.ok ? 'bg-tv-accent' : 'bg-[#ff5a4e]'" />
-            <span class="font-bold text-[1.05rem]">{{ status.text }}</span>
-            <span v-if="status.detail" class="ml-2 text-[0.9rem] text-neutral-400">{{ status.detail }}</span>
+            <span class="font-bold text-tv-base phone:text-[1.05rem]">{{ status.text }}</span>
+            <span v-if="status.detail" class="ml-2 text-tv-sm phone:text-[0.9rem] text-neutral-400">{{ status.detail }}</span>
           </div>
           <div v-if="license.code" class="mt-3 flex items-center justify-between">
-            <span class="text-[0.85rem] text-neutral-400">Código do aparelho</span>
-            <span id="acc-code" class="font-mono font-bold tracking-[0.2em] text-[1.05rem]">{{ license.code }}</span>
+            <span class="text-tv-sm phone:text-[0.85rem] text-neutral-400">Código do aparelho</span>
+            <span id="acc-code" class="font-mono font-bold tracking-[0.2em] text-tv-base phone:text-[1.05rem]">{{ license.code }}</span>
           </div>
           <button
             v-if="renewUrl"
@@ -134,15 +138,15 @@ const status = computed(() => {
 </template>
 
 <style scoped>
+/* Sem prefixo: TV. `html.is-phone` (src/utils/compat.js): os tamanhos originais do celular. */
 .acc-card {
   border-radius: 1rem;
   background: #141a15;
   border: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: hidden;
 }
 .acc-title {
   margin: 1.5rem 0 0.6rem 0.25rem;
-  font-size: 0.8rem;
+  font-size: 1.25rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -152,16 +156,17 @@ const status = computed(() => {
   display: flex;
   align-items: center;
   width: 100%;
-  height: 3.6rem;
-  padding: 0 1rem;
-  font-size: 1rem;
+  height: 4.5rem;
+  padding: 0 1.5rem;
+  border-radius: 1rem;
+  font-size: 1.5rem;
   font-weight: 600;
   text-align: left;
 }
 .acc-row svg {
-  width: 1.4rem;
-  height: 1.4rem;
-  margin-right: 0.9rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-right: 1.1rem;
   flex-shrink: 0;
   fill: none;
   stroke: #9ba49c;
@@ -170,7 +175,7 @@ const status = computed(() => {
 .acc-hint {
   margin-left: auto;
   padding-left: 0.75rem;
-  font-size: 0.82rem;
+  font-size: 1.25rem;
   font-weight: 500;
   color: #9ba49c;
 }
@@ -178,5 +183,25 @@ const status = computed(() => {
   height: 1px;
   margin: 0 1rem;
   background: rgba(255, 255, 255, 0.07);
+}
+:global(html.is-phone) .acc-card {
+  overflow: hidden;
+}
+:global(html.is-phone) .acc-title {
+  font-size: 0.8rem;
+}
+:global(html.is-phone) .acc-row {
+  height: 3.6rem;
+  padding: 0 1rem;
+  border-radius: 0;
+  font-size: 1rem;
+}
+:global(html.is-phone) .acc-row svg {
+  width: 1.4rem;
+  height: 1.4rem;
+  margin-right: 0.9rem;
+}
+:global(html.is-phone) .acc-hint {
+  font-size: 0.82rem;
 }
 </style>

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, afterEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-const PROPS = { activeTab: 'home', profile: { name: 'Paula', color: '#2563eb' }, listLabel: 'Casa' }
+const PROPS = { activeTab: 'home', profile: { name: 'Paula', color: '#2563eb' } }
 
 async function setup(props = {}) {
   const { default: SideMenu } = await import('@/components/SideMenu.vue')
@@ -55,9 +55,8 @@ describe('SideMenu — menu lateral recolhido (layout B)', () => {
       'nav-vod',
       'nav-series',
       'nav-favorites',
-      'btn-manage-lists',
+      'nav-account',
       'btn-switch-profile',
-      'btn-diagnostics',
     ])
     expect(new Set(ids).size).toBe(ids.length)
   })
@@ -90,18 +89,23 @@ describe('SideMenu — menu lateral recolhido (layout B)', () => {
     expect(nav.attributes('data-open')).toBe('false')
   })
 
-  it('OK num destino avisa o pai; lista ativa e perfil aparecem nos itens de conta', async () => {
+  it('OK num destino avisa o pai; Conta é uma aba e o perfil aparece no item dele', async () => {
     wrapper = await setup()
 
     await wrapper.find('#nav-series').trigger('click')
-    await wrapper.find('#btn-manage-lists').trigger('click')
+    await wrapper.find('#nav-account').trigger('click')
     await wrapper.find('#btn-switch-profile').trigger('click')
 
-    expect(wrapper.emitted('navigate')).toEqual([['series']])
-    expect(wrapper.emitted('manage-lists')).toHaveLength(1)
+    expect(wrapper.emitted('navigate')).toEqual([['series'], ['account']])
     expect(wrapper.emitted('switch-profile')).toHaveLength(1)
-    expect(wrapper.find('#btn-manage-lists').text()).toContain('Casa')
     expect(wrapper.find('#btn-switch-profile').text()).toContain('Paula')
+  })
+
+  it('listas e diagnóstico saíram do menu: ficam na aba Conta', async () => {
+    wrapper = await setup()
+
+    expect(wrapper.find('#btn-manage-lists').exists()).toBe(false)
+    expect(wrapper.find('#btn-diagnostics').exists()).toBe(false)
   })
 })
 

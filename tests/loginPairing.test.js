@@ -105,6 +105,28 @@ describe('Login com pareamento (layout A)', () => {
     expect(document.activeElement.id).toBe('pair-refresh')
   })
 
+  it('com a lista recebida, Esquerda a partir do formulário chega no Adicionar', async () => {
+    const nav = await import('@/utils/spatialNavigation')
+    const { press } = await import('./helpers/layout')
+    const { pairingState } = await setup()
+    pairingState.received.value = { host: 'servidor.exemplo.com', label: '', insecure: false }
+    pairingState.state.value = 'received'
+    await flushPromises()
+    // Medidas reais da TV (px CSS, 960x540): o Adicionar fica inteiro acima do campo Usuário.
+    const rect = (el, [x, y, w, h]) => (el.getBoundingClientRect = () => ({ left: x, top: y, width: w, height: h, right: x + w, bottom: y + h, x, y }))
+    rect(document.querySelector('[data-focus-group="pair-panel"]'), [172, 70, 280, 400])
+    rect(document.querySelector('[data-focus-group="login-form"]'), [480, 17, 330, 520])
+    rect(document.getElementById('pair-accept'), [172, 218, 60, 26])
+    rect(document.getElementById('login-username'), [506, 270, 281, 28])
+    nav.initSpatialNavigation()
+    document.getElementById('login-username').focus()
+
+    press('left')
+
+    expect(document.activeElement.id).toBe('pair-accept')
+    nav.stopSpatialNavigation()
+  })
+
   it('quando o celular termina de adicionar a lista, vai para o início', async () => {
     const { replace, pairingState } = await setup()
 

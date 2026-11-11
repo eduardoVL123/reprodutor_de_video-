@@ -176,12 +176,12 @@ const layout = computed(() => {
     // Em pé: canais em lista de uma coluna; capas em 3 colunas no celular e 5 no tablet (600px ou mais).
     const tablet = window.innerWidth >= 600
     return isLive.value
-      ? { columns: 1, rowHeight: 4.4, gap: 0.5, maxDomItems: 24, variant: 'channel' }
-      : { columns: tablet ? 5 : 3, rowHeight: tablet ? 12 : 10, gap: 0.6, maxDomItems: tablet ? 40 : 27, variant: 'poster' }
+      ? { columns: 1, rowHeight: 4.4, gap: 0.5, variant: 'channel' }
+      : { columns: tablet ? 5 : 3, rowHeight: tablet ? 12 : 10, gap: 0.6, variant: 'poster' }
   }
   return isLive.value
-    ? { columns: 3, rowHeight: 10, gap: 1.25, maxDomItems: 12, variant: 'channel' }
-    : { columns: 5, rowHeight: 24, gap: 1.25, maxDomItems: 15, variant: 'poster' }
+    ? { columns: 3, rowHeight: 10, gap: 1.25, variant: 'channel' }
+    : { columns: 5, rowHeight: 24, gap: 1.25, variant: 'poster' }
 })
 const loadItems = (start, count) => catalog.getItems(props.section, activeCategory.value, start, count)
 
@@ -386,11 +386,12 @@ onBeforeUnmount(() => {
         </h1>
 
         <!-- Faixa de Botões Arredondados de Categoria (Pills) -->
+        <!-- Máscara na TV: a última categoria some em degradê em vez de aparecer cortada no meio da palavra -->
         <div
           v-if="categoryList.length > 0"
           data-focus-row="categories"
           data-scroll-x
-          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 phone-portrait:basis-full phone-portrait:order-last phone-portrait:px-0"
+          class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 pr-10 [-webkit-mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)] phone:pr-2 phone:[-webkit-mask-image:none] phone-portrait:basis-full phone-portrait:order-last phone-portrait:px-0"
         >
           <button
             v-for="(cat, index) in categoryList"
@@ -604,7 +605,6 @@ onBeforeUnmount(() => {
           :columns="layout.columns"
           :row-height="layout.rowHeight"
           :gap="layout.gap"
-          :max-dom-items="layout.maxDomItems"
           :reset-key="gridKey"
           @select="(item, index) => handleSelectItem(item, index, activeCategory)"
         >
@@ -718,11 +718,6 @@ onBeforeUnmount(() => {
                   <!-- Selo Vermelho ● AO VIVO -->
                   <span class="absolute top-2 left-2 flex items-center gap-1 rounded bg-[#ef4444] px-1.5 py-0.5 text-[10px] font-black text-white shadow-sm">
                     ● AO VIVO
-                  </span>
-
-                  <!-- Nome do Canal no Canto Inferior Esquerdo da Capa -->
-                  <span class="absolute bottom-2 left-2 rounded bg-black/80 px-2 py-0.5 text-xs font-bold text-white max-w-[85%] truncate shadow-sm">
-                    {{ item.name }}
                   </span>
                 </div>
 

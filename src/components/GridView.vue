@@ -22,7 +22,6 @@ const props = defineProps({
   columns: { type: Number, default: 4 },
   rowHeight: { type: Number, default: 20 }, // rem
   gap: { type: Number, default: 1.5 }, // rem
-  maxDomItems: { type: Number, default: 20 },
   resetKey: { type: [String, Number], default: '' }, // mudou => volta ao topo e recarrega
 })
 const emit = defineEmits(['select'])
@@ -41,12 +40,9 @@ const contentHeight = computed(() =>
   totalRows.value ? totalRows.value * pitch.value - props.gap + PAD * 2 : 0,
 )
 
-// Máximo de linhas que podem intersectar a viewport + 1 linha de folga (respeitando estritamente o cap de DOM).
-const poolRows = computed(() => {
-  const visibleRows = Math.ceil(viewportPx.value / Math.max(pitchPx.value, 1))
-  const cap = Math.max(1, Math.floor(props.maxDomItems / props.columns))
-  return Math.max(1, Math.min(visibleRows + 1, cap))
-})
+// Linhas que podem intersectar a viewport + 1 de folga. Sem teto: um pool menor que a tela prende a janela na
+// linha 0 e o foco nunca passa da última linha renderizada (grade de canais na TV parava no 12º).
+const poolRows = computed(() => Math.ceil(viewportPx.value / Math.max(pitchPx.value, 1)) + 1)
 
 let renderToken = 0
 let lastFirst = -1
@@ -186,7 +182,7 @@ watch(
     refresh(true)
   },
 )
-watch(() => [props.columns, props.rowHeight, props.gap, props.maxDomItems], measure)
+watch(() => [props.columns, props.rowHeight, props.gap], measure)
 
 onMounted(() => {
   measure()

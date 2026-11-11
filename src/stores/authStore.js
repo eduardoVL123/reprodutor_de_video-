@@ -93,6 +93,17 @@ async function restoreSession(saved) {
 }
 
 /**
+ * Nome da lista para a tela: o apelido que o usuário deu, senão "Lista N". Usuário e endereço do servidor nunca
+ * aparecem (a TV fica na sala). Os rótulos automáticos ("usuario @ host", "Lista M3U @ host") continuam gravados
+ * nas listas já salvas e são tratados aqui como "sem apelido".
+ */
+export function listDisplayName(list, index) {
+  const label = String(list?.label || '').trim()
+  const automatic = !label || label.startsWith('Lista M3U @ ') || (list.username && label.startsWith(`${list.username} @ `))
+  return automatic ? `Lista ${index + 1}` : label
+}
+
+/**
  * Sessão do usuário e gerenciamento de múltiplas listas (RFC-003 / RFC-005).
  */
 export const useAuthStore = defineStore('auth', () => {
@@ -106,7 +117,11 @@ export const useAuthStore = defineStore('auth', () => {
   const isAuthenticated = computed(() => session.value !== null)
   const username = computed(() => session.value?.username ?? '')
   const currentListId = computed(() => session.value?.id ?? '')
-  const activeListLabel = computed(() => session.value?.label || session.value?.username || '')
+  const activeListLabel = computed(() => {
+    if (!session.value) return ''
+    const index = savedLists.value.findIndex((item) => item.id === session.value.id)
+    return listDisplayName(session.value, Math.max(index, 0))
+  })
   /** Host a usar nas chamadas: o final (pós-redirect) quando existir. */
   const apiBase = computed(() => session.value?.resolvedUrl || session.value?.baseUrl || '')
   const credentials = computed(() =>
