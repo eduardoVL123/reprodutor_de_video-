@@ -145,6 +145,13 @@ jobs:
           PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
         run: ./gradlew assembleRelease
 
+      # Link fixo para a TV (Downloader): só com o APK assinado pela chave privada. O APK de debug usa uma chave
+      # pública (está no repositório), então qualquer pessoa conseguiria assinar uma "atualização" falsa com ela.
+      # Copiado já aqui: o APK da Amazon, mais abaixo, sai na mesma pasta apk/release e sobrescreveria este.
+      - name: Preparar APK assinado para download direto
+        if: steps.release_key.outputs.available == 'true'
+        run: cp android/app/build/outputs/apk/release/*.apk pulse-player.apk
+
       # AAB para a Google Play: versão das lojas (sem preço nem pagamento dentro do app — regra de faturamento da
       # Play; RFC-018 D4). Mesmo build web, só com VITE_LICENSE_STORE_BUILD=1.
       - name: Build web da loja
@@ -168,22 +175,31 @@ jobs:
         # Nome do pacote na Play: com.pulseplayer.app já era de outro desenvolvedor (ver android/app/build.gradle).
         run: ./gradlew bundleRelease -PpulseApplicationId=com.playerpulse.app
 
+      # APK para a Amazon Appstore (Fire TV): a mesma versão das lojas e o mesmo pacote da Play. A Amazon recebe APK.
+      - name: APK release (Amazon Appstore)
+        if: steps.release_key.outputs.available == 'true'
+        working-directory: android
+        env:
+          PULSE_KEYSTORE_FILE: ${{ runner.temp }}/pulse-release.jks
+          PULSE_KEYSTORE_PASSWORD: ${{ secrets.PULSE_KEYSTORE_PASSWORD }}
+          PULSE_KEY_ALIAS: ${{ secrets.PULSE_KEY_ALIAS }}
+          PULSE_KEY_PASSWORD: ${{ secrets.PULSE_KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease -PpulseApplicationId=com.playerpulse.app
+          cp app/build/outputs/apk/release/*.apk ../pulse-player-amazon.apk
+
+      # pulse-player.apk = Downloader (versão completa); pulse-player-amazon.apk = Amazon; .aab = Google Play.
       - name: Enviar release
         if: steps.release_key.outputs.available == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: app-release
           path: |
-            android/app/build/outputs/apk/release/*.apk
+            pulse-player.apk
+            pulse-player-amazon.apk
             android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
           retention-days: 30
-
-      # Link fixo para a TV (Downloader): só com o APK assinado pela chave privada. O APK de debug usa uma chave
-      # pública (está no repositório), então qualquer pessoa conseguiria assinar uma "atualização" falsa com ela.
-      - name: Preparar APK assinado para download direto
-        if: steps.release_key.outputs.available == 'true'
-        run: cp android/app/build/outputs/apk/release/*.apk pulse-player.apk
 
       - name: Publicar Release com APK para Smart TV (Downloader)
         if: steps.release_key.outputs.available == 'true' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
