@@ -26,6 +26,24 @@ describe('migrações da RFC-019', () => {
     expect(await db.prepare('SELECT code, blocked_at, note FROM devices').first()).toEqual({ code: 'ABCDEFGH', blocked_at: null, note: null })
   })
 
+  it('banco já em dia: a migração faz uma consulta só (cada isolate novo do Worker esperava 25 antes de responder)', async () => {
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    const seen = []
+    const counted = { ...db, prepare: (sql) => (seen.push(sql), db.prepare(sql)) }
+    await migrate(counted)
+    expect(seen).toHaveLength(1)
+  })
+
+  it('migração nova na lista roda num banco que estava na versão anterior', async () => {
+    const db = openSqlite(':memory:')
+    await migrate(db)
+    await db.prepare('UPDATE schema_version SET version = version - 1').run()
+    await db.prepare('DROP TABLE rate_limits').run() // a última tabela da lista "ainda não existia"
+    await migrate(db)
+    expect(await columns(db, 'rate_limits')).toEqual(expect.arrayContaining(['bucket', 'key', 'window_start', 'count']))
+  })
+
   it('o saldo de créditos nunca fica negativo (CHECK no banco)', async () => {
     const db = openSqlite(':memory:')
     await migrate(db)

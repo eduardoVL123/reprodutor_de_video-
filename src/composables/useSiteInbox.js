@@ -1,4 +1,5 @@
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { onAppForeground } from '@/services/platform'
 import { useAuthStore } from '@/stores/authStore'
 import { useLicenseStore } from '@/stores/licenseStore'
 import { loadOrCreateInboxKeys } from '@/services/inboxKeys'
@@ -7,13 +8,15 @@ import { getDeviceKey } from '@/services/deviceIdentity'
 import { describeList } from '@/composables/usePairing'
 
 /**
- * Lista enviada pelo site (RFC-021), lado da TV: procura ao abrir a tela e a cada minuto; a primeira que abrir vira
- * "Adicionar esta lista?" (servidor e apelido, nunca a senha). Confirmar entra com `auth.login` e apaga do servidor;
- * descartar só apaga. Caixa que não abre (outra chave, lixo) é apagada em silêncio.
+ * Lista enviada pelo site (RFC-021), lado da TV: procura ao abrir a tela, ao voltar ao app e, enquanto `poll()` for
+ * true, a cada minuto. A primeira que abrir vira "Adicionar esta lista?" (servidor e apelido, nunca a senha).
+ * Confirmar entra com `auth.login` e apaga do servidor; descartar só apaga. Caixa que não abre é apagada em silêncio.
+ * `poll`: só onde alguém espera a lista (login, Gerenciador de Listas). Ligada sempre, cada TV com o app aberto fazia
+ * 1.440 chamadas por dia ao serviço de licença, quase todas vazias (auditoria de 2026-11-11, item 1).
  */
 export const INBOX_POLL_MS = 60 * 1000
 
-export function useSiteInbox() {
+export function useSiteInbox({ poll = () => true } = {}) {
   const auth = useAuthStore()
   const license = useLicenseStore()
   const received = ref(null) // { host, label, insecure }
@@ -83,13 +86,27 @@ export function useSiteInbox() {
     await ack([id])
   }
 
+  function setPolling(on) {
+    clearInterval(timer)
+    timer = on ? setInterval(check, INBOX_POLL_MS) : null
+  }
+
+  let stopForeground = () => {}
+  let stopWatch = () => {}
   onMounted(() => {
     check()
-    timer = setInterval(check, INBOX_POLL_MS)
+    stopForeground = onAppForeground(check)
+    // Ligar (abriu o Gerenciador) já procura na hora: a lista pode ter sido enviada antes.
+    stopWatch = watch(poll, (on, was) => {
+      if (on && was === false) check()
+      setPolling(on)
+    }, { immediate: true })
   })
   onBeforeUnmount(() => {
     alive = false
-    clearInterval(timer)
+    stopWatch()
+    stopForeground()
+    setPolling(false)
   })
 
   return { received, connecting, confirm, discard, check }

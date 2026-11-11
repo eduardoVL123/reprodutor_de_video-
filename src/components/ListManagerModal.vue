@@ -196,7 +196,7 @@ async function logout() {
 
 onBeforeUnmount(release)
 
-defineExpose({ open, close })
+defineExpose({ open, close, isOpen })
 </script>
 
 <template>

@@ -99,7 +99,8 @@ describe('Worker da licença', () => {
       prepare: (sql) => {
         if (!stuck) return realDb.prepare(sql)
         stuck = false
-        return { run: () => new Promise(() => {}) } // como o pedido cancelado: nunca termina
+        const hang = () => new Promise(() => {}) // como o pedido cancelado: nunca termina
+        return { run: hang, first: hang }
       },
     }
     post(env, '/v1/access', { deviceKey: 'a'.repeat(64), host: 'x.com' }) // fica pendurado
@@ -199,12 +200,27 @@ describe('Worker da licença', () => {
     expect((await worker.fetch(new Request('https://licenca.test/revenda'), env)).status).toBe(301)
   })
 
-  it('a rotina diária (cron) roda a limpeza de 24 meses', async () => {
+  // O cron roda de hora em hora (estornos); a limpeza de 24 meses só na rodada das 6h UTC (3h de Brasília).
+  const at = (hourUtc) => Date.UTC(2026, 10, 11, hourUtc)
+
+  async function oldDevice() {
     const env = mockEnv()
     await post(env, '/v1/access', { deviceKey: 'd'.repeat(64), host: 'x.com' })
     const old = Date.now() - 800 * 24 * 3600e3
     await env.DB.prepare('UPDATE devices SET first_seen_at = ?').bind(old).run()
-    await worker.scheduled({}, env)
-    expect((await env.DB.prepare('SELECT COUNT(*) AS n FROM devices').first()).n).toBe(0)
+    return env
+  }
+  const devices = async (env) => (await env.DB.prepare('SELECT COUNT(*) AS n FROM devices').first()).n
+
+  it('a rodada das 6h UTC do cron roda a limpeza de 24 meses', async () => {
+    const env = await oldDevice()
+    await worker.scheduled({ scheduledTime: at(6) }, env)
+    expect(await devices(env)).toBe(0)
+  })
+
+  it('nas outras 23 rodadas do dia a limpeza não roda (ela varre tabelas inteiras)', async () => {
+    const env = await oldDevice()
+    await worker.scheduled({ scheduledTime: at(7) }, env)
+    expect(await devices(env)).toBe(1)
   })
 })

@@ -86,6 +86,23 @@ describe('uma pergunta só, em qualquer tela (RFC-025)', () => {
     expect(wrapper.find('#site-hint').exists()).toBe(false)
     expect(wrapper.find('#site-inbox-dialog').exists()).toBe(true)
   })
+
+  it('a prop poll decide a procura por minuto (o Início só procura com o Gerenciador de Listas aberto)', async () => {
+    const { useSiteInbox } = await setup({ props: { hint: false, poll: false } })
+    const { poll } = useSiteInbox.mock.calls[0][0]
+    expect(poll()).toBe(false)
+    await wrapper.setProps({ poll: true })
+    expect(poll()).toBe(true)
+  })
+})
+
+describe('Dashboard: só procura por minuto com o Gerenciador de Listas aberto', () => {
+  it('liga a prop poll ao estado do Gerenciador, não deixa a procura ligada o tempo todo', async () => {
+    const { readFileSync } = await import('node:fs')
+    const dashboard = readFileSync('src/views/Dashboard.vue', 'utf8')
+    expect(dashboard).toMatch(/<SiteInboxPrompt[^>]*:poll="listsOpen"/)
+    expect(readFileSync('src/components/ListManagerModal.vue', 'utf8')).toMatch(/defineExpose\(\{[^}]*isOpen/)
+  })
 })
 
 describe('lista recebida', () => {

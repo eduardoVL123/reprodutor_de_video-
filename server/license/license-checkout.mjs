@@ -5,9 +5,9 @@
  * Entrega (G15/G16): só depois de assinatura válida + consulta da order na API + valor/moeda/referência conferidos;
  * quem muda o pedido para 'paid' (UPDATE condicional) é o único que entrega.
  */
-import { readJsonBody, timingSafeEqualStr } from '../pair/pair-core.mjs'
+import { readJsonBody, timingSafeEqualStr, toBase64Url } from '../pair/pair-core.mjs'
 import { findDeviceByCode, hitLimit, lockedFor } from './license-db.mjs'
-import { hashKey, toBase64Url } from './license-resellers.mjs'
+import { hashKey } from './license-resellers.mjs'
 import { DAY_MS } from './license-rules.mjs'
 import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, MAX_CREDITS, creditTotal } from './pricing.mjs'
 import { MpError, toAmount } from './mp-client.mjs'

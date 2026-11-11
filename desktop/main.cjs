@@ -90,3 +90,5 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => app.quit())
+
+module.exports = { allowCors } // para o teste (tests/desktopCors.test.js); o Electron ignora o export

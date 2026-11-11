@@ -326,3 +326,32 @@ describe('networkKey (limites por rede)', () => {
     expect(networkKey('::ffff:192.168.0.9')).toBe('192.168.0.9')
   })
 })
+
+describe('criação de sessões: ninguém lota o serviço trocando de /64 (auditoria 2026-11-11, item 3)', () => {
+  const create = (core, ip) => core.handleApi(makeRequest('http://x/v1/sessions', { method: 'POST', body: { pub: PUB } }), ip)
+
+  it('um /48 inteiro tem teto próprio: trocar de /64 dentro dele não passa do limite do bloco', async () => {
+    const core = createPairCore()
+    const statuses = []
+    for (let i = 0; i < 70; i++) statuses.push((await create(core, `2001:db8:aa:${i.toString(16)}::1`)).status)
+    expect(statuses.filter((s) => s === 201)).toHaveLength(60)
+    expect(statuses.slice(60).every((s) => s === 429)).toBe(true)
+  })
+
+  it('um /64 sozinho continua com o limite de antes (10 por minuto) e insistir não trava os vizinhos do /48', async () => {
+    const core = createPairCore()
+    const statuses = []
+    for (let i = 0; i < 100; i++) statuses.push((await create(core, '2001:db8:aa:bb::1')).status)
+    expect(statuses.filter((s) => s === 201)).toHaveLength(10)
+    expect((await create(core, '2001:db8:aa:cc::1')).status).toBe(201)
+  })
+
+  it('IPv4 segue com o limite por endereço, e o teto de sessões abertas é 100 mil', async () => {
+    const { DEFAULT_MAX_SESSIONS } = await import('../server/pair/pair-core.mjs')
+    const core = createPairCore()
+    for (let i = 0; i < 10; i++) expect((await create(core, '10.0.0.1')).status).toBe(201)
+    expect((await create(core, '10.0.0.1')).status).toBe(429)
+    expect((await create(core, '10.0.0.2')).status).toBe(201)
+    expect(DEFAULT_MAX_SESSIONS).toBe(100000)
+  })
+})

@@ -144,7 +144,19 @@ export const COLUMN_MIGRATIONS = [
   'ALTER TABLE orders ADD COLUMN checked_at INTEGER',
 ]
 
+/**
+ * Versão do esquema = quantas migrações existem (as listas só crescem, então acrescentar uma já sobe a versão).
+ * Fica numa tabela própria: o D1 não aceita `PRAGMA user_version`.
+ */
+export const SCHEMA_VERSION = MIGRATIONS.length + COLUMN_MIGRATIONS.length
+
+/**
+ * Banco já em dia custa uma consulta. Antes, cada isolate novo do Worker rodava as 25 migrações em sequência antes da
+ * primeira resposta (auditoria de 2026-11-11, item 2). Rodar tudo de novo continua seguro (IF NOT EXISTS).
+ */
 export async function migrate(db) {
+  const current = await db.prepare('SELECT version FROM schema_version').first().catch(() => null)
+  if (current && current.version >= SCHEMA_VERSION) return
   for (const sql of MIGRATIONS) await db.prepare(sql).run()
   for (const sql of COLUMN_MIGRATIONS) {
     try {
@@ -153,6 +165,11 @@ export async function migrate(db) {
       if (!/duplicate column/i.test(String(err && err.message))) throw err
     }
   }
+  await db.prepare('CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)').run()
+  await db.batch([
+    db.prepare('DELETE FROM schema_version'),
+    db.prepare('INSERT INTO schema_version (version) VALUES (?)').bind(SCHEMA_VERSION),
+  ])
 }
 
 export const findDevice = (db, deviceKey) => db.prepare('SELECT * FROM devices WHERE device_key = ?').bind(deviceKey).first()

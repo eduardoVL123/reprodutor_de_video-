@@ -4,7 +4,7 @@
  * (LICENSE_SIGNING_KEY, JWK); a pública vai no build do app (VITE_LICENSE_PUBLIC_KEY, "x.y").
  * Par novo: `node scripts/make-license-keys.mjs`.
  */
-import { toBase64Url } from './license-resellers.mjs'
+import { toBase64Url } from '../pair/pair-core.mjs'
 
 const ALGORITHM = { name: 'ECDSA', namedCurve: 'P-256' }
 const SIGN = { name: 'ECDSA', hash: 'SHA-256' }
