@@ -3,6 +3,7 @@
  * (license-api.mjs). 1 crédito = 1 aparelho por 1 ano; créditos só descem na árvore; saldo nunca negativo (CHECK no
  * banco); débito e movimento no mesmo batch (tudo ou nada).
  */
+import { toBase64Url } from '../pair/pair-core.mjs'
 import { extendActivation } from './license-rules.mjs'
 import { findDeviceByCode, activationEndsAt } from './license-db.mjs'
 
@@ -16,12 +17,6 @@ export class ResellerError extends Error {
 const MAX_NAME = 100
 const MAX_CONTACT = 120
 const MAX_NOTE = 200
-
-export function toBase64Url(bytes) {
-  let binary = ''
-  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i])
-  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-}
 
 /** Chave nova (G13): 32 bytes aleatórios, prefixo pk_. */
 export function newKey() {

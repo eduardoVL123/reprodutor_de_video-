@@ -13,10 +13,15 @@ import { isPhone } from '@/utils/compat'
  * `done`: entrou na lista recebida.
  * `dialog`: procura listas e mostra a pergunta (o Dashboard tem uma só, em qualquer tela); `hint`: dica com o código.
  */
-const props = defineProps({ dialog: { type: Boolean, default: true }, hint: { type: Boolean, default: true } })
+const props = defineProps({
+  dialog: { type: Boolean, default: true },
+  hint: { type: Boolean, default: true },
+  // `poll`: procura a cada minuto (sem ela, só ao abrir e ao voltar ao app; ver useSiteInbox).
+  poll: { type: Boolean, default: true },
+})
 const emit = defineEmits(['done'])
 // Sem `dialog` não procura: quem procura é a instância do Dashboard (senão a pergunta aparecia duas vezes).
-const inbox = props.dialog ? useSiteInbox() : null
+const inbox = props.dialog ? useSiteInbox({ poll: () => props.poll }) : null
 const license = useLicenseStore()
 const received = inbox ? inbox.received : ref(null)
 const connecting = inbox ? inbox.connecting : ref(false)

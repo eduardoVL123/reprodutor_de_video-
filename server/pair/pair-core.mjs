@@ -8,9 +8,12 @@ export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // 31 caracteres 
 export const CODE_LENGTH = 6
 export const DEFAULT_TTL_MS = 10 * 60 * 1000
 export const DEFAULT_DELIVERY_TTL_MS = 60 * 1000
-export const DEFAULT_MAX_SESSIONS = 10000
+// Uma sessão ocupa poucas centenas de bytes: 100 mil cabem folgado na memória do Durable Object.
+export const DEFAULT_MAX_SESSIONS = 100000
 // poll: cada TV consulta 30 vezes por minuto; 1200 deixa 40 TVs no mesmo IP (CGNAT, loja). O chute de código para em 'miss'.
-export const DEFAULT_LIMITS = { create: 10, poll: 1200, write: 30, miss: 20 }
+// createBlock: teto do /48 inteiro no IPv6. Só o /64 (10 por minuto) deixava quem tem um /48 (65 mil /64, túnel grátis)
+// lotar as 10 mil sessões em menos de um minuto (auditoria 2026-11-11, item 3). 60 cobre os vizinhos de um provedor.
+export const DEFAULT_LIMITS = { create: 10, createBlock: 60, poll: 1200, write: 30, miss: 20 }
 export const WINDOW_MS = 60 * 1000
 export const MAX_BODY_BYTES = 4096
 export const MAX_PUB_CHARS = 128
@@ -41,8 +44,8 @@ export const PAGE_CSP = [
   "frame-ancestors 'none'",
 ].join('; ')
 
-/** Converte Uint8Array para base64url sem dependências externas. */
-function toBase64Url(bytes) {
+/** Converte Uint8Array para base64url sem dependências externas (usada também pelo serviço de licença). */
+export function toBase64Url(bytes) {
   let binary = ''
   for (let i = 0; i < bytes.byteLength; i++) {
     binary += String.fromCharCode(bytes[i])
@@ -181,6 +184,9 @@ export function networkKey(ip) {
   return `${groups.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '') || '0').join(':')}::/64`
 }
 
+/** Bloco /48 de uma chave IPv6 de networkKey ('2001:db8:aa:bb::/64' → '2001:db8:aa::/48'). */
+const blockKey = (key) => `${key.split(':').slice(0, 3).join(':')}::/48`
+
 /** Limitador de taxa em janela fixa por IP (1 minuto por padrão). */
 export function createLimiter(now, windowMs = WINDOW_MS) {
   const windows = new Map() // `${bucket}|${ip}` -> { start, count }
@@ -279,8 +285,11 @@ export function createPairCore(options = {}) {
   }
 
   async function createSession(request, ip) {
+    // O /64 primeiro: uma casa insistindo não gasta o limite do bloco inteiro (os vizinhos do mesmo /48).
     const rateErr = throttled('create', ip)
     if (rateErr) return rateErr
+    const blockErr = ip.endsWith('::/64') ? throttled('createBlock', blockKey(ip)) : null
+    if (blockErr) return blockErr
 
     const body = await readJsonBody(request)
     if (!isOpaqueText(body.pub, MAX_PUB_CHARS)) return fail(400, 'Chave pública inválida.')

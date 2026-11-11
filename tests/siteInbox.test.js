@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { defineComponent, h, nextTick } from 'vue'
+import { defineComponent, h, nextTick, ref } from 'vue'
 import { mount, flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 
@@ -68,7 +68,7 @@ describe('useSiteInbox', () => {
     vi.useRealTimers()
   })
 
-  async function mountInbox(code = 'ABCD2345') {
+  async function mountInbox(code = 'ABCD2345', options) {
     const { useLicenseStore } = await import('@/stores/licenseStore')
     useLicenseStore().code = code
     const { useAuthStore } = await import('@/stores/authStore')
@@ -78,7 +78,7 @@ describe('useSiteInbox', () => {
     const wrapper = mount(
       defineComponent({
         setup() {
-          inbox = useSiteInbox()
+          inbox = useSiteInbox(options)
           return () => h('div')
         },
       }),
@@ -144,6 +144,28 @@ describe('useSiteInbox', () => {
     wrapper.unmount()
     await vi.advanceTimersByTimeAsync(180000)
     expect(api.pullInbox).toHaveBeenCalledTimes(2)
+  })
+
+  it('sem a procura por minuto (Início): busca só ao abrir, nunca a cada minuto', async () => {
+    api.pullInbox.mockResolvedValue([])
+    await mountInbox('ABCD2345', { poll: () => false })
+    expect(api.pullInbox).toHaveBeenCalledTimes(1)
+    await vi.advanceTimersByTimeAsync(10 * 60000)
+    expect(api.pullInbox).toHaveBeenCalledTimes(1)
+  })
+
+  it('a procura por minuto liga quando o Gerenciador de Listas abre e desliga quando fecha', async () => {
+    api.pullInbox.mockResolvedValue([])
+    const listsOpen = ref(false)
+    await mountInbox('ABCD2345', { poll: () => listsOpen.value })
+    listsOpen.value = true
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(60000)
+    expect(api.pullInbox).toHaveBeenCalledTimes(3) // ao abrir o app, ao abrir o Gerenciador e 1 minuto depois
+    listsOpen.value = false
+    await nextTick()
+    await vi.advanceTimersByTimeAsync(10 * 60000)
+    expect(api.pullInbox).toHaveBeenCalledTimes(3)
   })
 
   it('sem código do aparelho ainda (serviço fora do ar), não procura', async () => {

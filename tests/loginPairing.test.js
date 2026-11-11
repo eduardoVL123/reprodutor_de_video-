@@ -36,7 +36,7 @@ async function setup({ pairing = true } = {}) {
   pairingState.pageUrl.value = 'https://pulse.test/K7M2QP'
   pairingState.displayUrl.value = 'pulse.test/K7M2QP'
   vi.doMock('@/composables/usePairing', () => ({ usePairing: () => pairingState }))
-  vi.doMock('@/services/platform', () => ({ exitApp: vi.fn() }))
+  vi.doMock('@/services/platform', () => ({ exitApp: vi.fn(), onAppForeground: () => () => {} }))
   const { createPinia, setActivePinia } = await import('pinia')
   const pinia = createPinia()
   setActivePinia(pinia)

@@ -11,7 +11,7 @@ afterEach(() => {
 })
 
 async function setup() {
-  vi.doMock('@/services/platform', () => ({ exitApp: vi.fn() }))
+  vi.doMock('@/services/platform', () => ({ exitApp: vi.fn(), onAppForeground: () => () => {} }))
   const { createPinia, setActivePinia } = await import('pinia')
   const pinia = createPinia()
   setActivePinia(pinia)

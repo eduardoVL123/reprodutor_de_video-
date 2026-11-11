@@ -79,6 +79,7 @@ const activeTab = ref('home')
 
 // Gerenciador de listas
 const listModal = ref(null)
+const listsOpen = computed(() => !!(listModal.value && listModal.value.isOpen))
 const diagnostics = ref(null)
 
 // Tela de Detalhes aberta a partir da aba Início ou Minha Lista: { item, index, section } | null
@@ -1125,7 +1126,9 @@ onBeforeUnmount(() => {
     <ListManagerModal ref="listModal" @changed="onListChanged" @logged-out="onLoggedOut" />
     <DiagnosticsDialog ref="diagnostics" />
     <!-- RFC-021/025: lista enviada pelo site (ou pela automação do sócio) aparece em qualquer tela, não só no Gerenciador -->
-    <SiteInboxPrompt :hint="false" @done="onListChanged" />
+    <!-- Procura por minuto só com o Gerenciador de Listas aberto (quem está mandando a lista pelo site); fora dele,
+         ao abrir e ao voltar ao app. -->
+    <SiteInboxPrompt :hint="false" :poll="listsOpen" @done="onListChanged" />
 
     <!-- Tela de Detalhes (Filmes e Séries) -->
     <MediaDetailsModal

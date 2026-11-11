@@ -4,7 +4,7 @@
  * acesso), MP_ACCESS_TOKEN e MP_WEBHOOK_SECRET (RFC-020; vazios = pagamento/webhook desligados), ACCESS_AUD e
  * ACCESS_OWNER_EMAIL (RFC-025: Cloudflare Access do painel do dono) e LICENSE_REPORT_TOKEN (leitura do sócio).
  * Variáveis: LICENSE_CONTACT_URL, MP_PUBLIC_KEY (cartão em /pagar), ACCESS_TEAM e PLAY_URL (link da Google Play).
- * O cron diário apaga o que passou dos 24 meses (PRIVACY.md).
+ * O cron roda de hora em hora; uma vez por dia (6h UTC) ele apaga o que passou dos 24 meses (PRIVACY.md).
  * Limites: os que protegem dinheiro e o painel (novos aparelhos, checkout, token errado) ficam no D1 (rate_limits);
  * os de volume por minuto ficam na memória de cada isolate (um atacante espalhado por vários isolates passa um pouco).
  */
@@ -21,6 +21,7 @@ const OWNER_FILES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css'])
 const SITE_PAGES = { '/': '/site/', '/enviar': '/site/enviar', '/cliente': '/site/cliente', '/assinar': '/site/assinar', '/creditos': '/site/creditos', '/pagar': '/site/pagar', '/privacidade': '/site/privacidade' }
 const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' }
 const SWEEP_EVERY_MS = 60 * 1000
+const PURGE_HOUR_UTC = 6 // 3h em Brasília: a limpeza diária roda na madrugada
 
 let handle = null
 let migrated = false
@@ -119,10 +120,12 @@ export default {
     return handle(request, request.headers.get('CF-Connecting-IP') || '0.0.0.0')
   },
 
-  // De hora em hora (wrangler.jsonc): limpeza da guarda de 24 meses, estornos sem webhook e pedido pago parado.
-  async scheduled(_event, env) {
+  // De hora em hora (wrangler.jsonc): estornos sem webhook e pedido pago parado. A limpeza de 24 meses varre tabelas
+  // inteiras e só precisa rodar uma vez por dia (auditoria 2026-11-11, item 5).
+  async scheduled(event, env) {
     await migrate(env.DB)
-    await purgeExpired(env.DB, Date.now())
+    const at = (event && event.scheduledTime) || Date.now()
+    if (new Date(at).getUTCHours() === PURGE_HOUR_UTC) await purgeExpired(env.DB, Date.now())
     if (!handle) handle = buildHandle(env)
     await handle.recheckRefunds()
     await handle.warnStuckOrders()
