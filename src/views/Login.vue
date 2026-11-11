@@ -90,18 +90,22 @@ onBeforeUnmount(() => auth.clearError())
       class="relative rounded-2xl border border-white/10 bg-[#121215] shadow-2xl my-auto"
       :class="pairingOn ? 'w-[84rem] max-w-full grid grid-cols-2' : 'w-[50rem] max-w-full'"
     >
-      <div v-if="pairingOn" class="px-14 py-12 border-r border-white/10">
+      <!-- flex-col + flex-1: o grupo de foco do painel ocupa a altura da coluna, então Esquerda a partir de
+           qualquer campo do formulário encontra o painel ao lado (a navegação exige faixa vertical em comum). -->
+      <div v-if="pairingOn" class="px-14 py-12 border-r border-white/10 flex flex-col">
         <div class="flex items-center gap-2 mb-8">
           <BrandMark :size="1.5" class="text-tv-accent" />
           <p class="text-tv-xs uppercase tracking-[0.25em] text-tv-accent font-bold">PULSE PLAYER · CONEXÃO</p>
         </div>
         <h1 class="sr-only">Conectar ao servidor</h1>
-        <PairPanel @done="onPairDone" />
+        <PairPanel class="flex-1" @done="onPairDone" />
       </div>
 
+      <!-- pb-[20rem] só com o teclado da TV aberto (body.tv-keyboard-open): fixo, o cartão passava da borda de baixo da tela -->
       <form
+        data-focus-group="login-form"
         class="px-14 py-12 phone-portrait:px-5 phone-portrait:py-6"
-        :class="pairingBelow ? '' : 'pb-[20rem] phone-portrait:pb-6'"
+        :class="pairingBelow ? '' : '[.tv-keyboard-open_&]:pb-[20rem]'"
         novalidate
         @submit.prevent="submit"
       >

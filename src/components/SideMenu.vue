@@ -6,10 +6,9 @@ import { PROFILE_COLORS, avatarTextColor } from '@/stores/profileStore'
 defineProps({
   activeTab: { type: String, required: true },
   profile: { type: Object, default: () => ({ name: 'Perfil', color: PROFILE_COLORS[0] }) },
-  listLabel: { type: String, default: '' },
 })
 
-const emit = defineEmits(['navigate', 'manage-lists', 'switch-profile', 'diagnostics'])
+const emit = defineEmits(['navigate', 'switch-profile'])
 
 const isOpen = ref(false)
 
@@ -228,33 +227,34 @@ function onSelectTab(tab) {
       </div>
     </div>
 
-    <!-- Base: Gerenciar Listas e Trocar Perfil -->
+    <!-- Base: Conta e Trocar Perfil -->
     <div class="flex flex-col phone:flex-row phone:items-center phone:gap-0 phone:pt-0 phone:border-t-0 gap-2 pt-4 border-t border-white/[0.08]">
-      <!-- 7. Listas -->
+      <!-- 7. Conta: assinatura, listas, diagnóstico e sair (os mesmos dados da aba Conta do celular) -->
       <button
-        id="btn-manage-lists"
+        id="nav-account"
         type="button"
-        class="tv-focusable flex items-center phone:justify-center h-[3.5rem] phone:h-12 phone:w-12 phone:px-0 rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
-        title="Gerenciar Listas"
-        @click="emit('manage-lists')"
+        class="tv-focusable flex items-center phone:justify-center h-[3.5rem] phone:h-12 phone:w-12 phone:px-0 rounded-xl px-3 transition-colors text-left"
+        :class="[
+          activeTab === 'account'
+            ? 'bg-white/15 text-white font-bold'
+            : 'text-neutral-400 hover:text-white hover:bg-white/[0.05]'
+        ]"
+        :data-focus-active="activeTab === 'account' ? 'true' : null"
+        title="Conta"
+        @click="onSelectTab('account')"
       >
         <div class="w-8 h-8 flex items-center justify-center shrink-0">
           <svg class="w-6 h-6 stroke-current fill-none stroke-[2]" viewBox="0 0 24 24">
-            <line x1="8" y1="6" x2="21" y2="6" />
-            <line x1="8" y1="12" x2="21" y2="12" />
-            <line x1="8" y1="18" x2="21" y2="18" />
-            <circle cx="3" cy="6" r="1.5" fill="currentColor" />
-            <circle cx="3" cy="12" r="1.5" fill="currentColor" />
-            <circle cx="3" cy="18" r="1.5" fill="currentColor" />
+            <circle cx="12" cy="8" r="4" />
+            <path d="M4 21c0-4 3.5-7 8-7s8 3 8 7" />
           </svg>
         </div>
-        <div
-          class="phone:hidden ml-4 min-w-0 transition-opacity duration-150"
+        <span
+          class="phone:hidden ml-4 text-tv-sm whitespace-nowrap transition-opacity duration-150"
           :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'"
         >
-          <div class="text-tv-sm text-white font-medium truncate">Listas</div>
-          <div v-if="listLabel" class="text-tv-xs text-neutral-400 truncate">{{ listLabel }}</div>
-        </div>
+          Conta
+        </span>
       </button>
 
       <!-- 8. Perfil -->
@@ -277,26 +277,6 @@ function onSelectTab(tab) {
         >
           <div class="text-tv-sm text-white font-medium truncate">{{ profile.name }}</div>
           <div class="text-tv-xs text-neutral-400">Trocar perfil</div>
-        </div>
-      </button>
-
-      <!-- 9. Diagnóstico (TV; no celular fica na aba Conta) -->
-      <button
-        id="btn-diagnostics"
-        type="button"
-        class="phone:hidden tv-focusable flex items-center h-[3.5rem] rounded-xl px-3 transition-colors text-left text-neutral-400 hover:text-white hover:bg-white/[0.05]"
-        title="Diagnóstico"
-        @click="emit('diagnostics')"
-      >
-        <div class="w-8 h-8 flex items-center justify-center shrink-0">
-          <svg class="w-6 h-6 stroke-current fill-none stroke-[2]" viewBox="0 0 24 24">
-            <circle cx="12" cy="12" r="9" />
-            <line x1="12" y1="11" x2="12" y2="16" />
-            <circle cx="12" cy="7.5" r="1" fill="currentColor" />
-          </svg>
-        </div>
-        <div class="ml-4 min-w-0 transition-opacity duration-150" :class="isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'">
-          <div class="text-tv-sm text-white font-medium truncate">Diagnóstico</div>
         </div>
       </button>
     </div>

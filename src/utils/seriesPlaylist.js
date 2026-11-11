@@ -28,7 +28,11 @@ export function seasonsOf(seriesData) {
     .sort((a, b) => a.number - b.number)
 }
 
-export const episodeTitle = (ep) => ep.title || ep.name || `Episódio ${ep.episode_num}`
+/** Título sem o prefixo "S01E02 - " (ou "Série - S01E02 - ") que os painéis repetem; vazio vira "Episódio N". */
+export const episodeTitle = (ep) =>
+  String(ep.title || ep.name || '')
+    .replace(/^(?:.*?\s-\s)?S\d{1,2}\s*E\d{1,3}\b\s*[-–:.]?\s*/i, '')
+    .trim() || `Episódio ${ep.episode_num}`
 
 /** Itens do player para todos os episódios, temporada após temporada. */
 export function buildSeriesPlaylist({ seriesData, seriesName, seriesId, fallbackImage = '', categoryId = '', categoryIds = [] }) {

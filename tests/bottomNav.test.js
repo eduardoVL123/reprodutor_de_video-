@@ -39,9 +39,10 @@ describe('BottomNav', () => {
 })
 
 describe('AccountScreen', () => {
-  async function mountAccount({ code = '', base = '', storeBuild = '', canExit = true, access = '', activationEndsAt = null } = {}) {
+  async function mountAccount({ code = '', base = '', storeBuild = '', canExit = true, access = '', activationEndsAt = null, phone = true } = {}) {
     vi.stubEnv('VITE_LICENSE_BASE_URL', base)
     vi.stubEnv('VITE_LICENSE_STORE_BUILD', storeBuild)
+    vi.doMock('@/utils/compat', async (importOriginal) => ({ ...(await importOriginal()), isPhone: () => phone }))
     const platform = { canExitApp: () => canExit, exitApp: vi.fn(), openExternal: vi.fn() }
     vi.doMock('@/services/platform', () => platform)
     const { createPinia, setActivePinia } = await import('pinia')
@@ -99,6 +100,15 @@ describe('AccountScreen', () => {
     ;({ wrapper } = await mountAccount({ base: '', code: 'QDU5NXY7' }))
     expect(wrapper.text()).not.toContain('Assinatura')
     expect(wrapper.find('#acc-site').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('na TV mostra assinatura, código e as mesmas ações, sem os links que abririam um navegador', async () => {
+    const { wrapper } = await mountAccount({ base: 'https://licenca.test', code: 'QDU5NXY7', access: 'trial', phone: false })
+    expect(wrapper.text()).toContain('Teste grátis')
+    expect(wrapper.find('#acc-code').text()).toBe('QDU5NXY7')
+    for (const id of ['acc-profile', 'acc-favorites', 'acc-lists', 'acc-diagnostics', 'acc-exit']) expect(wrapper.find(`#${id}`).exists()).toBe(true)
+    for (const id of ['acc-renew', 'acc-site', 'acc-privacy']) expect(wrapper.find(`#${id}`).exists()).toBe(false)
     wrapper.unmount()
   })
 

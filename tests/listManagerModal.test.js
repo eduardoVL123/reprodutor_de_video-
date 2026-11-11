@@ -64,6 +64,34 @@ describe('ListManagerModal', () => {
     wrapper.unmount()
   })
 
+  it('não mostra o usuário nem o endereço do servidor: só o apelido, ou "Lista N" quando não há um', async () => {
+    const { wrapper, auth } = await setup()
+    auth.savedLists = [
+      { id: 'a', type: 'xtream', label: 'Casa', baseUrl: 'http://srv-a.test:8080', username: 'joao' },
+      { id: 'b', type: 'xtream', label: 'maria @ srv-b.test', baseUrl: 'http://srv-b.test', username: 'maria' },
+      { id: 'c', type: 'm3u', label: 'Lista M3U @ srv-c.test', baseUrl: 'http://srv-c.test', username: '' },
+    ]
+    wrapper.vm.open()
+    await flushPromises()
+
+    const text = wrapper.find('#modal-lists').text()
+    expect(wrapper.find('#saved-list-card-a').text()).toContain('Casa')
+    expect(wrapper.find('#saved-list-card-b').text()).toContain('Lista 2')
+    expect(wrapper.find('#saved-list-card-c').text()).toContain('Lista 3')
+    for (const secret of ['joao', 'maria', 'srv-a.test', 'srv-b.test', 'srv-c.test']) expect(text).not.toContain(secret)
+    wrapper.unmount()
+  })
+
+  it('as colunas são grupos de foco vizinhos (Esquerda/Direita atravessam de uma para a outra)', async () => {
+    const { wrapper } = await setup()
+    wrapper.vm.open()
+    await flushPromises()
+
+    expect(wrapper.find('[data-focus-group="modal-lists-saved"] #btn-modal-logout').exists()).toBe(true)
+    expect(wrapper.find('[data-focus-group="modal-lists-add"] #btn-save-new-list').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('exige o endereço antes de tentar conectar', async () => {
     const { wrapper, authenticate } = await setup()
     wrapper.vm.open()

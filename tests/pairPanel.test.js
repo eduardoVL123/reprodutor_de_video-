@@ -268,6 +268,34 @@ describe('PairPanel — controle remoto', () => {
     expect(document.activeElement.id).toBe('outside')
   })
 
+  it('quando a lista chega, o foco vai para Adicionar mesmo se estava em outro lugar da tela', async () => {
+    const pairing = await mountPanel()
+    const outside = document.createElement('button')
+    outside.id = 'outside'
+    document.body.appendChild(outside)
+    outside.focus()
+
+    pairing.received.value = RECEIVED
+    pairing.state.value = 'received'
+    await flushPromises()
+
+    expect(document.activeElement.id).toBe('pair-accept')
+  })
+
+  it('quando a lista chega, não interrompe quem está digitando em um campo', async () => {
+    const pairing = await mountPanel()
+    const typing = document.createElement('input')
+    typing.id = 'typing'
+    document.body.appendChild(typing)
+    typing.focus()
+
+    pairing.received.value = RECEIVED
+    pairing.state.value = 'received'
+    await flushPromises()
+
+    expect(document.activeElement.id).toBe('typing')
+  })
+
   it('todo botão tem id único e o painel é um grupo de foco', async () => {
     await mountPanel({ state: 'error', errorKind: 'login', error: 'x' }, { showManual: true })
 

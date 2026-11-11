@@ -19,6 +19,16 @@ describe('seriesPlaylist — fila da série inteira', () => {
     expect(seasonsOf(SERIES_DATA).map((s) => s.number)).toEqual([1, 2])
   })
 
+  it('o título do episódio perde o prefixo "S01E02" que os painéis repetem (o número já aparece no selo)', async () => {
+    const { episodeTitle } = await import('@/utils/seriesPlaylist')
+
+    expect(episodeTitle({ episode_num: 2, title: 'S01E02 - O Barco' })).toBe('O Barco')
+    expect(episodeTitle({ episode_num: 2, title: 'Maré Alta - S01E02 - O Barco' })).toBe('O Barco')
+    expect(episodeTitle({ episode_num: 2, title: 'S01E02' })).toBe('Episódio 2')
+    expect(episodeTitle({ episode_num: 2, title: 'O Barco' })).toBe('O Barco')
+    expect(episodeTitle({ episode_num: 2, title: '' })).toBe('Episódio 2')
+  })
+
   it('junta todas as temporadas em ordem, para o próximo episódio passar de uma para a outra', async () => {
     const { buildSeriesPlaylist } = await import('@/utils/seriesPlaylist')
 

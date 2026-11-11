@@ -14,6 +14,15 @@ const flexGapFallback = plugin(({ matchUtilities, theme }) => {
         '.no-flex-gap &.flex:not(.flex-col) > * + *': { marginLeft: value },
         '.no-flex-gap &.flex.flex-col > * + *': { marginTop: value },
       }),
+      // Com o `gap` do core desligado, gap-x/gap-y precisam existir aqui também (antes não geravam CSS nenhum).
+      'gap-x': (value) => ({
+        columnGap: value,
+        '.no-flex-gap &.flex:not(.flex-col) > * + *': { marginLeft: value },
+      }),
+      'gap-y': (value) => ({
+        rowGap: value,
+        '.no-flex-gap &.flex.flex-col > * + *': { marginTop: value },
+      }),
     },
     { values: theme('gap') },
   )

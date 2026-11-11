@@ -586,12 +586,9 @@ onBeforeUnmount(() => {
       v-if="!handheld"
       :active-tab="activeTab"
       :profile="profileStore.activeProfile"
-      :list-label="auth.activeListLabel || auth.username || ''"
       @navigate="activeTab = $event"
-      @manage-lists="openListModal"
       @demo-opened="onListChanged"
       @switch-profile="openProfileGate"
-      @diagnostics="diagnostics?.open()"
     />
 
     <!-- Área de Conteúdo Principal (espaçada à esquerda pelo menu lateral recolhido de 7rem; no celular, acima do menu inferior) -->
@@ -616,11 +613,11 @@ onBeforeUnmount(() => {
         <SearchScreen />
       </div>
 
-      <!-- Aba Conta (só celular/tablet) -->
+      <!-- Aba Conta (celular: barra de baixo; TV: menu lateral) -->
       <AccountScreen
         v-else-if="activeTab === 'account'"
         :profile="profileStore.activeProfile"
-        :list-label="auth.activeListLabel || auth.username || ''"
+        :list-label="auth.activeListLabel"
         @navigate="activeTab = $event"
         @manage-lists="openListModal"
         @switch-profile="openProfileGate"
@@ -667,7 +664,7 @@ onBeforeUnmount(() => {
           <svg class="w-10 h-10 text-neutral-500 stroke-[1.5] mb-4" viewBox="0 0 24 24" fill="none" stroke="currentColor">
             <path d="M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z" />
           </svg>
-          <p class="text-tv-base font-medium text-neutral-200">Sua lista está vazia</p>
+          <p class="text-tv-base font-medium text-neutral-200">Nenhum favorito ainda</p>
           <p class="text-tv-sm text-neutral-500 mt-1">Adicione filmes, séries e canais para assistir quando quiser.</p>
         </div>
 

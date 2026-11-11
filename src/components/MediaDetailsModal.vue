@@ -109,6 +109,14 @@ const seriesPlayLabel = computed(() => {
 
 const episodeImage = (ep) => (ep.info && ep.info.movie_image) || info.value.poster
 
+/** Miniatura do episódio quebrada: tenta a capa da série uma vez antes de esconder (senão o card ficava preto). */
+function onEpisodeImageError(event) {
+  const img = event.target
+  const poster = info.value.poster
+  if (poster && img.getAttribute('src') !== poster) img.setAttribute('src', poster)
+  else img.style.display = 'none'
+}
+
 function episodeDuration(ep) {
   const secs = Number(ep.info && ep.info.duration_secs) || 0
   if (secs > 0) return `${Math.round(secs / 60)} min`
@@ -311,7 +319,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ===================== FILME ===================== -->
-    <div v-if="!isSeries" class="relative z-10 px-20 py-12 phone-portrait:px-5 phone-portrait:pt-[15rem] phone-portrait:pb-8 phone-portrait:justify-start phone-portrait:h-auto phone-portrait:min-h-full flex flex-col justify-between h-full max-w-[56rem]">
+    <div v-if="!isSeries" class="relative z-10 px-24 py-14 phone-portrait:px-5 phone-portrait:pt-[15rem] phone-portrait:pb-8 phone-portrait:justify-start phone-portrait:h-auto phone-portrait:min-h-full flex flex-col justify-between h-full max-w-[56rem]">
       <div>
         <div class="flex items-center gap-2.5">
           <BrandMark :size="1.25" class="text-tv-accent" />
@@ -411,9 +419,9 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- ===================== SÉRIE ===================== -->
-    <div v-else class="relative z-10 flex flex-col h-full justify-between pb-8 phone-portrait:h-auto phone-portrait:justify-start">
+    <div v-else class="relative z-10 flex flex-col h-full justify-between pb-14 phone-portrait:pb-8 phone-portrait:h-auto phone-portrait:justify-start">
       <!-- Cabeçalho e Sinopse da série -->
-      <header class="px-20 pt-10 phone-portrait:px-5 phone-portrait:pt-[15rem] shrink-0 max-w-[62rem]">
+      <header class="px-24 pt-14 phone-portrait:px-5 phone-portrait:pt-[15rem] shrink-0 max-w-[62rem]">
         <div class="flex items-center gap-2.5">
           <BrandMark :size="1.25" class="text-tv-accent" />
           <span class="text-tv-xs font-bold tracking-[0.25em] text-neutral-400 uppercase phone-portrait:text-[0.8rem] phone-portrait:tracking-[0.12em]">SÉRIE</span>
@@ -499,7 +507,7 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Temporadas em abas e Episódios em Fileira 16:9 (Mockup Detalhes de série) -->
-      <div v-else class="px-20 phone-portrait:px-5 mt-4 shrink-0 space-y-4">
+      <div v-else class="px-24 phone-portrait:px-5 mt-4 shrink-0 space-y-4">
         <!-- Seletor de Temporadas -->
         <!-- py-2/px-2: a faixa rola de lado e cortaria o anel do foco (ring + offset) em cima e embaixo -->
         <div data-focus-row="series-seasons" data-scroll-x class="flex items-center gap-3 overflow-x-auto py-2 px-2 -mx-2">
@@ -576,7 +584,7 @@ onBeforeUnmount(() => {
                     loading="lazy"
                     referrerpolicy="no-referrer"
                     class="w-full h-full object-cover"
-                    @error="$event.target.style.display = 'none'"
+                    @error="onEpisodeImageError"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
                   <span class="tv-badge">
@@ -590,7 +598,7 @@ onBeforeUnmount(() => {
                 <!-- Título e duração abaixo da miniatura -->
                 <div class="mt-2.5">
                   <p class="text-tv-sm font-bold text-white truncate">
-                    {{ ep.episode_num }}. {{ episodeTitle(ep) }}
+                    {{ episodeTitle(ep) }}
                   </p>
                   <p class="text-tv-xs text-tv-meta mt-0.5">
                     {{ episodeRemainingText(ep) || episodeDuration(ep) }}

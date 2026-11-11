@@ -4,6 +4,7 @@ import { usePairing } from '@/composables/usePairing'
 import { qrSvgData } from '@/utils/qrSvg'
 import { formatTime } from '@/utils/formatTime'
 import { isPhone } from '@/utils/compat'
+import { isEditingTextField } from '@/utils/spatialNavigation'
 
 /**
  * Adicionar lista pelo celular (RFC-016): QR + código na TV, confirmação do que chegou e erros.
@@ -53,11 +54,18 @@ const PRIMARY_ID = {
   error: 'pair-retry',
 }
 
-/** Foco no botão principal, a menos que o usuário já tenha ido para outro campo da tela. */
+/**
+ * Foco no botão principal, a menos que o usuário já tenha ido para outro campo da tela. Lista recebida é exceção:
+ * o Adicionar precisa do foco (na TV o usuário ficava no formulário sem ver onde confirmar), salvo se ele está digitando.
+ */
 function focusPrimary() {
   nextTick(() => {
     const active = document.activeElement
-    const free = !active || active === document.body || (root.value && root.value.contains(active))
+    const free =
+      !active ||
+      active === document.body ||
+      (root.value && root.value.contains(active)) ||
+      (state.value === 'received' && !isEditingTextField(active))
     const el = free && document.getElementById(PRIMARY_ID[state.value])
     if (el) el.focus()
   })
