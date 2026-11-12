@@ -115,6 +115,29 @@ describe('Dashboard — uma seção baixando por vez', () => {
   })
 })
 
+describe('Dashboard — fileira que o filtro esvaziou (auditoria 2026-11-11, item 2)', () => {
+  it('quando o novo perfil esconde a seção inteira, a fileira antiga some em vez de continuar tocável', async () => {
+    vi.resetModules()
+    const ready = { state: 'ready' }
+    const { wrapper, pinia } = await mountHome({ vod: ready, series: ready, live: ready })
+    const { useCatalogStore } = await import('@/stores/catalogStore')
+    const catalog = useCatalogStore(pinia)
+    let hidden = false
+    vi.spyOn(catalog, 'getItems').mockImplementation(async (s) => (hidden && s === 'series' ? [] : [{ stream_id: 1, name: `Item de ${s}`, section: s }]))
+    await wrapper.vm.$.setupState.showcaseAfterListChange()
+    await flushPromises()
+    expect(wrapper.html()).toContain('Item de series')
+
+    hidden = true // ex.: o perfil "Convidado" esconde todas as categorias de Séries
+    await wrapper.vm.$.setupState.loadCatalogShowcase() // o mesmo chamado do useParentalFilter: sem limpar antes
+    await flushPromises()
+
+    expect(wrapper.html()).not.toContain('Item de series')
+    expect(wrapper.html()).toContain('Item de vod')
+    wrapper.unmount()
+  })
+})
+
 describe('Dashboard — controle parental nos atalhos (auditoria RFC-025, item 9)', () => {
   it('"Continuar assistindo" e "Minha lista" não mostram nem tocam item de categoria bloqueada sem PIN', async () => {
     vi.resetModules()

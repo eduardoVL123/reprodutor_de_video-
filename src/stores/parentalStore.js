@@ -39,6 +39,7 @@ export const useParentalStore = defineStore('parental', () => {
   const unlocked = ref(new Set()) // `${section}:${id}` desbloqueadas nesta abertura do app
   let key = settingsKey()
   let loadSeq = 0
+  let unreadable = false // a leitura das escolhas falhou: tudo bloqueado até a próxima leitura dar certo
   let pinFails = 0
   let pinLockedUntil = 0
 
@@ -47,6 +48,7 @@ export const useParentalStore = defineStore('parental', () => {
     key = settingsKey(profileId, listId)
     unlocked.value = new Set() // desbloqueio do pai não passa para outro perfil nem outra lista
     settings.value = emptySettings()
+    unreadable = false
     try {
       let saved = await storage.get(key)
       // Perfil sem escolhas próprias (ex.: criado agora, sem PIN) segue as do Principal até o pai mudar algo nele.
@@ -58,13 +60,18 @@ export const useParentalStore = defineStore('parental', () => {
       settings.value = next
       pinHash.value = typeof savedPin === 'string' && savedPin ? savedPin : ''
     } catch (_) {
-      if (seq === loadSeq) pinHash.value = UNREADABLE
+      if (seq !== loadSeq) return
+      pinHash.value = UNREADABLE
+      // Sem as escolhas dos pais, nada abre (auditoria 2026-11-11, item 15); `settings` troca para disparar quem lê.
+      unreadable = true
+      settings.value = emptySettings()
     }
   }
 
   /** Estado da categoria: escolha do usuário, ou bloqueada se o nome for adulto. */
   function statusOf(section, category) {
     if (!category) return 'visible'
+    if (unreadable) return 'locked'
     const chosen = settings.value[section] && settings.value[section][String(category.category_id)]
     if (chosen) return chosen
     return ADULT_NAME.test(String(category.category_name || '')) ? 'locked' : 'visible'

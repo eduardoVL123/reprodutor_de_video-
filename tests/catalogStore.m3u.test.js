@@ -83,4 +83,50 @@ describe('catalogStore — sessão M3U', () => {
     expect(catalog.totals.live).toBe(0)
     expect(catalog.status.live.state).toBe('idle')
   })
+
+  it('"Atualizar lista" pela aba TV também atualiza Filmes, que já estava aberta (auditoria 2026-11-11, item 13)', async () => {
+    const { catalog, fetchM3uText } = await setup()
+    await catalog.loadSection('live')
+    await catalog.loadSection('vod')
+    expect(catalog.totals.vod).toBe(1)
+    fetchM3uText.mockResolvedValue({ text: `${PLAYLIST}#EXTINF:-1 group-title="Filmes",Filme B\nhttp://srv.test/movie/b.mp4\n`, finalUrl: 'x' })
+
+    await catalog.refreshSection('live')
+
+    expect(catalog.totals.vod).toBe(2)
+    expect(catalog.categories.vod.find((c) => c.category_name === 'Filmes').count).toBe(2)
+  })
+
+  it('lista trocada durante a leitura do arquivo: a antiga não grava (auditoria 2026-11-11, item 14)', async () => {
+    let release
+    const parsing = new Promise((resolve) => {
+      release = resolve
+    })
+    vi.doMock('@/services/m3uParser', async (importOriginal) => {
+      const real = await importOriginal()
+      let first = true
+      // Só a leitura da lista antiga demora; a da nova é imediata.
+      const readM3u = vi.fn(async (text) => {
+        if (first) {
+          first = false
+          await parsing
+        }
+        return real.readM3u(text)
+      })
+      return { ...real, readM3u }
+    })
+    const { catalog } = await setup()
+    const { getMeta } = await import('@/services/catalogDb')
+
+    const old = catalog.loadSection('live', { force: true })
+    await new Promise((resolve) => setTimeout(resolve, 20)) // download feito, leitura em andamento
+    await catalog.resetCatalogState()
+    await catalog.loadSection('live', { force: true }) // a lista nova carrega inteira
+    expect((await getMeta('live')).count).toBe(2)
+    release()
+    await old
+    vi.doUnmock('@/services/m3uParser')
+
+    expect((await getMeta('live')).count).toBe(2) // a antiga não apagou a seção da nova
+  })
 })

@@ -13,7 +13,7 @@ describe('formatTime', () => {
     expect(formatTime(seconds)).toBe(expected)
   })
 
-  it.each([[-1], [NaN], [undefined], [null], ['abc']])('devolve 00:00 para %s', async (value) => {
+  it.each([[-1], [NaN], [undefined], [null], ['abc'], [Infinity]])('devolve 00:00 para %s', async (value) => {
     const { formatTime } = await import('@/utils/formatTime')
 
     expect(formatTime(value)).toBe('00:00')

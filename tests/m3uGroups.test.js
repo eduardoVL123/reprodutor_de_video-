@@ -83,3 +83,21 @@ describe('parseM3u — id do grupo', () => {
     expect(idOf(after, 'Novidades')).not.toBe(idOf(before, 'Esportes'))
   })
 })
+
+describe('parseM3u — grupo em #EXTGRP e sem aspas (auditoria 2026-11-11, item 19)', () => {
+  it('#EXTGRP vale quando o #EXTINF não traz group-title', async () => {
+    const r = await parseM3u('#EXTM3U\n#EXTINF:-1,Jogo\n#EXTGRP:Esportes\nhttp://h.test/1.m3u8\n')
+    expect(r.liveCategories.map((c) => c.category_name)).toEqual(['Esportes'])
+  })
+
+  it('group-title do #EXTINF ganha do #EXTGRP', async () => {
+    const r = await parseM3u('#EXTM3U\n#EXTINF:-1 group-title="Notícias",Jornal\n#EXTGRP:Outro\nhttp://h.test/1.m3u8\n')
+    expect(r.liveCategories.map((c) => c.category_name)).toEqual(['Notícias'])
+  })
+
+  it('valor sem aspas com espaço vai até o próximo atributo', async () => {
+    const r = await parseM3u('#EXTM3U\n#EXTINF:-1 group-title=Filmes HD tvg-logo=http://h.test/l.png,Rambo\nhttp://h.test/r.mp4\n')
+    expect(r.vodCategories.map((c) => c.category_name)).toEqual(['Filmes HD'])
+    expect(r.vodStreams[0].stream_icon).toBe('http://h.test/l.png')
+  })
+})

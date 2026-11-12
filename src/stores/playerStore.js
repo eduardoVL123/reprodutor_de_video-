@@ -291,6 +291,10 @@ export const usePlayerStore = defineStore('player', () => {
         queue.value = w.items
         currentIndex.value = local
         context.value = { section, categoryId, windowStart: w.start, total }
+      } else {
+        // Posição não confere com o item (atalho que não sabe onde ele está na categoria): sem "próximo" é melhor
+        // que CH+ tocar um canal qualquer contado a partir de uma posição errada.
+        context.value = null
       }
     } catch (err) {
       console.warn('[player] Falha ao montar a fila da categoria:', err)

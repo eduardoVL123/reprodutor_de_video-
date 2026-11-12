@@ -178,6 +178,39 @@ describe('playerStore — série longa (auditoria)', () => {
   })
 })
 
+describe('playerStore — zapping a partir de uma fileira (auditoria 2026-11-11, item 1)', () => {
+  const channels = Array.from({ length: 30 }, (_, i) => ({ stream_id: i + 1, name: `Canal ${i + 1}` }))
+
+  async function setupCatalog() {
+    const { usePlayerStore } = await setup()
+    const { useCatalogStore } = await import('@/stores/catalogStore')
+    const catalog = useCatalogStore()
+    vi.spyOn(catalog, 'countFor').mockReturnValue(channels.length)
+    vi.spyOn(catalog, 'getItems').mockImplementation(async (_s, _c, start, size) => channels.slice(start, start + size))
+    const player = usePlayerStore()
+    await player.hydrate(true)
+    return player
+  }
+
+  it('com a posição certa, CH+ vai para o canal seguinte da lista', async () => {
+    const player = await setupCatalog()
+    await player.playFromCatalog({ section: 'live', categoryId: '*', item: channels[6], indexInCategory: 6 })
+
+    expect(await player.next()).toBe(true)
+    expect(player.currentItem.stream_id).toBe(8)
+  })
+
+  it('posição que não bate com o item: sem "próximo" em vez de tocar o canal errado', async () => {
+    const player = await setupCatalog()
+    await player.playFromCatalog({ section: 'live', categoryId: '*', item: channels[6], indexInCategory: 0 })
+
+    expect(player.currentItem.stream_id).toBe(7)
+    expect(await player.next()).toBe(false)
+    expect(await player.prev()).toBe(false)
+    expect(player.currentItem.stream_id).toBe(7)
+  })
+})
+
 describe('playerStore — canal ao vivo (auditoria)', () => {
   it('o mesmo canal no topo do histórico não é regravado a cada salvamento', async () => {
     const { storage, usePlayerStore } = await setup()
