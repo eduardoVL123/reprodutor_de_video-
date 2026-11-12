@@ -40,6 +40,26 @@ describe('router', () => {
     expect(router.currentRoute.value.name).toBe('dashboard')
   })
 
+  it.each([
+    ['aceite do aviso', { ftue: () => new Promise(() => {}), hydrate: async () => {} }, 'ftue'], // sem saber: mostra o aviso
+    ['sessão salva', { ftue: async () => true, hydrate: () => new Promise(() => {}) }, 'login'],
+  ])('armazenamento travado ao ler %s (WebView antigo): a 1ª tela abre em segundos', async (_, stall, expected) => {
+    vi.useFakeTimers()
+    try {
+      vi.doMock('@/services/storage', () => ({ hasAcceptedFtue: vi.fn(stall.ftue) }))
+      vi.doMock('@/stores/authStore', () => ({ useAuthStore: () => ({ hydrate: stall.hydrate, isAuthenticated: false }) }))
+      const { default: router } = await import('@/router')
+
+      const opened = router.push('/login')
+      await vi.advanceTimersByTimeAsync(6000)
+      await opened
+
+      expect(router.currentRoute.value.name).toBe(expected)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('com aceite, o FTUE nunca mais aparece', async () => {
     const router = await setup({ ftueAccepted: true })
 
