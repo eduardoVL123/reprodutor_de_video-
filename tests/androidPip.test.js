@@ -28,7 +28,8 @@ describe('Android — pop-up (Picture-in-Picture) em celular e tablet', () => {
   it('protege as APIs novas por versão do Android (minSdk 24)', () => {
     expect(plugin).toContain('Build.VERSION_CODES.O')
     expect(plugin).toContain('Build.VERSION_CODES.S')
-    expect(plugin).toContain('@RequiresApi')
+    // As chamadas do Android 8+ ficam fora do plugin (tests/androidPluginsApi.test.js: o app fechava no Fire OS 6).
+    expect(readFileSync('android/app/src/main/java/com/pulseplayer/app/PictureInPictureApi.java', 'utf8')).toContain('@RequiresApi')
   })
 
   it('a Activity registra o plugin antes de iniciar o Capacitor e repassa os eventos', () => {

@@ -1,11 +1,8 @@
 package com.pulseplayer.app;
 
 import android.app.Activity;
-import android.app.PictureInPictureParams;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.util.Rational;
-import androidx.annotation.RequiresApi;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
@@ -19,11 +16,11 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  *
  * Android 12+ usa a entrada automática do sistema (setAutoEnterEnabled); Android 8 a 11 entra
  * pelo onUserLeaveHint da MainActivity.
+ *
+ * Nenhum tipo do Android 8+ na assinatura dos métodos daqui: ver PictureInPictureApi.
  */
 @CapacitorPlugin(name = "PictureInPicture")
 public class PictureInPicturePlugin extends Plugin {
-
-    private static final Rational ASPECT_RATIO = new Rational(16, 9);
 
     private volatile boolean enabled = false;
 
@@ -32,7 +29,7 @@ public class PictureInPicturePlugin extends Plugin {
         enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
         final Activity activity = getActivity();
         if (activity != null && isSupported() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            activity.runOnUiThread(() -> activity.setPictureInPictureParams(buildParams(enabled)));
+            activity.runOnUiThread(() -> PictureInPictureApi.setAutoEnter(activity, enabled));
         }
         call.resolve();
     }
@@ -47,7 +44,7 @@ public class PictureInPicturePlugin extends Plugin {
         Activity activity = getActivity();
         if (activity != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
-                activity.enterPictureInPictureMode(buildParams(false));
+                PictureInPictureApi.enter(activity);
             } catch (IllegalStateException ignored) {
                 // A Activity já está saindo da tela: sem pop-up desta vez.
             }
@@ -68,14 +65,5 @@ public class PictureInPicturePlugin extends Plugin {
         PackageManager pm = activity.getPackageManager();
         return pm.hasSystemFeature(PackageManager.FEATURE_PICTURE_IN_PICTURE)
             && !pm.hasSystemFeature(PackageManager.FEATURE_LEANBACK);
-    }
-
-    @RequiresApi(api = Build.VERSION_CODES.O)
-    private PictureInPictureParams buildParams(boolean autoEnter) {
-        PictureInPictureParams.Builder builder = new PictureInPictureParams.Builder().setAspectRatio(ASPECT_RATIO);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(autoEnter);
-        }
-        return builder.build();
     }
 }
