@@ -286,7 +286,8 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     mpOrders.set('ORD-alheia', { ...mpOrders.get(`ORD-${orderId}`), id: 'ORD-alheia', currency_id: 'BRL' })
     await webhook('ORD-alheia')
     expect(await activationRows()).toHaveLength(0)
-    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('pending')
+    // Pago com outro valor (auditoria 2026-11-11, item 6): fica 'paid' para cair no aviso de "pago sem entrega".
+    expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(orderId).first()).status).toBe('paid')
   })
 
   it('valor pago escrito de outro jeito pelo Mercado Pago ("25.0", 25) é o mesmo valor: entrega', async () => {
@@ -836,6 +837,22 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect((await db.prepare('SELECT status FROM orders WHERE id = ?').bind(sub.orderId).first()).status).toBe('refunded')
   })
 
+  it('parcela estornada sem webhook: a conferência periódica também pergunta pelas parcelas (auditoria 2026-11-11, item 5)', async () => {
+    const sub = await subscribe()
+    installment('7201', sub.preId)
+    await webhook('7201', { type: 'subscription_authorized_payment' })
+    expect(await activationEndsAt(db, KEY)).toBe(YEAR_2027)
+    installments.get('7201').payment.status = 'charged_back' // o aviso do estorno se perdeu
+    clock += 7 * 3600 * 1000
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await handle.recheckRefunds()
+    spy.mockRestore()
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+    expect((await db.prepare('SELECT status FROM subscriptions').first()).status).toBe('cancelled')
+    clock += 7 * 3600 * 1000
+    expect(await handle.recheckRefunds()).toBe(0) // estornada sai da conferência
+  })
+
   it('webhook da assinatura chegou antes do registro: a adesão não dá erro nem cria outra (auditoria 3)', async () => {
     mpReply = (url, init = {}) => {
       const reply = subscriptionReply(url, init)
@@ -1181,6 +1198,16 @@ describe('revisão de segurança — limites no banco (valem entre isolates do W
     expect(card.body.error).toMatch(/Pix/)
     const pix = await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'A', contact: 'B', email: EMAIL }, '10.7.7.7')
     expect(pix.status).toBe(201)
+  })
+
+  it('teto geral do Pix: trocar de rede não cria cobranças sem fim (auditoria 2026-11-11, item 8)', async () => {
+    await db.prepare("INSERT INTO rate_limits VALUES ('pixAll', '*', ?, 600)").bind(clock).run()
+    const pix = await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'A', contact: 'B', email: EMAIL }, '2001:db8:77::1')
+    expect(pix.status).toBe(429)
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0) // nenhuma cobrança nasceu no Mercado Pago
+    clock += 61 * MIN
+    const later = await req('POST', '/v1/checkout', { kind: 'credits', method: 'pix', quantity: 20, name: 'A', contact: 'B', email: EMAIL }, '2001:db8:77::1')
+    expect(later.status).toBe(201)
   })
 
   it('token inventado (o Mercado Pago recusa o token) não gasta o teto geral do cartão (auditoria 6)', async () => {

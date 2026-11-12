@@ -340,6 +340,18 @@ watch(
   },
 )
 
+// PC: a barra de categorias não mostra barra de rolagem e a roda comum é vertical, então nada a fazia andar para o
+// lado. A roda vertical vira horizontal (como as fileiras, HorizontalRail.vue); gesto lateral do touchpad segue nativo.
+function onCategoryWheel(event) {
+  const bar = event.currentTarget
+  if (Math.abs(event.deltaY) <= Math.abs(event.deltaX) || bar.scrollWidth <= bar.clientWidth) return
+  event.preventDefault()
+  // Instantâneo como a roda nativa: com o scroll-smooth da barra, cada giro reiniciava a animação e ela mal andava.
+  bar.style.scrollBehavior = 'auto'
+  bar.scrollLeft += event.deltaY
+  bar.style.scrollBehavior = ''
+}
+
 let cleanupKeyHandler = null
 
 onMounted(() => {
@@ -391,6 +403,7 @@ onBeforeUnmount(() => {
           v-if="categoryList.length > 0"
           data-focus-row="categories"
           data-scroll-x
+          @wheel="onCategoryWheel"
           class="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-smooth flex-1 min-w-0 py-2 px-2 pr-10 [-webkit-mask-image:linear-gradient(to_right,#000_calc(100%-2.5rem),transparent)] phone:pr-2 phone:[-webkit-mask-image:none] phone-portrait:basis-full phone-portrait:order-last phone-portrait:px-0"
         >
           <button
@@ -648,7 +661,7 @@ onBeforeUnmount(() => {
               v-if="row.category_id !== 'favorites'"
               :id="`see-all-${row.category_id}`"
               type="button"
-              class="tv-focusable rounded px-2 py-1 text-sm phone:text-xs text-neutral-400 hover:text-tv-accent transition-colors"
+              class="tv-focusable rounded px-3 py-3 -my-3 text-tv-xs phone:text-xs text-neutral-400 hover:text-tv-accent transition-colors"
               @click="chooseCategory({ category_id: row.category_id })"
             >
               Ver todos ›

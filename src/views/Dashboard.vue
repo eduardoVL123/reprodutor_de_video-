@@ -303,10 +303,12 @@ async function loadCatalogShowcase({ reset = false } = {}) {
   // Sem esperar todas: cada fileira aparece quando a sua seção fica pronta (o watch de status chama de novo).
   loadSectionsInOrder(['vod', 'series', 'live']).catch(() => {})
   const ready = (s) => catalog.status[s].state === 'ready'
+  // Seção pronta grava a fileira mesmo vazia: o perfil novo pode esconder a seção toda, e a fileira do anterior
+  // ficava na tela e tocável (auditoria 2026-11-11, item 2).
 
   try {
     const vodItems = ready('vod') ? await catalog.getItems('vod', ALL_CATEGORIES, 0, 20) : null
-    if (!stale() && vodItems && vodItems.length > 0) {
+    if (!stale() && vodItems) {
       vodShowcase.value = vodItems.map((item) => ({
         stream_id: item.stream_id,
         name: item.name,
@@ -323,7 +325,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const seriesItems = ready('series') ? await catalog.getItems('series', ALL_CATEGORIES, 0, 20) : null
-    if (!stale() && seriesItems && seriesItems.length > 0) {
+    if (!stale() && seriesItems) {
       seriesShowcase.value = seriesItems.map((item) => ({
         stream_id: item.stream_id || item.series_id,
         name: item.name,
@@ -340,7 +342,7 @@ async function loadCatalogShowcase({ reset = false } = {}) {
 
   try {
     const liveItems = ready('live') ? await catalog.getItems('live', ALL_CATEGORIES, 0, 20) : null
-    if (!stale() && liveItems && liveItems.length > 0) {
+    if (!stale() && liveItems) {
       liveShowcase.value = liveItems.map((item) => {
         return {
           stream_id: item.stream_id,
@@ -398,7 +400,7 @@ const liveRailItems = computed(() => {
   return [...liveShowcase.value, { isSeeAll: true, section: 'live', name: 'Explorar canais' }]
 })
 
-function handleCardPlay(card, section) {
+function handleCardPlay(card, section, indexInCategory = 0) {
   if (card.directUrl) {
     player.playItem({
       stream_id: card.stream_id,
@@ -416,7 +418,7 @@ function handleCardPlay(card, section) {
       section,
       categoryId: ALL_CATEGORIES,
       item: card.rawItem,
-      indexInCategory: 0,
+      indexInCategory,
     })
     return
   }
@@ -458,12 +460,13 @@ function onSeriesRailSelect(item, index) {
   openSeriesDetails(item, index)
 }
 
-function onLiveRailSelect(item) {
+function onLiveRailSelect(item, index) {
   if (item.isSeeAll) {
     activeTab.value = 'live'
     return
   }
-  handleCardPlay(item, 'live')
+  // A fileira são os primeiros canais de "Todos": a posição nela é a posição na categoria (CH+/CH- certos).
+  handleCardPlay(item, 'live', index)
 }
 
 const FAVORITE_LABELS = { live: 'Canal de TV', series: 'Série salva', vod: 'Filme salvo' }
@@ -921,7 +924,7 @@ onBeforeUnmount(() => {
                 id="home-see-all-vod"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 px-3 py-3 -mx-3 -my-3 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'vod'"
               >
                 <span>Ver todos</span>
@@ -985,7 +988,7 @@ onBeforeUnmount(() => {
                 id="home-see-all-series"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 px-3 py-3 -mx-3 -my-3 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'series'"
               >
                 <span>Ver todos</span>
@@ -1056,7 +1059,7 @@ onBeforeUnmount(() => {
                 id="home-see-all-live"
                 type="button"
                 tabindex="-1"
-                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 phone-portrait:text-[0.85rem]"
+                class="text-tv-xs text-neutral-400 hover:text-white flex items-center gap-1 px-3 py-3 -mx-3 -my-3 phone-portrait:text-[0.85rem]"
                 @click="activeTab = 'live'"
               >
                 <span>Explorar canais</span>

@@ -2,7 +2,7 @@ import { reactive, shallowRef } from 'vue'
 import { defineStore } from 'pinia'
 import { useAuthStore } from '@/stores/authStore'
 import { apiRequest, XtreamError, fetchM3uText, describeError } from '@/services/xtreamApi'
-import { importM3uCatalog } from '@/services/m3uParser'
+import { importM3uCatalog, readM3u } from '@/services/m3uParser'
 import {
   ALL_CATEGORIES,
   getMeta,
@@ -69,7 +69,11 @@ export const useCatalogStore = defineStore('catalog', () => {
       const shared = (async () => {
         const { text } = await fetchM3uText(auth.apiBase || auth.session?.baseUrl)
         assertCurrent(my)
+        // A leitura leva segundos na TV: trocar de lista nesse meio não pode deixar a antiga gravar por cima (auditoria item 14).
+        const parsed = await readM3u(text)
+        assertCurrent(my)
         await importM3uCatalog(text, {
+          parsed,
           onProgress: (p) => {
             assertCurrent(my)
             status[p.section].progress = p.progress
@@ -165,6 +169,13 @@ export const useCatalogStore = defineStore('catalog', () => {
           await importM3uOnce()
           assertCurrent(my)
           meta = await getMeta(section)
+          // A importação regravou as três seções: as outras já abertas mostram os dados novos (auditoria item 13).
+          for (const other of ['live', 'vod', 'series']) {
+            if (other === section || status[other].state !== 'ready') continue
+            const otherMeta = await getMeta(other)
+            assertCurrent(my)
+            if (otherMeta) await publish(other, otherMeta)
+          }
         } else {
           st.step = 'Baixando categorias...'
           let cats = await fetchers[section].categories()

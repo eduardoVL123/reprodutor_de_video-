@@ -271,6 +271,17 @@ describe('auditoria RFC-025: aparelhos novos e limpeza', () => {
     expect((await hi(1)).status).toBe(200) // aparelho que já existe não conta
   })
 
+  it('auditoria 2026-11-11, item 3: um bloco IPv6 /48 não esgota o teto do serviço trocando de /64', async () => {
+    handle = createLicenseHandler({ db, now: () => clock, adminToken: ADMIN, limits: { ...LIMITS, newDevicesPerIPv6BlockDay: 3 } })
+    const hi = (n, ip) => req('POST', '/v1/hello', { body: { deviceKey: `${'h'.repeat(39)}${n}`, platform: 'android' }, ip })
+    for (const n of [1, 2, 3]) expect((await hi(n, `2001:db8:aa:${n}::1`)).status).toBe(200) // /64 diferentes
+    vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await hi(4, '2001:db8:aa:4::1')).status).toBe(429) // mesmo /48
+    vi.restoreAllMocks()
+    expect((await hi(5, '2001:db8:bb:1::1')).status).toBe(200) // outro /48 segue livre
+    expect((await hi(6, '10.60.0.1')).status).toBe(200) // IPv4 não passa por esse limite
+  })
+
   it('item 4: a limpeza de 24 meses não apaga aparelho suspenso (voltaria sem bloqueio e com teste novo)', async () => {
     const blocked = await hello('s'.repeat(40))
     const free = await hello('f'.repeat(40))
@@ -280,5 +291,16 @@ describe('auditoria RFC-025: aparelhos novos e limpeza', () => {
     const left = (await db.prepare('SELECT code FROM devices').all()).results.map((r) => r.code)
     expect(left).toEqual([blocked])
     expect(left).not.toContain(free)
+  })
+})
+
+describe('índices das consultas por revenda, aparelho e parceiro (auditoria 2026-11-11, item 7)', () => {
+  const plan = async (sql, ...args) =>
+    (await db.prepare(`EXPLAIN QUERY PLAN ${sql}`).bind(...args).all()).results.map((r) => r.detail).join(' | ')
+
+  it('nenhuma delas lê a tabela inteira', async () => {
+    expect(await plan('SELECT * FROM activations a WHERE a.reseller_id = ? AND a.id < ? ORDER BY a.id DESC LIMIT 50', 1, 9)).toMatch(/USING (COVERING )?INDEX/)
+    expect(await plan("SELECT 1 FROM subscriptions WHERE device_code = ? AND status <> 'cancelled'", 'X')).toMatch(/USING (COVERING )?INDEX/)
+    expect(await plan('SELECT 1 FROM partner_cycle_entries WHERE partner_id = ? LIMIT 1', 1)).toMatch(/USING (COVERING )?INDEX/)
   })
 })

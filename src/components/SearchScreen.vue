@@ -292,9 +292,13 @@ function onTypingKey(event) {
 }
 
 onMounted(() => {
-  searchSections.value.forEach((s) => {
-    if (catalog.status[s].state === 'idle') catalog.loadSection(s)
-  })
+  // Uma seção por vez, como o Início: baixar as três juntas estoura a memória de TV fraca (auditoria item 12).
+  // Se o Início já baixa uma, loadSection devolve a mesma carga e a Busca espera ela.
+  ;(async () => {
+    for (const s of searchSections.value) {
+      if (catalog.status[s].state === 'idle') await catalog.loadSection(s)
+    }
+  })().catch(() => {})
   loadRecent()
   cleanupBack = registerBackHandler(onSearchBack)
   cleanupKey = registerKeyHandler(onSearchKey)

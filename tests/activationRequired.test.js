@@ -50,6 +50,17 @@ describe('tela de ativação', () => {
     wrapper.unmount()
   })
 
+  it('primeira consulta da lista em andamento: "Verificando a licença", sem QR e sem pedir conexão (auditoria item 10)', async () => {
+    const wrapper = await mountScreen({ reason: 'checking' })
+    expect(wrapper.text()).toContain('Verificando a licença')
+    expect(wrapper.text()).not.toContain('Verifique a conexão')
+    expect(wrapper.find('#activation-qr').exists()).toBe(false)
+    expect(wrapper.find('#activation-retry').text()).toBe('Verificando…')
+    await wrapper.find('#activation-retry').trigger('click')
+    expect(wrapper.emitted('retry')).toBeUndefined()
+    wrapper.unmount()
+  })
+
   it('aparelho suspenso: avisa e manda falar com o suporte, sem QR nem planos', async () => {
     const wrapper = await mountScreen({ reason: 'suspended' })
     expect(wrapper.text()).toContain('Aparelho suspenso')

@@ -32,7 +32,8 @@ function nameCommaIndex(line) {
 
 // Compiladas uma vez: criar 3 RegExp por linha custava 300 mil compilações numa lista de 100 mil itens.
 const ATTR_REGEX = new Map(
-  ['tvg-logo', 'group-title', 'tvg-name'].map((name) => [name, new RegExp(`${name}=(?:"([^"]*)"|'([^']*)'|([^\\s,]+))`, 'i')]),
+  // Sem aspas, o valor vai até o próximo `atributo=` (aceita "Filmes HD"); a parte lida já não tem vírgula fora de aspas.
+  ['tvg-logo', 'group-title', 'tvg-name'].map((name) => [name, new RegExp(`${name}=(?:"([^"]*)"|'([^']*)'|([^\\s"',][^,]*?)(?=\\s+[\\w-]+=|$))`, 'i')]),
 )
 const YIELD_EVERY = 2000 // itens entre pausas: a TV volta a responder ao controle durante a importação
 
@@ -82,15 +83,16 @@ export async function parseM3u(text) {
       const tvgName = extractAttribute(attrPart, 'tvg-name')
       const displayName = namePart || tvgName || `Canal ${count + 1}`
 
-      if (!group) {
-        group = 'Geral'
-      }
-
       currentMeta = {
         name: displayName,
         logo,
-        group,
+        group: group || 'Geral',
+        groupFromExtinf: !!group,
       }
+    } else if (line.startsWith('#EXTGRP:')) {
+      // Listas que põem o grupo numa linha própria; o group-title do #EXTINF ganha se existir.
+      const extgrp = line.slice(8).trim()
+      if (currentMeta && !currentMeta.groupFromExtinf && extgrp) currentMeta.group = extgrp
     } else if (!line.startsWith('#')) {
       // É uma URL de stream
       if (currentMeta) {

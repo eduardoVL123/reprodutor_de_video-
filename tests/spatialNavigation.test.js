@@ -418,3 +418,27 @@ describe('spatialNavigation — entrar na fileira de episódios', () => {
     expect(document.activeElement.id).toBe('ep-0')
   })
 })
+
+// Samsung CO-US-06/07: teclas de cor e numéricas não têm função no app e não podem mexer em nada.
+describe('spatialNavigation — teclas sem função', () => {
+  it('teclas de cor e números não consomem o evento nem mudam o foco', async () => {
+    layout(HOME, HOME_RECTS)
+    nav = await setup()
+    const handler = vi.fn(() => true)
+    nav.registerKeyHandler(handler)
+    document.getElementById('hero-play').focus()
+
+    const unused = [
+      ['ColorF0Red', 403], ['ColorF1Green', 404], ['ColorF2Yellow', 405], ['ColorF3Blue', 406],
+      ...'0123456789'.split('').map((d) => [d, 48 + Number(d)]),
+    ]
+    for (const [key, keyCode] of unused) {
+      const event = new KeyboardEvent('keydown', { key, keyCode, bubbles: true, cancelable: true })
+      document.activeElement.dispatchEvent(event)
+      expect(event.defaultPrevented, key).toBe(false)
+    }
+
+    expect(handler).not.toHaveBeenCalled()
+    expect(document.activeElement.id).toBe('hero-play')
+  })
+})

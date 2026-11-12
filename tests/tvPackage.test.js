@@ -140,6 +140,19 @@ describe('pacote LG webOS', () => {
     expect(existsSync(join(outDir, 'index.html'))).toBe(true)
   })
 
+  it('recusa arquivo com nome de credencial ou chave privada embutida (regra da LG)', async () => {
+    const { prepareTvPackage } = await import('../scripts/package-tv.mjs')
+    const pack = (distDir) => () => prepareTvPackage({ platform: 'webos', distDir, outDir: mkdtempSync(join(tmpdir(), 'pulse-w-')), version: '1.0.0', env: {} })
+
+    const named = fakeDist()
+    writeFileSync(join(named, 'assets', 'tokenStore-abc.js'), '1')
+    expect(pack(named)).toThrow(/tokenStore-abc\.js/)
+
+    const keyed = fakeDist()
+    writeFileSync(join(keyed, 'assets', 'app.js'), 'const k = "-----BEGIN RSA PRIVATE KEY-----"')
+    expect(pack(keyed)).toThrow(/chave privada/i)
+  })
+
   it('recusa plataformas desconhecidas', async () => {
     const { prepareTvPackage } = await import('../scripts/package-tv.mjs')
 

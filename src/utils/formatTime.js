@@ -1,6 +1,7 @@
 /** Formata segundos como "mm:ss" ou "hh:mm:ss" ("00:00" para valores inválidos). */
 export function formatTime(sec) {
-  if (!sec || isNaN(sec) || sec < 0) return '00:00'
+  // isFinite: stream contínuo aberto como filme tem duração Infinity ("Infinity:NaN:NaN" na barra).
+  if (!sec || !isFinite(sec) || sec < 0) return '00:00'
   const s = Math.floor(sec)
   const h = Math.floor(s / 3600)
   const m = Math.floor((s % 3600) / 60)

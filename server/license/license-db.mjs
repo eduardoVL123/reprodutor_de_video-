@@ -142,6 +142,13 @@ export const COLUMN_MIGRATIONS = [
   'ALTER TABLE devices ADD COLUMN inbox_pub TEXT',
   // RFC-020: última vez que a consulta da tela perguntou ao Mercado Pago (cobre webhook perdido).
   'ALTER TABLE orders ADD COLUMN checked_at INTEGER',
+  // Conferência periódica do estorno das parcelas do cartão (auditoria 2026-11-11, item 5).
+  'ALTER TABLE mp_deliveries ADD COLUMN checked_at INTEGER',
+  // Índices das consultas por revenda, aparelho e parceiro (auditoria 2026-11-11, item 7). Aqui e não em MIGRATIONS
+  // porque `activations.reseller_id` nasce no ALTER acima.
+  'CREATE INDEX IF NOT EXISTS activations_reseller ON activations (reseller_id, id)',
+  'CREATE INDEX IF NOT EXISTS subscriptions_device ON subscriptions (device_code)',
+  'CREATE INDEX IF NOT EXISTS partner_cycle_entries_partner ON partner_cycle_entries (partner_id, cycle_start)',
 ]
 
 /**

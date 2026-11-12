@@ -165,6 +165,33 @@ export function createSubscriptionFlow({ db, now, mp, startFailed, declineChecks
     if (sub.status !== 'cancelled') await cancelSubscription(sub.id).catch((err) => console.warn(`[checkout] assinatura ${sub.id}: não cancelou a renovação (${err.message})`))
   }
 
+  /**
+   * Plano B do webhook do estorno da parcela (auditoria 2026-11-11, item 5): o mesmo ritmo da conferência dos pedidos
+   * (license-checkout-orders.mjs); `deliverInstallment` já é seguro repetir e revoga se houve estorno.
+   * @returns {Promise<number>} quantas parcelas foram conferidas
+   */
+  async function recheckInstallments({ windowMs, everyMs, batch }) {
+    const at = now()
+    const rows = (
+      await db
+        .prepare(
+          `SELECT m.mp_ref FROM mp_deliveries m WHERE m.mp_ref LIKE 'authorized_payment:%' AND m.delivered_at >= ? AND COALESCE(m.checked_at, 0) < ?
+           AND NOT EXISTS (SELECT 1 FROM mp_deliveries r WHERE r.mp_ref = 'refund:' || m.mp_ref) ORDER BY COALESCE(m.checked_at, 0) LIMIT ?`,
+        )
+        .bind(at - windowMs, at - everyMs, batch)
+        .all()
+    ).results
+    for (const row of rows) {
+      await db.prepare('UPDATE mp_deliveries SET checked_at = ? WHERE mp_ref = ?').bind(at, row.mp_ref).run()
+      try {
+        await deliverInstallment(row.mp_ref.slice('authorized_payment:'.length))
+      } catch (err) {
+        console.warn(`[checkout] ${row.mp_ref}: conferência de estorno falhou (${err.message}); tenta na próxima rodada`)
+      }
+    }
+    return rows.length
+  }
+
   const publicSubscription = (s) => ({
     id: s.id,
     deviceCode: s.device_code,
@@ -233,5 +260,5 @@ export function createSubscriptionFlow({ db, now, mp, startFailed, declineChecks
     return { cancelled: true }
   }
 
-  return { subscribe, syncPreapproval, deliverInstallment, listSubscriptions, cancelSubscription, cancelForPayer }
+  return { subscribe, syncPreapproval, deliverInstallment, recheckInstallments, listSubscriptions, cancelSubscription, cancelForPayer }
 }

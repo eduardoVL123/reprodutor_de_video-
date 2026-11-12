@@ -13,7 +13,8 @@ export const DEFAULT_MAX_SESSIONS = 100000
 // poll: cada TV consulta 30 vezes por minuto; 1200 deixa 40 TVs no mesmo IP (CGNAT, loja). O chute de código para em 'miss'.
 // createBlock: teto do /48 inteiro no IPv6. Só o /64 (10 por minuto) deixava quem tem um /48 (65 mil /64, túnel grátis)
 // lotar as 10 mil sessões em menos de um minuto (auditoria 2026-11-11, item 3). 60 cobre os vizinhos de um provedor.
-export const DEFAULT_LIMITS = { create: 10, createBlock: 60, poll: 1200, write: 30, miss: 20 }
+// missBlock: o mesmo teto do /48 para código errado do celular (auditoria 2026-11-11, item 9).
+export const DEFAULT_LIMITS = { create: 10, createBlock: 60, poll: 1200, write: 30, miss: 20, missBlock: 60 }
 export const WINDOW_MS = 60 * 1000
 export const MAX_BODY_BYTES = 4096
 export const MAX_PUB_CHARS = 128
@@ -185,7 +186,7 @@ export function networkKey(ip) {
 }
 
 /** Bloco /48 de uma chave IPv6 de networkKey ('2001:db8:aa:bb::/64' → '2001:db8:aa::/48'). */
-const blockKey = (key) => `${key.split(':').slice(0, 3).join(':')}::/48`
+export const blockKey = (key) => `${key.split(':').slice(0, 3).join(':')}::/48`
 
 /** Limitador de taxa em janela fixa por IP (1 minuto por padrão). */
 export function createLimiter(now, windowMs = WINDOW_MS) {
@@ -281,6 +282,7 @@ export function createPairCore(options = {}) {
 
   function notFound(ip, bucket = 'miss') {
     limiter.add(bucket, ip)
+    if (bucket === 'miss' && ip.endsWith('::/64')) limiter.add('missBlock', blockKey(ip))
     return fail(404, 'Código não encontrado ou expirado.')
   }
 
@@ -307,7 +309,7 @@ export function createPairCore(options = {}) {
   }
 
   function blockedPhoneCall(ip) {
-    const retry = limiter.retryAfter('miss', ip, limits.miss)
+    const retry = limiter.retryAfter('miss', ip, limits.miss) || (ip.endsWith('::/64') && limiter.retryAfter('missBlock', blockKey(ip), limits.missBlock))
     if (retry) {
       return fail(429, 'Muitas tentativas. Aguarde um minuto.', { 'Retry-After': String(retry) })
     }

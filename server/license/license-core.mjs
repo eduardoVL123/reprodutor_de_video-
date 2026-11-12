@@ -5,7 +5,7 @@
  * Do app chegam só deviceKey (hash), platform e o domínio da lista (G3); qualquer outro campo é ignorado.
  * Todos os horários vêm de now() do servidor (G4).
  */
-import { generateCode, createLimiter, readJsonBody, networkKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
+import { generateCode, createLimiter, readJsonBody, networkKey, blockKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
 import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText, validNonce } from './license-rules.mjs'
 import { createSigner } from './license-sign.mjs'
 import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry, hitLimit } from './license-db.mjs'
@@ -23,8 +23,19 @@ export const PLATFORMS = ['android', 'tizen', 'webos', 'desktop', 'web']
 // newDevicesPerDay (por rede) e newDevicesGlobalPerDay (serviço todo): cortam o ataque de criar aparelhos falsos para
 // inflar os ativos de um parceiro.
 // newDevicesPerIPv4Day: no Brasil o CGNAT põe milhares de clientes atrás de um IPv4; o /64 do IPv6 é de uma casa só.
-// shortcut: 300 por IPv4 é chute; se um provedor grande bater nele, subir (o teto geral de 3000 continua valendo).
-export const LIMITS = { hello: 30, access: 60, entry: 60, newDevicesPerDay: 20, newDevicesPerIPv4Day: 300, newDevicesGlobalPerDay: 3000 }
+// shortcut: 300 por IPv4 é chute; se um provedor grande bater nele, subir (o teto geral continua valendo).
+// newDevicesPerIPv6BlockDay: quem tem um /48 (65 mil /64, túnel grátis dá um) contornava o limite por /64 e esgotava o
+// teto geral, travando o teste de todo aparelho novo no dia (auditoria 2026-11-11, item 3). O teto geral subiu de 3000
+// para 20000 pelo mesmo motivo e para caber um dia de lançamento nas lojas de TV.
+export const LIMITS = {
+  hello: 30,
+  access: 60,
+  entry: 60,
+  newDevicesPerDay: 20,
+  newDevicesPerIPv4Day: 300,
+  newDevicesPerIPv6BlockDay: 300,
+  newDevicesGlobalPerDay: 20000,
+}
 const DEVICE_KEY = /^[A-Za-z0-9_-]{16,128}$/
 // Painéis de terceiros chamam a API pelo navegador (RFC-019): a chave vai em Authorization e a operação em Idempotency-Key.
 const LICENSE_CORS = { ...CORS_HEADERS, 'Access-Control-Allow-Headers': 'Content-Type, Authorization, Idempotency-Key' }
@@ -82,6 +93,9 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
       if (found) return found
       // No banco (não na memória do isolate): o limite vale para o serviço todo e sobrevive a reinícios.
       if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: ip.includes(':') ? limits.newDevicesPerDay : limits.newDevicesPerIPv4Day, windowMs: DAY_MS, now: now() }))) {
+        throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
+      }
+      if (attempt === 0 && ip.endsWith('::/64') && (await hitLimit(db, { bucket: 'deviceBlock', key: blockKey(ip), limit: limits.newDevicesPerIPv6BlockDay, windowMs: DAY_MS, now: now() }))) {
         throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
       }
       // Teto do serviço todo (auditoria RFC-025, item 3): muitas redes juntas não inflam os ativos de um parceiro sem

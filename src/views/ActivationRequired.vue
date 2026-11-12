@@ -35,7 +35,9 @@ const storeBuild = isStoreBuild()
 // Celular: o QR leria a própria tela; vira um botão que abre a mesma página de planos (RFC-023).
 const onPhone = isPhone()
 const suspended = computed(() => props.reason === 'suspended')
-const offline = computed(() => props.reason === 'offline')
+// 'checking': a lista ainda não teve nenhuma resposta do serviço (primeira abertura, lista nova); some ao responder.
+const firstCheck = computed(() => props.reason === 'checking')
+const offline = computed(() => props.reason === 'offline' || firstCheck.value)
 const pageUrl = computed(() => plansPageUrl(props.code))
 const displayUrl = computed(() => pageUrl.value.replace(/^https?:\/\//i, ''))
 const qr = computed(() => {
@@ -87,7 +89,11 @@ onBeforeUnmount(() => {
 
       <div class="min-w-0 max-w-[48rem]">
         <BrandMark :size="2.5" class="block mb-5 text-tv-accent" />
-        <template v-if="offline">
+        <template v-if="firstCheck">
+          <h1 id="activation-title" class="text-tv-xl font-bold text-white">Verificando a licença</h1>
+          <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">Um instante, estamos confirmando este aparelho.</p>
+        </template>
+        <template v-else-if="offline">
           <h1 id="activation-title" class="text-tv-xl font-bold text-white">Verifique a conexão</h1>
           <p class="mt-3 text-tv-sm text-neutral-300 leading-relaxed">
             Não foi possível confirmar a licença deste aparelho. Confira se a TV está conectada à internet e tente de novo.
@@ -127,8 +133,8 @@ onBeforeUnmount(() => {
           >
             Ver planos e ativar
           </button>
-          <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="!checking && $emit('retry')" :aria-busy="checking">
-            {{ checking ? 'Verificando…' : offline ? 'Tentar de novo' : storeBuild ? 'Verificar ativação' : 'Já paguei, verificar' }}
+          <button id="activation-retry" type="button" class="tv-btn min-w-[16rem]" :class="onPhone && !storeBuild && !suspended && !offline && code ? '' : 'tv-btn-primary'" @click="!checking && !firstCheck && $emit('retry')" :aria-busy="checking || firstCheck">
+            {{ checking || firstCheck ? 'Verificando…' : offline ? 'Tentar de novo' : storeBuild ? 'Verificar ativação' : 'Já paguei, verificar' }}
           </button>
           <button id="activation-lists" type="button" class="tv-btn min-w-[16rem]" @click="$emit('manage-lists')">
             Usar outra lista

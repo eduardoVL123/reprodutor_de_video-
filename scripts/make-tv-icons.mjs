@@ -149,6 +149,7 @@ const SPLASH_SIZES = {
   mdpi: [480, 320], hdpi: [800, 480], xhdpi: [1280, 720], xxhdpi: [1600, 960], xxxhdpi: [1920, 1280],
 }
 const SPLASH_BOX = 0.5 // símbolo com ~30% do menor lado da tela de abertura
+const STORE = 'docs/lojas/imagens'
 
 const OUTPUTS = [
   ['platforms/tizen/icon.png', { width: 117, height: 117 }],
@@ -165,6 +166,11 @@ const OUTPUTS = [
     [`${RES}/drawable-port-${name}/splash.png`, { width: h, height: w, boxScale: SPLASH_BOX }],
   ]),
   [`${RES}/drawable/splash.png`, { width: 480, height: 320, boxScale: SPLASH_BOX }],
+  // Imagens da ficha das lojas (docs/lojas/SAMSUNG-LG.md 2.2 e 3.3). A Samsung compõe o logo transparente sobre o fundo.
+  [`${STORE}/samsung-logo-1920x1080.png`, { width: 1920, height: 1080, shape: 'none', boxScale: 0.5 }],
+  [`${STORE}/samsung-fundo-1920x1080.png`, { width: 1920, height: 1080, boxScale: 0 }], // boxScale 0: só o grafite
+  [`${STORE}/samsung-icone-512x423.png`, { width: 512, height: 423, boxScale: 0.8 }],
+  [`${STORE}/lg-icone-400x400.png`, { width: 400, height: 400 }],
 ]
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

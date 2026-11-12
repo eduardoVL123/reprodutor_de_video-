@@ -77,6 +77,19 @@ describe('parentalStore', () => {
     expect(await parental.unlock('vod', CATS[1], '9999')).toBe(false)
   })
 
+  it('storage falhou ao ler: o que os pais esconderam não aparece; tudo fica bloqueado (auditoria 2026-11-11, item 15)', async () => {
+    const { useParentalStore } = await import('@/stores/parentalStore')
+    const { storage } = await import('@/services/storage')
+    const parental = useParentalStore()
+    const get = vi.spyOn(storage, 'get').mockRejectedValue(new Error('IndexedDB fora'))
+    await parental.load('p-erro')
+    get.mockRestore()
+    expect(CATS.map((c) => parental.statusOf('vod', c))).toEqual(['locked', 'locked', 'locked'])
+    expect(parental.blockedIds('vod', CATS)).toEqual(['1', '2', '3'])
+    await parental.load('p-erro') // leitura volta a funcionar: escolhas normais
+    expect(parental.statusOf('vod', CATS[0])).toBe('visible')
+  })
+
   it('trocar o PIN: precisa do atual, e o novo passa a valer', async () => {
     const { useParentalStore } = await import('@/stores/parentalStore')
     const parental = useParentalStore()

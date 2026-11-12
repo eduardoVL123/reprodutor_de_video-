@@ -42,6 +42,15 @@ describe('configuração do Cloudflare Workers (server/pair/wrangler.jsonc)', ()
     })
   })
 
+  it('limite por rede no Worker (PAIR_LIMIT): período aceito pelo Cloudflare e folga para TVs atrás de CGNAT', () => {
+    const parsed = JSON.parse(read(configFile).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
+    const binding = (parsed.ratelimits || []).find((r) => r.name === 'PAIR_LIMIT')
+    expect(binding).toBeDefined()
+    expect(binding.namespace_id).toMatch(/^\d+$/)
+    expect([10, 60]).toContain(binding.simple.period)
+    expect(binding.simple.limit).toBeGreaterThanOrEqual(1200) // o poll do hub aceita 1200/min por IP (40 TVs)
+  })
+
   it('Durable Object PairHub usa SQLite (exigência do plano grátis do Cloudflare)', () => {
     const parsed = JSON.parse(read(configFile).replace(/\/\*[\s\S]*?\*\/|\/\/.*/g, ''))
     expect(parsed.durable_objects).toBeDefined()

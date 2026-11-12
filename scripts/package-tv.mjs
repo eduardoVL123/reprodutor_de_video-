@@ -1,5 +1,5 @@
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 /**
@@ -24,6 +24,17 @@ function addHeadScripts(indexPath, scripts) {
   const tags = scripts.map((src) => `<script src="${src}"></script>`).join('')
   const html = readFileSync(indexPath, 'utf8')
   writeFileSync(indexPath, /<\/head>/i.test(html) ? html.replace(/<\/head>/i, `${tags}</head>`) : tags + html)
+}
+
+// A LG (App Self Checklist) recusa pacote com estes termos em nome de arquivo ou com chave privada embutida.
+const FORBIDDEN_NAME = /passw|pwd|credential|token/i
+function assertStoreSafe(dir) {
+  for (const file of readdirSync(dir, { recursive: true })) {
+    if (FORBIDDEN_NAME.test(basename(file))) throw new Error(`Nome de arquivo recusado pela loja: ${file}`)
+    if (/\.(js|html|css|json)$/.test(file) && /-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(readFileSync(join(dir, file), 'utf8'))) {
+      throw new Error(`Chave privada embutida em ${file}`)
+    }
+  }
 }
 
 function resolveValues(platform, version, env) {
@@ -53,6 +64,7 @@ export function prepareTvPackage({ platform, distDir, outDir, version, env = pro
   writeFileSync(join(outDir, spec.manifest), manifest)
   for (const file of spec.files) cpSync(join(platformDir, file), join(outDir, file))
   addHeadScripts(join(outDir, 'index.html'), spec.headScripts)
+  assertStoreSafe(outDir)
   return outDir
 }
 
