@@ -1,6 +1,6 @@
 {
   "name": "pulse-player",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "private": true,
   "description": "Reprodutor de mídia genérico (casca vazia) para Smart TVs Tizen e webOS",
   "type": "module",
