@@ -131,3 +131,33 @@ describe('CatalogBrowser — celular em pé (RFC-023)', () => {
     expect(document.querySelectorAll('[data-focus-row^="rail-"]').length > 0 ? 1 : 0).toBe(rails)
   })
 })
+
+describe('CatalogBrowser — barra de categorias no PC', () => {
+  const wheelOn = (bar, init) => {
+    const event = new WheelEvent('wheel', { bubbles: true, cancelable: true, ...init })
+    bar.dispatchEvent(event)
+    return event
+  }
+
+  it('a roda comum do mouse anda a barra para o lado quando as categorias não cabem', async () => {
+    wrapper = await setupRows()
+    const bar = document.querySelector('[data-focus-row="categories"]')
+    Object.defineProperty(bar, 'scrollWidth', { value: 2000, configurable: true })
+    Object.defineProperty(bar, 'clientWidth', { value: 800 })
+
+    const event = wheelOn(bar, { deltaY: 120 })
+
+    expect(bar.scrollLeft).toBe(120)
+    expect(event.defaultPrevented).toBe(true) // a página não rola junto
+  })
+
+  it('cabendo tudo, ou gesto lateral do touchpad, deixa o navegador cuidar', async () => {
+    wrapper = await setupRows()
+    const bar = document.querySelector('[data-focus-row="categories"]')
+    Object.defineProperty(bar, 'scrollWidth', { value: 800, configurable: true })
+    Object.defineProperty(bar, 'clientWidth', { value: 800 })
+    expect(wheelOn(bar, { deltaY: 120 }).defaultPrevented).toBe(false)
+    Object.defineProperty(bar, 'scrollWidth', { value: 2000, configurable: true })
+    expect(wheelOn(bar, { deltaX: 80, deltaY: 5 }).defaultPrevented).toBe(false)
+  })
+})
