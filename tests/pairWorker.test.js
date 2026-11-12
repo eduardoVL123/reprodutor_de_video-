@@ -141,6 +141,39 @@ describe('Worker: rotas da API (/v1/*) e sanitização de IP', () => {
   })
 })
 
+describe('Worker: limite por rede antes do Durable Object (auditoria 2026-11-11, item 4)', () => {
+  const post = (ip) =>
+    new Request('http://localhost/v1/sessions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'CF-Connecting-IP': ip },
+      body: JSON.stringify({ pub: 'B'.padEnd(87, 'A') }),
+      duplex: 'half',
+    })
+
+  it('estourou o limite: 429 sem acordar o Durable Object (a recusa não gasta a cota do hub)', async () => {
+    const { env, pairSpy } = createMockEnv()
+    env.PAIR_LIMIT = { limit: vi.fn(async () => ({ success: false })) }
+
+    const res = await worker.fetch(post('203.0.113.7'), env)
+
+    expect(res.status).toBe(429)
+    expect(res.headers.get('retry-after')).toBe('60')
+    expect(pairSpy).not.toHaveBeenCalled()
+  })
+
+  it('conta por rede: IPv4 inteiro, IPv6 pelo bloco /48 (trocar de endereço ou de /64 não escapa)', async () => {
+    const { env, pairSpy } = createMockEnv()
+    env.PAIR_LIMIT = { limit: vi.fn(async () => ({ success: true })) }
+
+    await worker.fetch(post('203.0.113.7'), env)
+    await worker.fetch(post('2001:db8:aa:bb::1'), env)
+    await worker.fetch(post('2001:db8:aa:cc::2'), env)
+
+    expect(env.PAIR_LIMIT.limit.mock.calls.map(([o]) => o.key)).toEqual(['203.0.113.7', '2001:db8:aa::/48', '2001:db8:aa::/48'])
+    expect(pairSpy).toHaveBeenCalledTimes(3)
+  })
+})
+
 describe('Worker: ativos estáticos e rota de código', () => {
   it('serve index.html em / e em /<código> com CSP', async () => {
     const { env } = createMockEnv()

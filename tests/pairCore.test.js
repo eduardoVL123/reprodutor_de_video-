@@ -354,4 +354,15 @@ describe('criação de sessões: ninguém lota o serviço trocando de /64 (audit
     expect((await create(core, '10.0.0.2')).status).toBe(201)
     expect(DEFAULT_MAX_SESSIONS).toBe(100000)
   })
+
+  it('chute de código: o /48 também tem teto de erros, trocar de /64 não multiplica as tentativas (item 9)', async () => {
+    const core = createPairCore()
+    const guess = (i) => core.handleApi(makeRequest('http://x/v1/sessions/ZZZZ22'), `2001:db8:aa:${i.toString(16)}::1`)
+    const statuses = []
+    for (let i = 0; i < 70; i++) statuses.push((await guess(i)).status)
+    expect(statuses.filter((s) => s === 404)).toHaveLength(60)
+    expect(statuses.slice(60).every((s) => s === 429)).toBe(true)
+    // Outro /48 segue livre
+    expect((await core.handleApi(makeRequest('http://x/v1/sessions/ZZZZ22'), '2001:db8:bb:1::1')).status).toBe(404)
+  })
 })

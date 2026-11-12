@@ -228,6 +228,14 @@ describe('API — sub-revendas', () => {
     expect(JSON.stringify(list)).not.toContain(res.body.key)
   })
 
+  it('no máximo 200 revendas abaixo de cada uma (auditoria 2026-11-11, item 16)', async () => {
+    for (let i = 0; i < 200; i++) {
+      await db.prepare("INSERT INTO resellers (parent_id, name, key_hash, created_at) VALUES (?, 'F', ?, 0)").bind(parent.id, `h${i}`).run()
+    }
+    const res = await api('POST', '/api/v1/sub-resellers', { name: 'Uma a mais' })
+    expect(res.status).toBe(409)
+  })
+
   it('repassa créditos: sai de um saldo e entra no outro, nunca cria crédito', async () => {
     const child = (await api('POST', '/api/v1/sub-resellers', { name: 'Filial' })).body
     const res = await api('POST', `/api/v1/sub-resellers/${child.id}/credits`, { amount: 4 })

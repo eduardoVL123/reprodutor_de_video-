@@ -23,6 +23,7 @@ const CODE = /^[A-Z0-9]{4,16}$/
 export const API_FAIL_LIMIT = 30
 export const API_FAIL_WINDOW_MS = 15 * 60 * 1000
 
+const MAX_CHILDREN = 200
 const before = (url) => Number(url.searchParams.get('before')) || null
 
 function requireIdempotency(key) {
@@ -79,7 +80,12 @@ export function createApiRoutes({ db, now, json, limiter, checkout, limitPerMinu
     [
       'POST',
       /^\/api\/v1\/sub-resellers$/,
-      async ({ reseller, body, now: at }) => json(201, await createReseller(db, { name: body.name, contact: body.contact, parentId: reseller.id, now: at })),
+      async ({ reseller, body, now: at }) => {
+        // Teto por revenda (auditoria 2026-11-11, item 16): uma chave não enche a tabela, e a listagem acima cabe numa resposta.
+        const { n } = await db.prepare('SELECT COUNT(*) AS n FROM resellers WHERE parent_id = ?').bind(reseller.id).first()
+        if (n >= MAX_CHILDREN) throw new ResellerError(409, `Limite de ${MAX_CHILDREN} revendas abaixo de você. Fale com o suporte.`)
+        return json(201, await createReseller(db, { name: body.name, contact: body.contact, parentId: reseller.id, now: at }))
+      },
     ],
     [
       'POST',

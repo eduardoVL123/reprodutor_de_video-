@@ -35,6 +35,9 @@ export const CHECKOUT_DB_LIMITS = {
   cardPerNetworkHour: 5,
   cardPerDeviceDay: 5,
   cardAllHour: 300,
+  // Cada Pix cria uma cobrança real no Mercado Pago; sem teto geral, trocar de rede IPv6 cria cobranças sem fim
+  // (auditoria 2026-11-11, item 8). Estourar pausa só o Pix novo por até 1 h; muito acima das vendas de hoje.
+  pixAllHour: 600,
 }
 const HOUR_MS = 60 * 60 * 1000
 const KINDS = ['device_annual', 'credits']
@@ -118,6 +121,7 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     const at = now()
     const checks = [{ bucket: 'checkout', key: who, limit: dbLimits.perNetworkHour, windowMs: HOUR_MS }]
     if (purchase.method === 'card') checks.push({ bucket: 'card', key: who, limit: dbLimits.cardPerNetworkHour, windowMs: HOUR_MS })
+    else checks.push({ bucket: 'pixAll', key: '*', limit: dbLimits.pixAllHour, windowMs: HOUR_MS })
     for (const check of checks) {
       if (await hitLimit(db, { ...check, now: at })) throw new CheckoutError(429, 'Muitas tentativas. Aguarde um pouco.')
     }
@@ -209,8 +213,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     return new CheckoutError(502, 'Não foi possível iniciar o pagamento agora. Tente de novo em instantes.')
   }
 
-  const { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds, warnStuckOrders } = createOrderFlow({ db, now, mp })
-  const { subscribe, syncPreapproval, deliverInstallment, listSubscriptions, cancelSubscription, cancelForPayer } = createSubscriptionFlow({ db, now, mp, startFailed, declineChecks })
+  const { subscribe, syncPreapproval, deliverInstallment, recheckInstallments, listSubscriptions, cancelSubscription, cancelForPayer } = createSubscriptionFlow({ db, now, mp, startFailed, declineChecks })
+  const { settle, confirm, status, listOrders, reprocessOrder, recheckRefunds, warnStuckOrders } = createOrderFlow({ db, now, mp, recheckInstallments })
 
   /** Cria o pedido e a cobrança. Cartão: a order já volta aprovada, recusada ou pedindo o desafio 3DS. */
   async function start(body, { resellerId = null, origin = '', who = '' } = {}) {

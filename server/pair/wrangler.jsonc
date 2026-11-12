@@ -16,6 +16,11 @@
       }
     ]
   },
+  // Limite por rede antes do Durable Object (worker.mjs). 1500/min: o hub aceita 1200 consultas/min por IP (40 TVs
+  // atrás do mesmo CGNAT) mais as chamadas dos celulares. Contagem por local do Cloudflare e aproximada (doc oficial).
+  "ratelimits": [
+    { "name": "PAIR_LIMIT", "namespace_id": "1701", "simple": { "limit": 1500, "period": 60 } }
+  ],
   "migrations": [
     {
       "tag": "v1",

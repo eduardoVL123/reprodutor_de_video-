@@ -5,6 +5,8 @@ import {
   PAGE_CSP,
   CODE_ALPHABET,
   CODE_LENGTH,
+  networkKey,
+  blockKey,
 } from './pair-core.mjs'
 
 const INTERNAL_IP_HEADER = 'x-internal-client-ip'
@@ -70,6 +72,20 @@ export default {
     // 2. Rotas da API (/v1/*) -> Durable Object singleton "hub"
     if (pathname.startsWith('/v1/')) {
       const clientIp = request.headers.get('CF-Connecting-IP') || '0.0.0.0'
+      // Antes do hub: o 429 de dentro dele já gastava a cota de requisições do Durable Object, e um IP só derrubava o
+      // pareamento de todas as TVs (auditoria 2026-11-11, item 4). Sem o binding (testes, wrangler antigo) segue direto.
+      if (env.PAIR_LIMIT) {
+        const net = networkKey(clientIp)
+        const { success } = await env.PAIR_LIMIT.limit({ key: net.endsWith('::/64') ? blockKey(net) : net })
+        if (!success) {
+          return withSecurityHeaders(
+            new Response(JSON.stringify({ error: 'Muitas tentativas. Aguarde um minuto.' }), {
+              status: 429,
+              headers: { 'Content-Type': 'application/json; charset=utf-8', 'Retry-After': '60', 'Cache-Control': 'no-store' },
+            })
+          )
+        }
+      }
       const cleanHeaders = new Headers(request.headers)
       cleanHeaders.delete(INTERNAL_IP_HEADER)
       cleanHeaders.set(INTERNAL_IP_HEADER, clientIp)

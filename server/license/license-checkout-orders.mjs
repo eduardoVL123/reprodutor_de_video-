@@ -21,7 +21,7 @@ const STUCK_PAID_MS = 30 * 60 * 1000
 // depois some da tela e o expurgo diário a apaga do banco (license-db.mjs, purgeExpired).
 export const KEY_VISIBLE_MS = 60 * 60 * 1000
 
-export function createOrderFlow({ db, now, mp }) {
+export function createOrderFlow({ db, now, mp, recheckInstallments }) {
   /** Statements que entregam o pedido e o marcam como entregue, no mesmo batch (tudo ou nada). */
   async function deliveryStatements(row, at) {
     const delivered = (delivery) =>
@@ -123,6 +123,11 @@ export function createOrderFlow({ db, now, mp }) {
     // Em centavos: "25.0" ou 25 no lugar de "25.00" é o mesmo valor pago.
     if (Math.round(Number(order.total_amount) * 100) !== row.amount_cents || (order.currency || order.currency_id) !== 'BRL') {
       console.warn(`[checkout] pedido ${row.id}: valor ou moeda não conferem; não entregue`)
+      // O cliente pagou: 'paid' entra no aviso de "pago sem entrega" e o dono decide no Reprocessar (auditoria 2026-11-11, item 6).
+      await db
+        .prepare("UPDATE orders SET status = 'paid', paid_at = COALESCE(paid_at, ?), mp_order_id = COALESCE(mp_order_id, ?) WHERE id = ? AND status IN ('pending', 'expired')")
+        .bind(now(), String(order.id), row.id)
+        .run()
       return
     }
     // Pix pago no limite do prazo pode já estar 'expired' aqui; o Mercado Pago é quem diz se foi pago.
@@ -313,7 +318,7 @@ export function createOrderFlow({ db, now, mp }) {
         console.warn(`[checkout] pedido ${row.id}: conferência de estorno falhou (${err.message}); tenta na próxima rodada`)
       }
     }
-    return rows.length
+    return rows.length + (recheckInstallments ? await recheckInstallments({ windowMs: REFUND_WINDOW_MS, everyMs: REFUND_RECHECK_MS, batch: REFUND_BATCH }) : 0)
   }
 
   /** Plano de robustez, item 3: pedido pago sem entrega não pode passar despercebido. @returns {Promise<number>} */
