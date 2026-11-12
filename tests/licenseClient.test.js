@@ -150,6 +150,33 @@ describe('identidade do aparelho', () => {
     delete window.PalmServiceBridge
   })
 
+  it('pasta de dados copiada de um PC ativado para outro: vale o ID da máquina, não a chave guardada (auditoria item 11)', async () => {
+    window.pulseDesktop = { machineId: async () => 'guid-pc-ativado' }
+    try {
+      const original = await (await import('@/services/deviceIdentity')).getDeviceKey()
+      vi.resetModules() // mesma pasta de dados (memory), outro PC
+      window.pulseDesktop = { machineId: async () => 'guid-outro-pc' }
+      const copy = await (await import('@/services/deviceIdentity')).getDeviceKey()
+      expect(copy).toMatch(/^[a-f0-9]{64}$/)
+      expect(copy).not.toBe(original)
+    } finally {
+      delete window.pulseDesktop
+    }
+  })
+
+  it('PC cujo ID faltou no primeiro boot: quando o ID volta, a chave aleatória já usada continua (não perde a ativação)', async () => {
+    window.pulseDesktop = { machineId: async () => '' }
+    try {
+      const first = await (await import('@/services/deviceIdentity')).getDeviceKey()
+      expect(first).toMatch(/^[a-f0-9]{48}$/) // aleatória
+      vi.resetModules()
+      window.pulseDesktop = { machineId: async () => 'guid-do-windows-123' }
+      expect(await (await import('@/services/deviceIdentity')).getDeviceKey()).toBe(first)
+    } finally {
+      delete window.pulseDesktop
+    }
+  })
+
   it('na Samsung usa o DUID quando a API da TV está carregada', async () => {
     window.tizen = {}
     window.webapis = { productinfo: { getDuid: () => 'DUID-XYZ' } }
@@ -209,6 +236,20 @@ describe('registro na tela de login (RFC-021)', () => {
 
 describe('bloqueio (G2: falha aberta)', () => {
   const LIST = { baseUrl: 'http://outra.com' }
+
+  it('lista sem nenhuma resposta ainda (app reinstalado): bloqueia "verificando" até o servidor responder (auditoria item 10)', async () => {
+    let answer
+    const gate = new Promise((resolve) => (answer = resolve))
+    setup({ fetchImpl: async () => (await gate, reply(200, { access: 'partner', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 })) })
+    const { useLicenseStore } = await import('@/stores/licenseStore')
+    const license = useLicenseStore()
+    expect(license.blockReason(LIST)).toBe('checking') // antes até de perguntar
+    const pending = license.refresh(LIST)
+    expect(license.blockReason(LIST)).toBe('checking') // servidor bloqueado no roteador: espera o timeout sem liberar
+    answer()
+    await pending
+    expect(license.blockReason(LIST)).toBe('')
+  })
 
   it('aparelho suspenso pelo dono (RFC-019) também bloqueia', async () => {
     setup({ fetchImpl: async () => reply(200, { access: 'suspended', code: 'QDU5NXY7', trialEndsAt: 1, activationEndsAt: null, serverTime: 2 }) })
@@ -282,15 +323,8 @@ describe('bloqueio (G2: falha aberta)', () => {
     const { useLicenseStore } = await import('@/stores/licenseStore')
     const license = useLicenseStore()
     await license.refresh(LIST)
-    expect(license.shouldBlock({ baseUrl: 'http://parceiro.com' })).toBe(false)
-  })
-
-  it('antes da primeira resposta nada bloqueia (a tela não pisca enquanto consulta)', async () => {
-    setup({ fetchImpl: () => new Promise(() => {}) })
-    const { useLicenseStore } = await import('@/stores/licenseStore')
-    const license = useLicenseStore()
-    license.refresh(LIST)
-    expect(license.shouldBlock(LIST)).toBe(false)
+    // A outra lista ainda não foi consultada: espera a resposta dela ('checking'), não herda o 'blocked'.
+    expect(license.blockReason({ baseUrl: 'http://parceiro.com' })).toBe('checking')
   })
 
   it('servidor fora do ar e esta lista nunca confirmada: bloqueia pedindo conexão (antes liberava para sempre)', async () => {

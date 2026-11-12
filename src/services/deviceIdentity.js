@@ -77,9 +77,9 @@ async function fallbackKey() {
 }
 
 /**
- * Chave estável do aparelho (64 caracteres hex). A primeira chave calculada fica guardada e vale nos boots seguintes:
- * na LG o ID do sistema às vezes demora mais que WEBOS_TIMEOUT_MS, e trocar de chave faria o servidor ver um aparelho
- * novo (cliente ativado bloqueado, ou teste de 7 dias de novo). Reinstalar apaga o guardado e recalcula pelo ID.
+ * Chave estável do aparelho (64 caracteres hex). Na LG a primeira chave calculada fica guardada e vale nos boots
+ * seguintes: o ID do sistema às vezes demora mais que WEBOS_TIMEOUT_MS, e trocar de chave faria o servidor ver um
+ * aparelho novo (cliente ativado bloqueado, ou teste de 7 dias de novo). Nas outras plataformas o ID é lido a cada boot.
  */
 export function getDeviceKey() {
   // Uma leitura só para quem chamar junto no primeiro boot: duas sorteavam chaves diferentes.
@@ -94,10 +94,20 @@ export function getDeviceKey() {
 
 async function resolveKey() {
   if (cached) return cached
-  const saved = await storage.get(STABLE_KEY)
-  if (typeof saved === 'string' && saved) return (cached = saved)
+  const stored = await storage.get(STABLE_KEY)
+  const saved = typeof stored === 'string' && stored ? stored : ''
+  // LG: o ID do sistema às vezes demora mais que o timeout; o guardado vale.
+  if (saved && devicePlatform() === 'webos') return (cached = saved)
   const id = await platformId()
-  cached = id && crypto.subtle ? await sha256Hex(`pulse-license:${id}`) : await fallbackKey()
-  await storage.set(STABLE_KEY, cached)
+  if (id && crypto.subtle) {
+    const fromId = await sha256Hex(`pulse-license:${id}`)
+    // O ID desta máquina vence o guardado: a pasta de dados copiada de um PC ativado não ativa outro (auditoria item 11).
+    // Exceção: o guardado é a chave aleatória deste app (o ID faltou no primeiro boot); trocar tiraria a ativação paga.
+    // shortcut: quem copiar uma pasta com chave aleatória ainda passa; raro (o ID quase nunca falta fora da LG).
+    cached = saved && saved !== fromId && saved === (await storage.get(FALLBACK_KEY)) ? saved : fromId
+  } else {
+    cached = saved || (await fallbackKey())
+  }
+  if (cached !== saved) await storage.set(STABLE_KEY, cached)
   return cached
 }

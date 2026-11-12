@@ -160,12 +160,14 @@ export const useLicenseStore = defineStore('license', () => {
 
   /**
    * Por que bloquear esta lista: '' (libera), 'offline' (sem confirmação recente: conecte e tente de novo) ou o
-   * acesso salvo que bloqueia ('blocked'/'suspended'). Antes da primeira resposta, nada bloqueia.
+   * acesso salvo que bloqueia ('blocked'/'suspended'). Antes da primeira resposta desta lista: 'checking'.
    */
   function blockReason(session) {
     if (!isLicenseEnabled() || isDemoSession(session)) return ''
     const confirmed = checkedAt.value > 0 && host.value === listHost(session)
-    if (!offline.value) return confirmed && BLOCKING.includes(access.value) ? access.value : ''
+    // Lista sem nenhuma resposta (app reinstalado, lista nova): antes liberava até a consulta dar timeout, e quem
+    // bloqueava o servidor no roteador dava play nesse intervalo a cada abertura (auditoria 2026-11-11, item 10).
+    if (!offline.value) return confirmed ? (BLOCKING.includes(access.value) ? access.value : '') : 'checking'
     if (!confirmed) return 'offline'
     const now = Date.now()
     if (now < lastSeen.value - CLOCK_SKEW_MS) return 'offline' // relógio voltado para trás depois de já ter andado
