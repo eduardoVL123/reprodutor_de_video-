@@ -40,9 +40,16 @@ export function markFtueAccepted() {
   ftueAccepted = true
 }
 
+// Armazenamento (IndexedDB) que não responde em WebView antigo deixava a abertura em tela vazia para sempre: os Fire TV
+// com Fire OS 6 foram reprovados na Amazon por não mostrar nada em 1 minuto. Passado o prazo, abre a tela mesmo assim.
+const STORAGE_WAIT_MS = 5000
+const orAfterWait = (promise, fallback) =>
+  Promise.race([promise, new Promise((resolve) => setTimeout(() => resolve(fallback), STORAGE_WAIT_MS))])
+
 router.beforeEach(async (to) => {
   if (ftueAccepted === null) {
-    ftueAccepted = await hasAcceptedFtue()
+    // Sem resposta, mostra o aviso legal (a opção segura); o próximo boot lê de novo.
+    ftueAccepted = await orAfterWait(hasAcceptedFtue(), false)
   }
 
   // CT 1.1 — sem aceite, nenhuma rota além de /ftue é acessível.
@@ -57,7 +64,7 @@ router.beforeEach(async (to) => {
 
   // Fase 2 — sessão persistida: rotas protegidas exigem login válido.
   const auth = useAuthStore()
-  await auth.hydrate()
+  await orAfterWait(auth.hydrate()) // sessão que não chega a tempo: segue para o login
 
   if (to.meta.requiresAuth && !auth.isAuthenticated) {
     return { name: 'login', replace: true }
