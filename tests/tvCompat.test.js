@@ -20,7 +20,7 @@ describe('fallback de gap em flexbox para TVs com Chromium < 84', () => {
   it('mantém o gap padrão e adiciona margens equivalentes em linha', async () => {
     const css = await buildCss('<div class="flex gap-4"></div>')
 
-    expect(css).toContain('.gap-4{gap:1rem;}')
+    expect(css).toContain('.gap-4{grid-gap:1rem;gap:1rem;}')
     expect(css).toContain('.no-flex-gap.gap-4.flex:not(.flex-col)>*+*{margin-left:1rem;}')
   })
 
@@ -33,15 +33,18 @@ describe('fallback de gap em flexbox para TVs com Chromium < 84', () => {
   it('gap-x e gap-y também existem (sem eles o Diagnóstico grudava "código" e "plataforma")', async () => {
     const css = await buildCss('<div class="flex flex-wrap gap-x-8 gap-y-1"></div>')
 
-    expect(css).toContain('.gap-x-8{column-gap:2rem;}')
-    expect(css).toContain('.gap-y-1{row-gap:0.25rem;}')
+    expect(css).toContain('.gap-x-8{grid-column-gap:2rem;column-gap:2rem;}')
+    expect(css).toContain('.gap-y-1{grid-row-gap:0.25rem;row-gap:0.25rem;}')
     expect(css).toContain('.no-flex-gap.gap-x-8.flex:not(.flex-col)>*+*{margin-left:2rem;}')
   })
 
-  it('não mexe em grades (grid gap tem suporte desde o Chromium 57)', async () => {
-    const css = await buildCss('<div class="grid grid-cols-4 gap-5"></div>')
+  it('grades: sai também grid-gap (no Chromium 57 a 65, Tizen 5.0, `gap` ainda não valia em grade)', async () => {
+    const css = await buildCss('<div class="grid grid-cols-4 gap-5 gap-x-2 gap-y-3"></div>')
 
-    expect(css).not.toContain('.no-flex-gap.gap-5.grid')
+    expect(css).toContain('.gap-5{grid-gap:1.25rem;gap:1.25rem;}')
+    expect(css).toContain('.gap-x-2{grid-column-gap:0.5rem;column-gap:0.5rem;}')
+    expect(css).toContain('.gap-y-3{grid-row-gap:0.75rem;row-gap:0.75rem;}')
+    expect(css).not.toContain('.no-flex-gap.gap-5.grid') // as margens são só para flex
   })
 })
 
@@ -84,6 +87,9 @@ describe('build para Smart TVs (arquivos file://)', () => {
     expect(js.includes('import.meta')).toBe(false)
     expect(js.includes('import(')).toBe(false)
     expect(js.includes('no-flex-gap')).toBe(true)
+    expect(js.includes('grid-gap:')).toBe(true) // o minificador não pode descartar o nome antigo (Tizen 5.0)
+    // Aviso de falha ao iniciar (tests/bootGuard.test.js): script comum, roda antes do bundle porque o bundle é `defer`.
+    expect(html).toContain('<script id="boot-guard">')
     expect(js.includes('Vue warn')).toBe(false) // build de produção do Vue
   }, 180000)
 })

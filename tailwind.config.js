@@ -4,22 +4,27 @@ import plugin from 'tailwindcss/plugin.js'
  * `gap` em flexbox só existe no Chromium 84+, e várias Smart TVs ainda rodam Chromium 63-79.
  * Este plugin substitui o utilitário `gap-*` do Tailwind: mantém `gap` e, sob `.no-flex-gap`
  * (classe posta no <html> por src/utils/compat.js quando o WebView não suporta), reproduz o
- * espaçamento com margens entre os filhos. Grades (`grid`) não precisam: o gap delas é antigo.
+ * espaçamento com margens entre os filhos.
+ * Grades (`grid`): no Chromium 57 a 65 (Tizen 5.0, TVs Samsung 2019) a propriedade ainda se chamava `grid-gap`;
+ * o nome antigo sai junto e os navegadores novos o tratam como sinônimo de `gap`.
  */
 const flexGapFallback = plugin(({ matchUtilities, theme }) => {
   matchUtilities(
     {
       gap: (value) => ({
+        gridGap: value,
         gap: value,
         '.no-flex-gap &.flex:not(.flex-col) > * + *': { marginLeft: value },
         '.no-flex-gap &.flex.flex-col > * + *': { marginTop: value },
       }),
       // Com o `gap` do core desligado, gap-x/gap-y precisam existir aqui também (antes não geravam CSS nenhum).
       'gap-x': (value) => ({
+        gridColumnGap: value,
         columnGap: value,
         '.no-flex-gap &.flex:not(.flex-col) > * + *': { marginLeft: value },
       }),
       'gap-y': (value) => ({
+        gridRowGap: value,
         rowGap: value,
         '.no-flex-gap &.flex.flex-col > * + *': { marginTop: value },
       }),

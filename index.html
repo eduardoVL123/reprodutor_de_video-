@@ -20,6 +20,52 @@
   </head>
   <body>
     <div id="app"></div>
+    <!--
+      Aviso quando o app não inicia (tests/bootGuard.test.js). Fica fora do bundle e em JavaScript antigo de propósito:
+      precisa rodar justamente quando o bundle não roda (WebView ou TV abaixo do Chromium 63, ou erro antes do Vue montar).
+      Se o app montar depois, o Vue limpa o #app e o aviso some sozinho.
+    -->
+    <script id="boot-guard">
+      ;(function () {
+        var shown = false
+        var detail = ''
+        function show() {
+          var app = document.getElementById('app')
+          if (shown || !app || app.firstChild) return
+          shown = true
+          var chrome = /Chrom(?:e|ium).([0-9]+)/.exec(navigator.userAgent || '')
+          var lines = [
+            ['Não foi possível iniciar o Pulse Player', 'font-size:2.4vmax;font-weight:bold;color:#fff'],
+            [
+              'Este aparelho pode estar com o navegador interno (WebView) desatualizado. Atualize o sistema do aparelho e abra o app de novo.',
+              'font-size:1.8vmax;margin-top:1.2em',
+            ],
+            [
+              'Detalhe: ' + (detail || 'o app não respondeu') + (chrome ? ' · Chromium ' + chrome[1] : ''),
+              'font-size:1.4vmax;margin-top:1.6em;color:#a3a3a3;word-break:break-word',
+            ],
+          ]
+          var box = document.createElement('div')
+          box.setAttribute('role', 'alert')
+          box.style.cssText =
+            'position:fixed;top:0;right:0;bottom:0;left:0;padding:5% 10%;box-sizing:border-box;' +
+            'display:flex;flex-direction:column;justify-content:center;' +
+            'font-family:sans-serif;line-height:1.35;text-align:center;color:#e5e5e5;background:#0b0f0c'
+          for (var i = 0; i < lines.length; i++) {
+            var p = document.createElement('p')
+            p.style.cssText = 'margin:0;' + lines[i][1]
+            p.appendChild(document.createTextNode(lines[i][0]))
+            box.appendChild(p)
+          }
+          app.appendChild(box)
+        }
+        window.addEventListener('error', function (event) {
+          detail = (event && event.message) || detail
+          setTimeout(show, 2000)
+        })
+        setTimeout(show, 15000)
+      })()
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

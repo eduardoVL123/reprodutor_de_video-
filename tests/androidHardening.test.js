@@ -97,3 +97,12 @@ describe('Android — nome do pacote por destino', () => {
     expect(publish).not.toContain('amazon')
   })
 })
+
+describe('Android — botão Voltar no Android 16+', () => {
+  // Com targetSdk 36, o Android 16 deixa de entregar KEYCODE_BACK à Activity (o Voltar "preditivo" vira o padrão).
+  // O app depende dessa tecla: a MainActivity a transforma em Escape para o JavaScript fechar player e diálogos.
+  it('pede ao sistema o Voltar antigo, que a MainActivity sabe tratar', () => {
+    expect(manifest).toMatch(/<application[^>]*android:enableOnBackInvokedCallback="false"/)
+    expect(activity).toContain('event.getKeyCode() == KeyEvent.KEYCODE_BACK')
+  })
+})
