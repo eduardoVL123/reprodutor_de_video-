@@ -184,24 +184,24 @@ const status = computed(() => {
   margin: 0 1rem;
   background: rgba(255, 255, 255, 0.07);
 }
-:global(html.is-phone) .acc-card {
+:global(html.is-phone .acc-card) {
   overflow: hidden;
 }
-:global(html.is-phone) .acc-title {
+:global(html.is-phone .acc-title) {
   font-size: 0.8rem;
 }
-:global(html.is-phone) .acc-row {
+:global(html.is-phone .acc-row) {
   height: 3.6rem;
   padding: 0 1rem;
   border-radius: 0;
   font-size: 1rem;
 }
-:global(html.is-phone) .acc-row svg {
+:global(html.is-phone .acc-row svg) {
   width: 1.4rem;
   height: 1.4rem;
   margin-right: 0.9rem;
 }
-:global(html.is-phone) .acc-hint {
+:global(html.is-phone .acc-hint) {
   font-size: 0.82rem;
 }
 </style>

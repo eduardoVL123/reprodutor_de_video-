@@ -88,6 +88,8 @@ describe('build para Smart TVs (arquivos file://)', () => {
     expect(js.includes('import(')).toBe(false)
     expect(js.includes('no-flex-gap')).toBe(true)
     expect(js.includes('grid-gap:')).toBe(true) // o minificador não pode descartar o nome antigo (Tizen 5.0)
+    // Nada além da escala da fonte no próprio <html> do celular (tests/scopedStyles.test.js: a página encolhia a ~20px).
+    expect(js).not.toMatch(/html\.is-phone\{[^}]*(width|height|overflow|padding|margin)/)
     // Aviso de falha ao iniciar (tests/bootGuard.test.js): script comum, roda antes do bundle porque o bundle é `defer`.
     expect(html).toContain('<script id="boot-guard">')
     expect(js.includes('Vue warn')).toBe(false) // build de produção do Vue
