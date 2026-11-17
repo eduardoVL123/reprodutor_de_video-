@@ -27,8 +27,9 @@ export async function exitApp() {
       window.tizen.application.getCurrentApplication().exit()
       return
     }
-    if (window.webOS && typeof window.webOS.platformBack === 'function') {
-      window.webOS.platformBack()
+    const lgBack = webosPlatformBack()
+    if (lgBack) {
+      lgBack()
       return
     }
     if (isWebOS()) {
@@ -48,6 +49,25 @@ export async function exitApp() {
  * O app consegue se fechar sozinho? Tizen, webOS e APK sim; no navegador do PC não (lá Voltar não pode
  * fechar a janela do usuário). Usado para só oferecer "Sair" onde ele funciona.
  */
+/**
+ * platformBack da LG: o da webOSTV.js, se carregada, ou o do PalmSystem que a TV injeta (a webOSTV.js só repassa
+ * para ele, por isso não vai no pacote). null fora da LG.
+ */
+function webosPlatformBack() {
+  if (window.webOS && typeof window.webOS.platformBack === 'function') return () => window.webOS.platformBack()
+  if (window.PalmSystem && typeof window.PalmSystem.platformBack === 'function') return () => window.PalmSystem.platformBack()
+  return null
+}
+
+/**
+ * Na LG, Voltar na tela inicial vai direto para o sistema, sem o nosso "Sair do Pulse Player?": o webOS 6+ mostra o
+ * próprio pop-up de sair e, nas versões 23-25, o App Self Checklist pede a tela Home. O platformBack faz o certo em cada
+ * versão; o nosso pop-up antes dele seria uma pergunta dobrada (docs/lojas/SAMSUNG-LG.md, seção 3.5).
+ */
+export function systemHandlesExit() {
+  return webosPlatformBack() !== null
+}
+
 export function canExitApp() {
   return !!(window.tizen && window.tizen.application) || isWebOS() || isNativeApp() || isDesktopApp()
 }
