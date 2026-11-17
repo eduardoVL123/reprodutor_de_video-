@@ -70,6 +70,9 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 > Foundation films (CC BY) and public test streams. The demo playlist never requires activation, so it keeps working
 > after the 7-day trial. Back on the home screen asks "Sair do Pulse Player?"; "Sair" closes the app.
 >
+> *(LG: troque a frase acima por "Back on the home screen calls the system platformBack()"; texto completo em
+> [`LG-ENVIO.md`](LG-ENVIO.md) seção 4.)*
+>
 > Parental control: categories with adult names start locked and stay closed until a PIN exists. To test it, open the
 > Movies, Series or TV tab, press **"Controle parental"** (only a padlock icon when the phone is upright), create a PIN (4 to 8 digits) and use it to open or hide
 > categories. Creating a new profile does not bypass it: profiles without their own choices follow the main profile. On phones and tablets, the privacy policy link is under **Conta → Política de privacidade**.
@@ -103,8 +106,9 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 
 ## 5. LG (respostas para o App Self Checklist)
 
-- **Tecla Voltar:** volta uma página; na tela de entrada mostra "Sair do Pulse Player?" (webOS 6+). Em webOS 5 ou
-  anterior a LG pede voltar ao launcher: com a biblioteca `webOSTV.js` incluída o app chama `webOS.platformBack()`.
+- **Tecla Voltar:** volta uma página; na tela de entrada chama `platformBack()` do sistema, sem o pop-up do app
+  (webOS 6+ mostra o pop-up de sair do sistema; webOS 23-25 vai para o Home). Respostas completas em
+  [`LG-ENVIO.md`](LG-ENVIO.md) seção 3.
 - **Teclas de navegação:** todas operáveis (setas, OK, Voltar; ponteiro do Magic Remote dá foco ao item sob ele).
 - **Conteúdo:** nenhum incluído; conta de teste não é necessária (lista de demonstração na seção 3).
 - **Rede:** aviso de sem conexão; erro claro com "Tentar novamente" no player.
@@ -118,7 +122,8 @@ Não use "IPTV", nomes de canais, emissoras, marcas de terceiros nem prometa con
 4. Toque um filme, avance, pause, Stop. Toque um canal. Abra a fila.
 5. No meio do vídeo aperte Home/Smart Hub, volte ao app: deve estar pausado no mesmo ponto.
 6. Tire o cabo de rede no meio do vídeo: aviso aparece; ligue de novo: aviso some e o vídeo volta.
-7. Na tela inicial aperte Voltar: aparece "Sair do Pulse Player?"; "Cancelar" volta, "Sair" fecha.
+7. Na tela inicial aperte Voltar: na Samsung aparece "Sair do Pulse Player?" ("Cancelar" volta, "Sair" fecha); na LG
+   aparece o pop-up de sair do próprio webOS ou a tela Home, conforme a versão.
 8. Volume, mudo e Exit do controle durante o vídeo.
 9. Deixe tocando 1 hora: sem travar nem fechar.
 
