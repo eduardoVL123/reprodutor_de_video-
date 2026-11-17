@@ -140,6 +140,14 @@ describe('pacote LG webOS', () => {
     expect(existsSync(join(outDir, 'index.html'))).toBe(true)
   })
 
+  it('declara o ACG do ID da TV (obrigatório no Seller Lounge para webOS 27+; o app lê o LGUDID para a licença)', () => {
+    const info = JSON.parse(readFileSync('platforms/webos/appinfo.json', 'utf8'))
+    const source = readFileSync('src/services/deviceIdentity.js', 'utf8')
+
+    expect(source).toContain('luna://com.webos.service.sm/deviceid/getIDs')
+    expect(info.requiredACG).toEqual(['deviceinfo.query'])
+  })
+
   it('recusa arquivo com nome de credencial ou chave privada embutida (regra da LG)', async () => {
     const { prepareTvPackage } = await import('../scripts/package-tv.mjs')
     const pack = (distDir) => () => prepareTvPackage({ platform: 'webos', distDir, outDir: mkdtempSync(join(tmpdir(), 'pulse-w-')), version: '1.0.0', env: {} })
