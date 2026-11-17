@@ -17,6 +17,9 @@
         usesCleartextTraffic: servidores de mídia de usuários costumam ser só http://, então o
         tráfego sem TLS precisa continuar permitido. allowBackup=false: o IndexedDB guarda as
         credenciais cifradas das listas e não deve ir para o backup do Google.
+        enableOnBackInvokedCallback=false: com targetSdk 36, o Android 16 deixa de entregar a tecla Voltar
+        (KEYCODE_BACK) à Activity, e a MainActivity depende dela para o JavaScript fechar player e diálogos.
+        shortcut: opção temporária do Android; ao subir o targetSdk, tratar o Voltar pelo evento backButton do Capacitor.
     -->
     <application
         android:allowBackup="false"
@@ -27,6 +30,7 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         android:usesCleartextTraffic="true"
+        android:enableOnBackInvokedCallback="false"
         android:hardwareAccelerated="true">
 
         <activity
