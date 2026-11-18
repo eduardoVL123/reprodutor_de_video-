@@ -117,8 +117,10 @@ para um reprodutor sem conteúdo. **Perguntar no 1:1 Q&A antes de enviar**, cita
 ### 3.1 Pacote 🟡
 
 - [`appinfo.json`](../../platforms/webos/appinfo.json) está coerente: id `com.pulseplayer.app`, 1920×1080,
-  ícones 80×80 e 130×130 no pacote. Gerar com `npm run build:webos` + `ares-package build/webos` (mesmas variáveis do
-  item 2.1).
+  ícones 80×80 e 130×130 no pacote, e `requiredACG: ["deviceinfo.query"]` (o app lê o LGUDID; obrigatório no Seller
+  Lounge para webOS 27+).
+- O `.ipk` de loja sai do CI (artefato **lg-webos**), com as mesmas variáveis do AAB. Kit de envio completo:
+  [`LG-ENVIO.md`](LG-ENVIO.md).
 - Piso real: Chromium 63 ([`vite.config`](../../vite.config.js) linha 32) = **webOS 5.0 (2020) em diante**. No Seller
   Lounge, não marcar versões anteriores.
 
@@ -159,9 +161,10 @@ Hoje o app mostra o próprio "Sair do Pulse Player?" e, ao confirmar, fecha com 
 a biblioteca `webOSTV.js` não está no pacote (`headScripts: []` em
 [`package-tv.mjs:19`](../../scripts/package-tv.mjs)), ao contrário do que diz `PUBLICACAO.md:107`.
 
-Decisão recomendada: incluir `webOSTV.js` e, **só na LG**, trocar o nosso pop-up por `webOS.platformBack()` direto na
-tela de entrada. Aí quem decide entre pop-up e Home é o próprio sistema, e ficamos certos nas duas leituras da regra.
-Validar na TV antes de enviar.
+**Feito (2026-11-17):** na LG, Voltar na tela de entrada chama `platformBack()` direto, sem o nosso pop-up
+(`systemHandlesExit` em [`platform.js`](../../src/services/platform.js)). Não precisou da `webOSTV.js`: o
+`platformBack` dela só repassa para o `PalmSystem`, que a TV já injeta. Quem decide entre pop-up e Home é o sistema.
+Falta validar numa TV.
 
 ### 3.6 Identificador do aparelho
 
@@ -226,7 +229,7 @@ Se a resposta à pergunta 2 for "sem URL", a tela de ativação do build de loja
 
 | # | Mudança | Por quê |
 |---|---|---|
-| 1 | Incluir `webOSTV.js` no pacote webOS e usar `platformBack()` na tela de entrada | 3.5 |
+| 1 | ~~Usar `platformBack()` na tela de entrada da LG~~ feito, pelo `PalmSystem` (sem a `webOSTV.js`) | 3.5 |
 | 2 | Corrigir o que o teste em TV achar no ponteiro/roda do Magic Remote | 3.4 |
 | 3 | ~~Gerar as imagens de loja em `npm run icons`~~ feito: [`imagens/`](imagens) (logo e fundo 1920×1080, 512×423, LG 400×400). Falta a imagem de fundo da Samsung e as capturas em **JPG** (o script só escreve PNG) | 2.2 e 3.3 |
 | 4 | ~~Guarda do pacote~~ feito: `package-tv.mjs` falha se houver `password`/`token`/`credential` em nome de arquivo ou chave privada no bundle | 3.4 |

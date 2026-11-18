@@ -1,12 +1,13 @@
 <script setup>
 import { ref, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import BrandMark from '@/components/BrandMark.vue'
-import { canExitApp, exitApp } from '@/services/platform'
+import { canExitApp, exitApp, systemHandlesExit } from '@/services/platform'
 import { pushFocusScope, registerBackHandler, setExitHandler } from '@/utils/spatialNavigation'
 
 /**
- * "Sair do Pulse Player?" ao apertar Voltar na tela inicial: Samsung e LG (webOS 6+) exigem a confirmação
- * e só fecham o app no "Sim". O foco começa em "Cancelar" para um Voltar a mais não fechar o app sem querer.
+ * "Sair do Pulse Player?" ao apertar Voltar na tela inicial: a Samsung exige a confirmação e só fecha o app no "Sim".
+ * O foco começa em "Cancelar" para um Voltar a mais não fechar o app sem querer. Na LG quem pergunta é o sistema
+ * (platformBack, ver systemHandlesExit), então aqui não aparece.
  */
 const open = ref(false)
 const rootEl = ref(null)
@@ -48,7 +49,7 @@ function close() {
 }
 
 onMounted(() => {
-  if (canExitApp()) unregisterExit = setExitHandler(ask)
+  if (canExitApp() && !systemHandlesExit()) unregisterExit = setExitHandler(ask)
 })
 
 onBeforeUnmount(() => {

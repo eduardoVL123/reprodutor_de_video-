@@ -52,7 +52,20 @@ describe('platform.exitApp', () => {
     expect(platformBack).toHaveBeenCalledTimes(1)
   })
 
-  it('fecha a janela no webOS sem a biblioteca webOSTV.js', async () => {
+  // A webOSTV.js não vai no pacote: o platformBack dela só repassa para o PalmSystem, que a TV já injeta.
+  it('usa o PalmSystem.platformBack da TV LG, sem a biblioteca webOSTV.js', async () => {
+    const platformBack = vi.fn()
+    const close = vi.spyOn(window, 'close').mockImplementation(() => {})
+    window.PalmSystem = { platformBack }
+    const { exitApp } = await import('@/services/platform')
+
+    await exitApp()
+
+    expect(platformBack).toHaveBeenCalledTimes(1)
+    expect(close).not.toHaveBeenCalled()
+  })
+
+  it('fecha a janela no webOS sem platformBack nenhum', async () => {
     window.PalmSystem = {}
     const close = vi.spyOn(window, 'close').mockImplementation(() => {})
     const { exitApp } = await import('@/services/platform')
@@ -214,6 +227,24 @@ describe('platform — Picture-in-Picture (pop-up no Android)', () => {
 
     expect(stop).toBeTypeOf('function')
     expect(() => stop()).not.toThrow()
+  })
+})
+
+describe('platform.systemHandlesExit (LG: o sistema decide entre pop-up de sair e tela Home)', () => {
+  it('só na LG com platformBack; Samsung, APK e navegador usam o nosso pop-up', async () => {
+    const { systemHandlesExit } = await import('@/services/platform')
+
+    expect(systemHandlesExit()).toBe(false)
+    window.tizen = { application: {} }
+    expect(systemHandlesExit()).toBe(false)
+    delete window.tizen
+    window.PalmSystem = {}
+    expect(systemHandlesExit()).toBe(false)
+    window.PalmSystem = { platformBack: () => {} }
+    expect(systemHandlesExit()).toBe(true)
+    delete window.PalmSystem
+    window.webOS = { platformBack: () => {} }
+    expect(systemHandlesExit()).toBe(true)
   })
 })
 
