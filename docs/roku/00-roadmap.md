@@ -60,7 +60,8 @@ bsconfig.json  package.json (scripts roku:*)
 
 Ferramentas: BrighterScript 0.73.x, bslint, Rooibos 5.x, roku-deploy 3.x, roku-test-automation 2.x
 (`research/stack-research.md`, "Ferramentas"). Scripts novos no `package.json` raiz: `roku:build`, `roku:lint`,
-`roku:test`, `roku:deploy`, `roku:e2e`.
+`roku:test` (Rooibos no simulador brs-engine, sem aparelho), `roku:test:device`, `roku:deploy`, `roku:e2e`.
+O simulador não substitui o aparelho para vídeo, cripto (`roRSA` é simulado) e desempenho.
 
 ## Fases
 

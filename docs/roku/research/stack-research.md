@@ -83,6 +83,7 @@ Nenhuma biblioteca ECC em BrightScript puro encontrada; desempenho de aritmétic
 | roku-deploy | 3.18.4 | sideload/pacote por CLI (CI) | https://github.com/rokucommunity/roku-deploy |
 | roku-test-automation | 2.2.2 | e2e via Node | https://github.com/rokucommunity/roku-test-automation |
 | ropm | 0.11.11 | pacotes | https://github.com/rokucommunity/ropm |
+| brs-engine (`brs-node` + `brs-scenegraph`) | 2.7.0 / 0.7.0 | simulador: roda os testes Rooibos no PC e no CI sem aparelho; `roRSA` e vídeo são simulados (não servem para os spikes) | https://github.com/lvcabral/brs-engine/blob/master/docs/rooibos-testing.md |
 | Extensão VS Code BrightScript Language | v3.0.1 | debug | https://github.com/rokucommunity/vscode-brightscript-language |
 
 Descartados: maestro-roku (parado desde 2025-06), roku-requests (parado), Roku WebDriver no GitHub (arquivado, mudou para

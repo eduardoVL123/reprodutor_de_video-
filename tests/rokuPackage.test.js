@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { checkSize, MAX_PACKAGE_BYTES } from '../scripts/roku.mjs'
+import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed } from '../scripts/roku.mjs'
 
 const manifest = Object.fromEntries(
   readFileSync('roku/manifest', 'utf8')
@@ -32,6 +32,17 @@ describe('app Roku — manifest e ativos exigidos pela loja', () => {
 
   it('splash usa o fundo grafite da marca', () => {
     expect(manifest.splash_color).toBe('#0B0F0C')
+  })
+})
+
+describe('app Roku — resultado dos testes Rooibos no simulador', () => {
+  it.each([
+    ['RESULT: Success\n[Rooibos Result]: PASS\n[Rooibos Shutdown]', true],
+    ['RESULT: Fail\n[Rooibos Result]: FAIL\n[Rooibos Shutdown]', false],
+    ['>>>>>> It: trava aqui', false], // travou ou quebrou antes do relatório
+    ['', false],
+  ])('%j → passou=%s', (output, passed) => {
+    expect(rooibosPassed(output)).toBe(passed)
   })
 })
 

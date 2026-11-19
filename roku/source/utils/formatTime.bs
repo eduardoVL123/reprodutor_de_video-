@@ -25,14 +25,13 @@ namespace utils
         return n.toStr()
     end function
 
+    ' Pela interface, não pelo nome do tipo: um inteiro guardado em array/objeto vira "roInteger", não "Integer".
     function isNumber(value as dynamic) as boolean
-        t = type(value)
-        return t = "Integer" or t = "roInt" or t = "Float" or t = "roFloat" or t = "Double" or t = "roDouble" or t = "LongInteger" or t = "roLongInteger"
+        return GetInterface(value, "ifInt") <> invalid or GetInterface(value, "ifFloat") <> invalid or GetInterface(value, "ifDouble") <> invalid or GetInterface(value, "ifLongInt") <> invalid
     end function
 
     function isString(value as dynamic) as boolean
-        t = type(value)
-        return t = "String" or t = "roString"
+        return GetInterface(value, "ifString") <> invalid
     end function
 
 end namespace

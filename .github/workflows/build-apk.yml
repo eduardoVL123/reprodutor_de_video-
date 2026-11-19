@@ -262,11 +262,12 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # App Roku (docs/roku/): BrighterScript compila, bslint valida e o pacote não pode passar de 4 MB (certificação).
-  # Os testes Rooibos rodam no aparelho (npm run roku:test com ROKU_HOST), não aqui.
+  # App Roku (docs/roku/): BrighterScript compila, bslint valida, o pacote não pode passar de 4 MB (certificação) e os
+  # testes Rooibos rodam no simulador brs-engine. O que depende de hardware (vídeo, cripto) só vale no aparelho.
   roku:
     name: Pacote Roku (.zip)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -287,8 +288,8 @@ jobs:
       - name: Build e limite de 4 MB
         run: npm run roku:build
 
-      - name: Compilar pacote de testes (Rooibos)
-        run: npx bsc --project bsconfig.test.json
+      - name: Testes Rooibos no simulador
+        run: npm run roku:test
 
       - name: Enviar pacote Roku
         uses: actions/upload-artifact@v4

@@ -9,7 +9,10 @@
     "showOnlyFailures": false,
     "catchCrashes": true,
     "failFast": false,
-    "sendHomeOnFinish": false,
+    "sendHomeOnFinish": true,
+    "keepAppOpen": false,
+    "colorizeOutput": false,
+    "reporters": ["console"],
     "lineWidth": 70
   }
 }
