@@ -1,5 +1,77 @@
+import "pkg:/source/nav/nav.bs"
+
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
     m.top.backgroundUri = ""
-    m.top.setFocus(true)
+    m.screens = m.top.findNode("screens")
+    pushScreen(CreateObject("roSGNode", "HomeScreen"))
+end sub
+
+' Abre uma tela por cima da atual; a anterior fica escondida e volta com o Voltar.
+sub pushScreen(screen as object)
+    current = topScreen()
+    if current <> invalid then current.visible = false
+    m.screens.appendChild(screen)
+    screen.visible = true
+    screen.setFocus(true)
+end sub
+
+sub popScreen()
+    count = m.screens.getChildCount()
+    if count <= 1 then return
+    m.screens.removeChildIndex(count - 1)
+    focusTopScreen()
+end sub
+
+function topScreen() as dynamic
+    count = m.screens.getChildCount()
+    if count = 0 then return invalid
+    return m.screens.getChild(count - 1)
+end function
+
+sub focusTopScreen()
+    current = topScreen()
+    if current = invalid then return
+    current.visible = true
+    current.setFocus(true)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press or key <> "back" then return false
+    action = nav.onBack({ stackSize: m.screens.getChildCount(), dialogOpen: m.top.dialog <> invalid })
+    if action = "pop" then
+        popScreen()
+    else if action = "askExit" then
+        askExit()
+    else if action = "closeDialog" then
+        closeDialog()
+    end if
+    return true
+end function
+
+sub askExit()
+    dialog = CreateObject("roSGNode", "StandardMessageDialog")
+    dialog.title = nav.EXIT_TITLE
+    dialog.buttons = nav.exitButtons()
+    dialog.observeField("buttonSelected", "onExitButton")
+    ' O próprio diálogo fecha com Voltar/Home e avisa em wasClosed.
+    dialog.observeField("wasClosed", "onDialogClosed")
+    m.top.dialog = dialog
+end sub
+
+sub onExitButton(event as object)
+    if nav.onExitButton(event.getData()) = "exit" then
+        m.top.exitApp = true
+    else
+        closeDialog()
+    end if
+end sub
+
+sub closeDialog()
+    if m.top.dialog <> invalid then m.top.dialog.close = true
+end sub
+
+sub onDialogClosed()
+    m.top.dialog = invalid
+    focusTopScreen()
 end sub

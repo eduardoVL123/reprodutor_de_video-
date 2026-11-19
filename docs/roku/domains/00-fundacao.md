@@ -1,5 +1,9 @@
 # D0 — Fundação Roku (projeto, build, foco, Voltar/Sair)
 
+**Status (2026-11-19)**: passos 2, 3 e 4 feitos — projeto `roku/` com CI e testes Rooibos no simulador, skill
+`.claude/skills/roku-brightscript/`, `MainScene` com pilha de telas e "Sair do Pulse Player?" (`roku/source/nav/nav.bs`),
+conferida no simulador via ECP. Passo 1 (conta Roku e spikes em aparelho) pendente.
+
 ## Estado atual
 - Boot: `src/main.js:1-18`; rotas `src/router/index.js:9-28`; overlays globais `src/App.vue:2-5`.
 - Navegação: `src/utils/spatialNavigation.js` (1017 LOC) — prioridade de teclas L5-10, pilha de Voltar
