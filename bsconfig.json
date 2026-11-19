@@ -1,0 +1,9 @@
+{
+  "rootDir": "roku",
+  "files": ["manifest", "source/**/*", "components/**/*", "images/**/*", "!**/*.spec.bs"],
+  "stagingFolderPath": "build/roku/staging",
+  "outFile": "build/roku/pulse-roku.zip",
+  "retainStagingDir": true,
+  "autoImportComponentScript": true,
+  "createPackage": true
+}

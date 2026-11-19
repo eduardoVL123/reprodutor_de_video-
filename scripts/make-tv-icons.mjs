@@ -155,6 +155,11 @@ const OUTPUTS = [
   ['platforms/tizen/icon.png', { width: 117, height: 117 }],
   ['platforms/webos/icon.png', { width: 80, height: 80 }],
   ['platforms/webos/largeIcon.png', { width: 130, height: 130 }],
+  // Roku (manifest: mm_icon_focus_* e splash_screen_*; tamanhos da doc channel-manifest).
+  ['roku/images/icon_focus_fhd.png', { width: 540, height: 405, boxScale: 0.6 }],
+  ['roku/images/icon_focus_hd.png', { width: 290, height: 218, boxScale: 0.6 }],
+  ['roku/images/splash_fhd.png', { width: 1920, height: 1080, boxScale: SPLASH_BOX }],
+  ['roku/images/splash_hd.png', { width: 1280, height: 720, boxScale: SPLASH_BOX }],
   ...DENSITIES.flatMap(([name, k]) => [
     [`${RES}/mipmap-${name}/ic_launcher.png`, { width: 48 * k, height: 48 * k, shape: 'rounded' }],
     [`${RES}/mipmap-${name}/ic_launcher_round.png`, { width: 48 * k, height: 48 * k, shape: 'circle' }],

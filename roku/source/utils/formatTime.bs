@@ -1,0 +1,38 @@
+' Port de src/utils/formatTime.js (casos em tests/formatTime.test.js e roku/source/utils/formatTime.spec.bs).
+namespace utils
+
+    ' Formata segundos como "mm:ss" ou "hh:mm:ss" ("00:00" para valores inválidos).
+    function formatTime(sec as dynamic) as string
+        ' NaN é diferente de si mesmo; Infinity - Infinity vira NaN (stream contínuo aberto como filme).
+        if not utils.isNumber(sec) or sec <> sec or sec - sec <> 0 or sec <= 0 then return "00:00"
+        s = Int(sec)
+        h = s \ 3600
+        m = (s mod 3600) \ 60
+        remS = s mod 60
+        if h > 0 then return utils.pad2(h) + ":" + utils.pad2(m) + ":" + utils.pad2(remS)
+        return utils.pad2(m) + ":" + utils.pad2(remS)
+    end function
+
+    ' Duração em texto vinda do servidor; só zeros ("00:00:00") é o "não sei" dele e vira "".
+    function durationLabel(text as dynamic) as string
+        if not utils.isString(text) then return ""
+        if CreateObject("roRegex", "[1-9]", "").isMatch(text) then return text
+        return ""
+    end function
+
+    function pad2(n as integer) as string
+        if n < 10 then return "0" + n.toStr()
+        return n.toStr()
+    end function
+
+    function isNumber(value as dynamic) as boolean
+        t = type(value)
+        return t = "Integer" or t = "roInt" or t = "Float" or t = "roFloat" or t = "Double" or t = "roDouble" or t = "LongInteger" or t = "roLongInteger"
+    end function
+
+    function isString(value as dynamic) as boolean
+        t = type(value)
+        return t = "String" or t = "roString"
+    end function
+
+end namespace

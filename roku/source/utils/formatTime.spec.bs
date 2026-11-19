@@ -1,0 +1,53 @@
+' Mesmos casos de tests/formatTime.test.js.
+namespace tests
+
+    @suite("formatTime")
+    class FormatTimeTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("formatTime")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("formata segundos")
+        @params(0, "00:00")
+        @params(5, "00:05")
+        @params(65, "01:05")
+        @params(3600, "01:00:00")
+        @params(3725.9, "01:02:05")
+        function _(seconds, expected)
+            m.assertEqual(utils.formatTime(seconds), expected)
+        end function
+
+        @it("devolve 00:00 para valor inválido")
+        @params(-1)
+        @params(invalid)
+        @params("abc")
+        function _(value)
+            m.assertEqual(utils.formatTime(value), "00:00")
+        end function
+
+        @it("devolve 00:00 para NaN e Infinity")
+        function _()
+            infinity = 1e30 * 1e30 * 1e30
+            m.assertEqual(utils.formatTime(infinity), "00:00")
+            m.assertEqual(utils.formatTime(infinity - infinity), "00:00")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("durationLabel — duração vinda do servidor")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("zeros são o 'não sei' do servidor")
+        @params("00:00:00", "")
+        @params("0:00", "")
+        @params("", "")
+        @params(invalid, "")
+        @params("01:42:10", "01:42:10")
+        @params("45 min", "45 min")
+        function _(text, expected)
+            m.assertEqual(utils.durationLabel(text), expected)
+        end function
+
+    end class
+
+end namespace

@@ -1,0 +1,5 @@
+sub init()
+    m.top.backgroundColor = "0x0B0F0CFF"
+    m.top.backgroundUri = ""
+    m.top.setFocus(true)
+end sub

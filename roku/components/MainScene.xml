@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Cena raiz. Por enquanto só a marca; as telas entram pela pilha de navegação (docs/roku/domains/00-fundacao.md, passo 4). -->
+<component name="MainScene" extends="Scene">
+    <children>
+        <Label id="title" text="Pulse Player" color="0xB8F000FF" width="1920" translation="[0, 470]" horizAlign="center">
+            <Font role="font" uri="font:BoldSystemFontFile" size="72" />
+        </Label>
+        <Label id="status" text="Em construção" color="0xFFFFFFFF" width="1920" translation="[0, 570]" horizAlign="center">
+            <Font role="font" uri="font:SystemFontFile" size="32" />
+        </Label>
+    </children>
+</component>
