@@ -15,6 +15,10 @@ domínio antes de começar e siga os passos dele.
 3. Rode `npm run roku:test` e veja falhar; só então escreva o `.bs`.
 4. No topo do `.bs`, uma linha dizendo de onde veio: `' Port de src/utils/x.js (casos em tests/x.test.js)`.
 5. Mensagens para o usuário são as mesmas do app web (português, mesmo texto).
+6. Confira o valor esperado rodando o JS original (`node -e`) quando o teste Vitest não cobrir o caso.
+
+Rooibos: todo `@it` precisa de um `@describe` antes; não existe `assertNotContains` para texto
+(use `m.assertTrue(texto.instr("x") < 0)`); helpers de tipo ficam em `roku/source/utils/types.bs`.
 
 ## Arquitetura (não quebrar)
 

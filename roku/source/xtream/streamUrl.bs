@@ -1,0 +1,81 @@
+' Port de src/services/streamUrl.js (casos em tests/streamUrl.test.js e roku/source/xtream/streamUrl.spec.bs).
+'
+'   live:   <base>/live/<user>/<pass>/<stream_id>.m3u8   (alternativo: .ts)
+'   vod:    <base>/movie/<user>/<pass>/<stream_id>.<ext> (alternativo: direct_source, mp4 ou m3u8, mesma base)
+'   series: <base>/series/<user>/<pass>/<stream_id>.<ext>
+'
+' SEGURANÇA: as URLs contêm usuário e senha. NUNCA exibir puras; usar net.maskSecrets() em diagnóstico.
+namespace xtream
+
+    ' params: { apiBase, credentials: { username, password } | invalid, section: "live"|"vod"|"series", item }
+    ' Devolve { primaryUrl, fallbackUrl, isHls, containerExtension, section } ou invalid se faltar dado.
+    function buildStreamUrl(params as object) as dynamic
+        item = params.item
+        section = params.section
+
+        ' Item da lista M3U: toca a URL direta, sem depender de credenciais Xtream.
+        if utils.isObject(item) and utils.isString(item.directUrl) and item.directUrl <> "" then
+            direct = item.directUrl
+            isHls = direct.instr(".m3u8") >= 0
+            extMatch = CreateObject("roRegex", "\.([a-zA-Z0-9]{3,4})(\?.*)?$", "").match(direct)
+            ext = "mp4"
+            if isHls then ext = "m3u8"
+            if extMatch.count() > 1 then ext = LCase(extMatch[1])
+            return { primaryUrl: direct, fallbackUrl: invalid, isHls: isHls, containerExtension: ext, section: section }
+        end if
+
+        base = CreateObject("roRegex", "/+$", "").replaceAll(utils.textOr(params.apiBase, ""), "")
+        credentials = params.credentials
+        username = ""
+        password = ""
+        if utils.isObject(credentials) then
+            username = utils.textOr(credentials.username, "")
+            password = utils.textOr(credentials.password, "")
+        end if
+        streamId = ""
+        if utils.isObject(item) then
+            if item.stream_id <> invalid then
+                streamId = utils.textOr(item.stream_id, "0")
+            else
+                streamId = utils.textOr(item.id, "")
+            end if
+        end if
+
+        if base = "" or username = "" or password = "" or streamId = "" then
+            print "[streamUrl] Dados insuficientes para montar o stream (base/credenciais/stream_id)."
+            return invalid
+        end if
+
+        user = username.encodeUriComponent()
+        pass = password.encodeUriComponent()
+        id = streamId.encodeUriComponent()
+
+        ' O alternativo fica no mesmo esquema da lista: rebaixar https para http mandaria usuário e senha sem cifra.
+        if section = "live" then
+            prefix = base + "/live/" + user + "/" + pass + "/" + id
+            return { primaryUrl: prefix + ".m3u8", fallbackUrl: prefix + ".ts", isHls: true, containerExtension: "m3u8", section: section }
+        end if
+
+        if section = "vod" or section = "series" then
+            sectionPath = "movie"
+            if section = "series" then sectionPath = "series"
+            ext = LCase(CreateObject("roRegex", "^\.", "").replaceAll(utils.textOr(item.container_extension, "mp4"), ""))
+            if ext = "" then ext = "mp4"
+            prefix = base + "/" + sectionPath + "/" + user + "/" + pass + "/" + id
+
+            if utils.isString(item.direct_source) and CreateObject("roRegex", "^https?://", "i").isMatch(item.direct_source) then
+                fallbackUrl = item.direct_source
+            else if ext = "mkv" or ext = "avi" then
+                fallbackUrl = prefix + ".mp4"
+            else
+                fallbackUrl = prefix + ".m3u8"
+            end if
+
+            return { primaryUrl: prefix + "." + ext, fallbackUrl: fallbackUrl, isHls: ext = "m3u8", containerExtension: ext, section: section }
+        end if
+
+        print "[streamUrl] Seção desconhecida: "; section
+        return invalid
+    end function
+
+end namespace

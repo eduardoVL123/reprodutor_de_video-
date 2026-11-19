@@ -1,0 +1,87 @@
+' Mesmos casos de tests/streamUrl.test.js.
+namespace tests
+
+    @suite("xtream.buildStreamUrl")
+    class StreamUrlTests extends rooibos.BaseTestSuite
+
+        function build(apiBase as string, section as string, item as object) as dynamic
+            full = { stream_id: 7 }
+            full.append(item)
+            return xtream.buildStreamUrl({ apiBase: apiBase, credentials: { username: "joao", password: "segredo" }, section: section, item: full })
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("o formato alternativo nunca rebaixa https para http (senha vai na URL)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("lista https: principal e alternativo em https")
+        @params("live", {})
+        @params("vod", { container_extension: "mkv" })
+        @params("vod", { container_extension: "mp4" })
+        @params("series", { container_extension: "avi" })
+        function _(section, item)
+            d = m.build("https://painel.test:443", section, item)
+            m.assertTrue(d.primaryUrl.startsWith("https://"))
+            m.assertTrue(d.fallbackUrl.startsWith("https://"))
+        end function
+
+        @it("alternativos: ao vivo em .ts, mkv em .mp4, mp4 em .m3u8")
+        function _()
+            m.assertEqual(m.build("https://p.test", "live", {}).fallbackUrl, "https://p.test/live/joao/segredo/7.ts")
+            m.assertEqual(m.build("https://p.test", "vod", { container_extension: "mkv" }).fallbackUrl, "https://p.test/movie/joao/segredo/7.mp4")
+            m.assertEqual(m.build("http://p.test", "vod", { container_extension: "mp4" }).fallbackUrl, "http://p.test/movie/joao/segredo/7.m3u8")
+        end function
+
+        @it("o descritor leva a seção: o motor decide a reconexão do canal ao vivo por ela")
+        function _()
+            m.assertEqual(m.build("https://p.test", "live", {}).section, "live")
+            m.assertEqual(m.build("https://p.test", "vod", {}).section, "vod")
+            m.assertEqual(m.build("", "live", { directUrl: "http://m3u.test/live/1.m3u8" }).section, "live")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("montagem (src/services/streamUrl.js)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("ao vivo em .m3u8 e HLS; barra final da base some")
+        function _()
+            d = m.build("https://p.test//", "live", {})
+            m.assertEqual(d.primaryUrl, "https://p.test/live/joao/segredo/7.m3u8")
+            m.assertTrue(d.isHls)
+            m.assertEqual(d.containerExtension, "m3u8")
+        end function
+
+        @it("filme e série usam a extensão do item; direct_source http vira o alternativo")
+        function _()
+            d = m.build("http://p.test", "series", { container_extension: ".MKV", direct_source: "https://cdn.test/a.mkv" })
+            m.assertEqual(d.primaryUrl, "http://p.test/series/joao/segredo/7.mkv")
+            m.assertEqual(d.fallbackUrl, "https://cdn.test/a.mkv")
+            m.assertFalse(d.isHls)
+        end function
+
+        @it("item da lista M3U toca a URL direta, sem credenciais")
+        function _()
+            d = xtream.buildStreamUrl({ apiBase: "", credentials: invalid, section: "vod", item: { directUrl: "http://m3u.test/f/filme.MKV?x=1" } })
+            m.assertEqual(d.primaryUrl, "http://m3u.test/f/filme.MKV?x=1")
+            m.assertInvalid(d.fallbackUrl)
+            m.assertEqual(d.containerExtension, "mkv")
+            m.assertFalse(d.isHls)
+        end function
+
+        @it("usuário e senha vão codificados na URL")
+        function _()
+            d = xtream.buildStreamUrl({ apiBase: "http://p.test", credentials: { username: "a b", password: "x/y" }, section: "live", item: { stream_id: 7 } })
+            m.assertEqual(d.primaryUrl, "http://p.test/live/a%20b/x%2Fy/7.m3u8")
+        end function
+
+        @it("faltando base, credenciais, id ou seção conhecida devolve invalid")
+        function _()
+            m.assertInvalid(m.build("", "live", {}))
+            m.assertInvalid(xtream.buildStreamUrl({ apiBase: "http://p.test", credentials: invalid, section: "live", item: { stream_id: 7 } }))
+            m.assertInvalid(xtream.buildStreamUrl({ apiBase: "http://p.test", credentials: { username: "u", password: "p" }, section: "live", item: {} }))
+            m.assertInvalid(m.build("http://p.test", "radio", {}))
+        end function
+
+    end class
+
+end namespace
