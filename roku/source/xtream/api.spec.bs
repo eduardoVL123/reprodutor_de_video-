@@ -1,0 +1,328 @@
+' Casos de tests/xtreamApi.test.js com um transporte falso no lugar do fetch.
+' Ficam para o teste do transporte real (roUrlTransfer): corpo que para de chegar, download lento e o 502 do motor
+' nativo do Android (não existe na Roku). Aqui o transporte falso já devolve o erro de rede/tempo pronto.
+namespace tests
+
+    ' Transporte falso: `routes` diz o que cada prefixo de URL devolve; guarda as URLs chamadas.
+    function fakeTransport(routes as object) as object
+        return {
+            routes: routes,
+            calls: [],
+            get: function(url as string, _timeoutMs as integer, _accept as string) as object
+                m.calls.push(url)
+                for each route in m.routes
+                    if url.startsWith(route.prefix) then return route.response
+                end for
+                return { error: xtream.newError("CORS_OR_NETWORK_ERROR", { raw: "TypeError: Failed to fetch" }) }
+            end function
+        }
+    end function
+
+    function jsonResponse(body as dynamic, status = 200 as integer, finalUrl = "" as string) as object
+        return { status: status, statusText: "", body: FormatJson(body), finalUrl: finalUrl }
+    end function
+
+    function textResponse(body as string, status = 200 as integer, finalUrl = "" as string) as object
+        return { status: status, statusText: "", body: body, finalUrl: finalUrl }
+    end function
+
+    function networkError() as object
+        return { error: xtream.newError("CORS_OR_NETWORK_ERROR", { raw: "TypeError: Failed to fetch" }) }
+    end function
+
+    function okLogin() as object
+        return tests.jsonResponse({ user_info: { auth: 1, status: "Active" }, server_info: {} })
+    end function
+
+    function callsTo(transport as object, prefix as string) as integer
+        total = 0
+        for each url in transport.calls
+            if url.startsWith(prefix) then total = total + 1
+        end for
+        return total
+    end function
+
+    @suite("xtream api")
+    class XtreamApiTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("normalizeBaseUrl")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("aceita domínio sem protocolo e remove player_api.php e barra final")
+        function _()
+            m.assertEqual(xtream.normalizeBaseUrl("servidor.com:8080/").url, "http://servidor.com:8080")
+            m.assertEqual(xtream.normalizeBaseUrl("https://servidor.com/painel/player_api.php?x=1").url, "https://servidor.com/painel")
+        end function
+
+        @it("como o URL do navegador: host minúsculo e porta padrão some")
+        function _()
+            m.assertEqual(xtream.normalizeBaseUrl("  HTTP://Servidor.COM:80/get.php  ").url, "http://servidor.com")
+            m.assertEqual(xtream.normalizeBaseUrl("https://painel.test:443").url, "https://painel.test")
+        end function
+
+        @it("rejeita protocolos que não sejam http/https e entrada vazia")
+        function _()
+            m.assertEqual(xtream.normalizeBaseUrl("ftp://servidor.com").error.code, "INVALID_URL_ERROR")
+            m.assertEqual(xtream.normalizeBaseUrl("   ").error.code, "INVALID_URL_ERROR")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("apiRequest e fallback para http")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("monta player_api.php com usuário, senha, ação e parâmetros codificados")
+        function _()
+            m.assertEqual(xtream.buildApiUrl("http://s.test", { username: "a b", password: "p&1", action: "get_series_info", params: { series_id: 9 } }), "http://s.test/player_api.php?username=a%20b&password=p%261&action=get_series_info&series_id=9")
+        end function
+
+        @it("não rebaixa para http quando o servidor https respondeu com erro HTTP")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://srv.test", response: tests.jsonResponse({}, 401) }])
+            m.assertEqual(xtream.apiRequest(t, "https://srv.test", { username: "u", password: "p" }).error.code, "HTTP_ERROR")
+            m.assertEqual(tests.callsTo(t, "http://srv.test"), 0)
+        end function
+
+        @it("tenta http quando o https falha por rede/certificado")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse({ user_info: { auth: 1 } }) }])
+            result = xtream.apiRequest(t, "https://srv.test", { username: "u", password: "p" })
+            m.assertInvalid(result.error)
+            m.assertEqual(result.data.user_info.auth, 1)
+            m.assertTrue(result.downgraded)
+            m.assertEqual(result.resolvedUrl, "http://srv.test")
+        end function
+
+        @it("painel https sobrecarregado (503) não recebe a senha em http")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://srv.test", response: tests.jsonResponse({}, 503) }])
+            m.assertEqual(xtream.apiRequest(t, "https://srv.test", { username: "u", password: "p" }).error.code, "HTTP_ERROR")
+            m.assertEqual(tests.callsTo(t, "http://"), 0)
+        end function
+
+        @it("Cloudflare 525 (origem sem TLS) cai para http")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://", response: tests.jsonResponse({}, 525) }, { prefix: "http://srv.test", response: tests.okLogin() }])
+            m.assertTrue(xtream.apiRequest(t, "https://srv.test", { username: "u", password: "p" }).downgraded)
+        end function
+
+        @it("resposta que não é JSON vira INVALID_FORMAT_ERROR com o início do texto")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse("<html>  bloqueado </html>") }])
+            err = xtream.apiRequest(t, "http://srv.test", { username: "u", password: "p" }).error
+            m.assertEqual(err.code, "INVALID_FORMAT_ERROR")
+            m.assertTrue(err.technicalDetail.instr("<html> bloqueado </html>") >= 0)
+        end function
+
+        @it("redirecionamento para outro host vira resolvedUrl")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse({ user_info: { auth: 1 } }, 200, "http://novo.test:8080/player_api.php?username=u&password=p") }])
+            m.assertEqual(xtream.apiRequest(t, "http://srv.test", { username: "u", password: "p" }).resolvedUrl, "http://novo.test:8080")
+        end function
+
+        @it("http que só trocou para https no mesmo host continua em http (RFC-008)")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse({ user_info: { auth: 1 } }, 200, "https://srv.test/player_api.php") }])
+            m.assertInvalid(xtream.apiRequest(t, "http://srv.test", { username: "u", password: "p" }).resolvedUrl)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("authenticate")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("marca insecure quando caiu para http e quando o usuário digitou http")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.okLogin() }])
+            m.assertTrue(xtream.authenticate(t, { dns: "https://srv.test", username: "u", password: "p" }).insecure)
+            m.assertTrue(xtream.authenticate(t, { dns: "http://srv.test", username: "u", password: "p" }).insecure)
+        end function
+
+        @it("não marca insecure quando o https funciona")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://srv.test", response: tests.okLogin() }])
+            result = xtream.authenticate(t, { dns: "https://srv.test", username: "u", password: "p" })
+            m.assertInvalid(result.error)
+            m.assertFalse(result.insecure)
+            m.assertEqual(result.baseUrl, "https://srv.test")
+            m.assertInvalid(result.resolvedUrl)
+        end function
+
+        @it("525 no login com https: a sessão passa a usar http nos vídeos")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://", response: tests.jsonResponse({}, 525) }, { prefix: "http://srv.test", response: tests.okLogin() }])
+            result = xtream.authenticate(t, { dns: "https://srv.test", username: "u", password: "p" })
+            m.assertEqual(result.resolvedUrl, "http://srv.test")
+            m.assertTrue(result.insecure)
+        end function
+
+        @it("host padrão fora do ar tenta a porta 8080")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test:8080", response: tests.okLogin() }])
+            result = xtream.authenticate(t, { dns: "srv.test", username: "u", password: "p" })
+            m.assertInvalid(result.error)
+            m.assertEqual(result.resolvedUrl, "http://srv.test:8080")
+        end function
+
+        @it("recusa e expiração vêm do user_info")
+        @params({ user_info: { auth: 0 } }, "AUTH_INVALID_CREDENTIALS")
+        @params({ user_info: { auth: "1", status: "Expired" } }, "AUTH_ACCOUNT_EXPIRED")
+        @params({}, "AUTH_INVALID_CREDENTIALS")
+        @params({ server_info: {} }, "INVALID_FORMAT_ERROR")
+        function _(body, code)
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse(body) }])
+            m.assertEqual(xtream.authenticate(t, { dns: "http://srv.test", username: "u", password: "p" }).error.code, code)
+        end function
+
+        @it("conta expirada mostra o status do servidor")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse({ user_info: { auth: 1, status: "Banned" } }) }])
+            m.assertEqual(xtream.authenticate(t, { dns: "http://srv.test", username: "u", password: "p" }).error.userMessage, "Conta inativa ou expirada no servidor (Status: Banned).")
+        end function
+
+        @it("sem usuário ou senha nem chama o servidor")
+        function _()
+            t = tests.fakeTransport([])
+            m.assertEqual(xtream.authenticate(t, { dns: "http://srv.test", username: "  ", password: "p" }).error.code, "INVALID_INPUT")
+            m.assertEqual(t.calls.count(), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("fetchM3uText")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("link com usuário e senha no caminho não aparece inteiro no detalhe que vai para o suporte")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse("", 404) }])
+            err = xtream.fetchM3uText(t, "http://srv.test/playlist/USUARIO/SENHA123/m3u_plus").error
+            m.assertTrue(err.technicalDetail.instr("USUARIO") < 0)
+            m.assertTrue(err.technicalDetail.instr("SENHA123") < 0)
+            m.assertTrue(err.technicalDetail.instr("http://srv.test") >= 0)
+            m.assertTrue(err.technicalDetail.instr("m3u_plus") >= 0)
+        end function
+
+        @it("caminho de API (.php) continua inteiro no detalhe")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse("", 404) }])
+            m.assertTrue(xtream.fetchM3uText(t, "http://srv.test/painel/get.php?username=u&password=p").error.technicalDetail.instr("/painel/get.php") >= 0)
+        end function
+
+        @it("aceita #EXTM3U com BOM e recusa o que não é lista")
+        function _()
+            bom = Chr(65279)
+            ok = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse(bom + "  #EXTM3U" + Chr(10)) }])
+            m.assertInvalid(xtream.fetchM3uText(ok, "http://srv.test/l.m3u").error)
+            bad = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse("<html>erro</html>") }])
+            m.assertEqual(xtream.fetchM3uText(bad, "http://srv.test/l.m3u").error.code, "INVALID_FORMAT_ERROR")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("resolveShortInput")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("credenciais embutidas na URL: sem baixar nada")
+        function _()
+            t = tests.fakeTransport([])
+            r = xtream.resolveShortInput(t, { dns: "http://srv.test/get.php?username=joao&password=s%26nha&type=m3u" })
+            m.assertEqual(r.mode, "xtream")
+            m.assertEqual(r.baseUrl, "http://srv.test")
+            m.assertEqual(r.username, "joao")
+            m.assertEqual(r.password, "s&nha")
+            m.assertEqual(t.calls.count(), 0)
+        end function
+
+        @it("regra de ouro: com usuário e senha vai direto, sem tocar na raiz")
+        function _()
+            t = tests.fakeTransport([])
+            r = xtream.resolveShortInput(t, { dns: "srv.test:8080", username: "u", password: "p" })
+            m.assertEqual(r.resolvedUrl, "http://srv.test:8080")
+            m.assertEqual(t.calls.count(), 0)
+        end function
+
+        @it("link curto que entrega uma lista #EXTM3U vira modo m3u")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://curto.test", response: tests.textResponse("#EXTM3U" + Chr(10), 200, "http://cdn.test/lista.m3u") }])
+            r = xtream.resolveShortInput(t, { dns: "curto.test/abc" })
+            m.assertEqual(r.mode, "m3u")
+            m.assertEqual(r.resolvedUrl, "http://cdn.test/lista.m3u")
+            m.assertEqual(r.username, "M3U Playlist")
+        end function
+
+        @it("credenciais na URL final do redirecionamento")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://curto.test", response: tests.textResponse("", 200, "http://novo.test:8080/get.php?username=u&password=p&type=m3u_plus") }])
+            r = xtream.resolveShortInput(t, { dns: "http://curto.test/x" })
+            m.assertEqual(r.resolvedUrl, "http://novo.test:8080")
+            m.assertEqual(r.baseUrl, "http://curto.test/x")
+            m.assertEqual(r.password, "p")
+        end function
+
+        @it("servidor sem lista e sem credenciais pede usuário e senha")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.textResponse("<html>painel</html>") }])
+            m.assertEqual(xtream.resolveShortInput(t, { dns: "http://srv.test/curto" }).error.code, "MISSING_CREDENTIALS")
+        end function
+
+        @it("link curto: queda no meio do download não vira 'faltam usuário e senha'")
+        function _()
+            t = tests.fakeTransport([])
+            m.assertEqual(xtream.resolveShortInput(t, { dns: "http://srv.test/curto" }).error.code, "CORS_OR_NETWORK_ERROR")
+        end function
+
+        @it("sem protocolo e http fora do ar: tenta https")
+        function _()
+            t = tests.fakeTransport([{ prefix: "https://curto.test", response: tests.textResponse("#EXTM3U") }])
+            r = xtream.resolveShortInput(t, { dns: "curto.test/abc" })
+            m.assertEqual(r.mode, "m3u")
+            m.assertEqual(r.baseUrl, "https://curto.test/abc")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("detalhes de filme e série")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o filme sem duração conhecida não mostra 00:00:00 nos detalhes")
+        function _()
+            m.assertEqual(xtream.normalizeVodInfo({ info: { duration: "00:00:00", duration_secs: 0 } }, {}).duration, "")
+            m.assertEqual(xtream.normalizeVodInfo({ info: { duration: "00:00:00", duration_secs: 5400 } }, {}).duration, "1h 30min")
+        end function
+
+        @it("sem dados do servidor usa o item e a sinopse padrão")
+        function _()
+            d = xtream.normalizeVodInfo(invalid, { name: "Rambo", stream_icon: "http://i.test/p.jpg" })
+            m.assertEqual(d.name, "Rambo")
+            m.assertEqual(d.plot, "Sem sinopse disponível.")
+            m.assertEqual(d.poster, "http://i.test/p.jpg")
+            m.assertEqual(d.backdrop, "http://i.test/p.jpg")
+            m.assertEqual(d.container_extension, "mp4")
+        end function
+
+        @it("dados do servidor: backdrop em lista, ano e duração em minutos")
+        function _()
+            data = { info: { name: "X", plot: "Sinopse", backdrop_path: ["http://i.test/b.jpg"], movie_image: "http://i.test/m.jpg", releasedate: "2019-05-01", duration_secs: 2880, genre: "Ação" }, movie_data: { name: "Nome certo", container_extension: "mkv" } }
+            d = xtream.normalizeVodInfo(data, {})
+            m.assertEqual(d.name, "Nome certo")
+            m.assertEqual(d.backdrop, "http://i.test/b.jpg")
+            m.assertEqual(d.poster, "http://i.test/m.jpg")
+            m.assertEqual(d.year, "2019")
+            m.assertEqual(d.duration, "48min")
+            m.assertEqual(d.container_extension, "mkv")
+        end function
+
+        @it("fetchVodInfo nunca falha: erro ou item da lista M3U devolvem os dados básicos")
+        function _()
+            t = tests.fakeTransport([])
+            creds = { username: "u", password: "p" }
+            m.assertEqual(xtream.fetchVodInfo(t, { apiBase: "http://srv.test", credentials: creds, vodId: 1, item: { name: "A" } }).name, "A")
+            xtream.fetchVodInfo(t, { apiBase: "http://srv.test", credentials: creds, vodId: 1, item: { name: "B", directUrl: "http://x.test/b.mp4" } })
+            m.assertEqual(t.calls.count(), 1)
+        end function
+
+        @it("fetchSeriesInfo recusa resposta que não é objeto")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse([]) }])
+            m.assertEqual(xtream.fetchSeriesInfo(t, { apiBase: "http://srv.test", credentials: { username: "u", password: "p" }, seriesId: 3 }).error.code, "INVALID_FORMAT_ERROR")
+        end function
+
+    end class
+
+end namespace

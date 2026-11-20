@@ -1,0 +1,433 @@
+' Port de src/services/xtreamApi.js + readJson de xtreamTransport.js (casos em tests/xtreamApi.test.js e
+' roku/source/xtream/api.spec.bs). Roda num Task node.
+'
+' REGRA DE OURO (RFC-007): com usuário e senha preenchidos NUNCA fazemos fetch na raiz "/" do servidor — vamos direto
+' em `/player_api.php`.
+'
+' Diferenças da versão web:
+'  - a rede vem de fora: `transport.get(url, timeoutMs, accept)` devolve { status, statusText, body, finalUrl } ou
+'    { error } (erro de rede/tempo já como XtreamError). Na TV é o roUrlTransfer; nos testes, um falso.
+'  - em vez de throw, cada função devolve { error } junto do resultado (error = invalid quando deu certo).
+namespace xtream
+
+    const DEFAULT_TIMEOUT_MS = 15000
+    const PLAYLIST_TIMEOUT_MS = 90000
+    const DEFAULT_VOD_PLOT = "Sem sinopse disponível."
+
+    ' Lê uma URL como o `new URL()` do navegador: esquema e host minúsculos, porta padrão (80/443) some.
+    ' Devolve invalid se não for URL. { protocol, hostname, port, origin, pathname, query }
+    function parseUrl(text as string) as dynamic
+        parts = CreateObject("roRegex", "^([a-z][a-z0-9+.-]*):\/\/(?:[^/?#@]*@)?([^/?#:]*)(?::(\d*))?([^?#]*)(\?[^#]*)?", "i").match(text)
+        if parts.count() = 0 then return invalid
+        protocol = LCase(parts[1]) + ":"
+        hostname = LCase(parts[2])
+        port = parts[3]
+        if (protocol = "http:" and port = "80") or (protocol = "https:" and port = "443") then port = ""
+        pathname = parts[4]
+        if pathname = "" then pathname = "/"
+        origin = protocol + "//" + hostname
+        if port <> "" then origin = origin + ":" + port
+        query = ""
+        if parts.count() > 5 then query = parts[5]
+        return { protocol: protocol, hostname: hostname, port: port, origin: origin, pathname: pathname, query: query }
+    end function
+
+    ' Valor de um parâmetro da query, decodificado como o searchParams do navegador ("" se não houver).
+    function queryParam(query as string, name as string) as string
+        match = CreateObject("roRegex", "[?&]" + name + "=([^&#]*)", "").match(query)
+        if match.count() < 2 then return ""
+        return match[1].replace("+", " ").decodeUriComponent()
+    end function
+
+    function hasScheme(text as string) as boolean
+        return CreateObject("roRegex", "^[a-z][a-z0-9+.-]*:\/\/", "i").isMatch(text)
+    end function
+
+    ' Normaliza o que o usuário digitou no campo DNS: aceita domínio sem protocolo, tira espaços, query, hash, barra
+    ' final e "/player_api.php" / "/get.php", preserva sub-caminhos (painéis atrás de "/painel"). { url, error }
+    function normalizeBaseUrl(input as dynamic) as object
+        raw = utils.textOr(input, "").trim()
+        if raw = "" then return { url: "", error: xtream.newError("INVALID_URL_ERROR", "DNS vazio") }
+        withScheme = raw
+        if not xtream.hasScheme(raw) then withScheme = "http://" + raw
+        url = xtream.parseUrl(withScheme)
+        if url = invalid then return { url: "", error: xtream.newError("INVALID_URL_ERROR", "URL malformada: " + raw) }
+        if url.protocol <> "http:" and url.protocol <> "https:" then
+            return { url: "", error: xtream.newError("INVALID_URL_ERROR", "Protocolo não suportado: " + url.protocol) }
+        end if
+        if url.hostname = "" then return { url: "", error: xtream.newError("INVALID_URL_ERROR", "Host ausente") }
+        path = CreateObject("roRegex", "\/(player_api|get|panel_api)\.php$", "i").replaceAll(url.pathname, "")
+        path = CreateObject("roRegex", "\/+$", "").replaceAll(path, "")
+        return { url: url.origin + path, error: invalid }
+    end function
+
+    ' Monta `<base>/player_api.php?username=..&password=..[&action=..]`.
+    function buildApiUrl(baseUrl as string, options as object) as string
+        query = "username=" + utils.textOr(options.username, "").encodeUriComponent() + "&password=" + utils.textOr(options.password, "").encodeUriComponent()
+        if utils.isString(options.action) and options.action <> "" then query = query + "&action=" + options.action.encodeUriComponent()
+        if utils.isObject(options.params) then
+            for each key in options.params
+                query = query + "&" + key.encodeUriComponent() + "=" + utils.textOr(options.params[key], "0").encodeUriComponent()
+            end for
+        end if
+        return baseUrl + "/player_api.php?" + query
+    end function
+
+    function baseFromFinalUrl(finalUrl as string, requestedBase as string) as dynamic
+        if finalUrl = "" then return invalid
+        resolved = xtream.normalizeBaseUrl(finalUrl.split("?")[0])
+        if resolved.error <> invalid or resolved.url = requestedBase then return invalid
+        ' Base http e o final só trocou para https no mesmo host/porta: preserva http (RFC-008: muitos painéis Xtream
+        ' falham ao baixar catálogo em HTTPS).
+        httpsRegex = CreateObject("roRegex", "^https:\/\/", "i")
+        if CreateObject("roRegex", "^http:\/\/", "i").isMatch(requestedBase) and httpsRegex.isMatch(resolved.url) then
+            if httpsRegex.replaceAll(resolved.url, "http://") = requestedBase then return invalid
+        end if
+        return resolved.url
+    end function
+
+    ' Falha de transporte (rede/TLS) em vez de uma resposta do servidor. Um 5xx de verdade (painel sobrecarregado)
+    ' não conta: repetir em http mandaria usuário e senha sem cifra. 525/526 do Cloudflare = origem sem TLS.
+    function isTransportFailure(err as dynamic) as boolean
+        if err = invalid then return false
+        if err.code = "CORS_OR_NETWORK_ERROR" then return true
+        return err.code = "HTTP_ERROR" and (err.status = 525 or err.status = 526)
+    end function
+
+    function isOkStatus(status as integer) as boolean
+        return status >= 200 and status < 300
+    end function
+
+    ' Primeiros 80 caracteres com espaços juntados, para o detalhe técnico.
+    function snippet(text as string) as string
+        return Left(CreateObject("roRegex", "\s+", "").replaceAll(text, " ").trim(), 80)
+    end function
+
+    ' Valida HTTP e JSON da resposta. { data, error }
+    function readJson(response as object, url as string) as object
+        where = xtream.describeUrl(url)
+        if not xtream.isOkStatus(response.status) then
+            statusText = utils.textOr(response.statusText, "")
+            return { data: invalid, error: xtream.newError("HTTP_ERROR", { host: where.host, endpoint: where.endpoint, status: response.status, statusText: statusText, raw: ("HTTP " + response.status.toStr() + " " + statusText).trim() }) }
+        end if
+        body = utils.textOr(response.body, "")
+        data = ParseJson(body)
+        if data = invalid and body.trim() <> "null" then
+            head = xtream.snippet(body)
+            if head = "" then head = "(vazio)"
+            return { data: invalid, error: xtream.newError("INVALID_FORMAT_ERROR", { host: where.host, endpoint: where.endpoint, raw: "Resposta não é JSON. Início: " + Chr(34) + head + Chr(34) }) }
+        end if
+        return { data: data, error: invalid }
+    end function
+
+    ' Requisição genérica ao player_api.php. { data, resolvedUrl, downgraded, error }
+    ' resolvedUrl só vem quando houve redirecionamento para outro host/caminho; downgraded quando o https falhou e a
+    ' chamada (com usuário e senha na URL) foi refeita em http.
+    function apiRequest(transport as object, baseUrl as string, credentials as dynamic, options = {} as object) as object
+        timeoutMs = xtream.DEFAULT_TIMEOUT_MS
+        if utils.isNumber(options.timeoutMs) and options.timeoutMs > 0 then timeoutMs = options.timeoutMs
+        request = { action: options.action, params: options.params, username: "", password: "" }
+        if utils.isObject(credentials) then
+            request.username = credentials.username
+            request.password = credentials.password
+        end if
+
+        result = xtream.apiExecute(transport, baseUrl, request, timeoutMs)
+        if result.error = invalid then return result
+        ' Painéis com https quebrado funcionam em http:// (RFC-008). Só rebaixa quando o https nem chegou a responder:
+        ' um 4xx (credenciais recusadas) não pode reenviar usuário e senha em texto puro.
+        if CreateObject("roRegex", "^https:\/\/", "i").isMatch(baseUrl) and xtream.isTransportFailure(result.error) then
+            httpBase = CreateObject("roRegex", "^https:\/\/", "i").replaceAll(baseUrl, "http://")
+            print "[xtream] Chamada em "; baseUrl; " falhou. Tentando fallback em http://..."
+            retry = xtream.apiExecute(transport, httpBase, request, timeoutMs)
+            if retry.error <> invalid then return result ' se ambos falharem, vale o erro original
+            ' A base http vira o endereço da lista: senão os vídeos iam para o https quebrado.
+            if retry.resolvedUrl = invalid then retry.resolvedUrl = httpBase
+            retry.downgraded = true
+            return retry
+        end if
+        return result
+    end function
+
+    function apiExecute(transport as object, targetBase as string, request as object, timeoutMs as integer) as object
+        url = xtream.buildApiUrl(targetBase, request)
+        response = transport.get(url, timeoutMs, "application/json, text/plain, */*")
+        if response.error <> invalid then return { data: invalid, resolvedUrl: invalid, downgraded: false, error: response.error }
+        parsed = xtream.readJson(response, url)
+        if parsed.error <> invalid then return { data: invalid, resolvedUrl: invalid, downgraded: false, error: parsed.error }
+        return { data: parsed.data, resolvedUrl: xtream.baseFromFinalUrl(utils.textOr(response.finalUrl, ""), targetBase), downgraded: false, error: invalid }
+    end function
+
+    ' Detalhes, temporadas e episódios de uma série. { data, error }
+    function fetchSeriesInfo(transport as object, params as object) as object
+        if not utils.isString(params.apiBase) or params.apiBase = "" or not utils.isObject(params.credentials) or params.seriesId = invalid then
+            return { data: invalid, error: xtream.newError("NO_SESSION", "Parâmetros insuficientes para buscar informações da série") }
+        end if
+        result = xtream.apiRequest(transport, params.apiBase, params.credentials, { action: "get_series_info", params: { series_id: params.seriesId }, timeoutMs: params.timeoutMs })
+        if result.error <> invalid then return { data: invalid, error: result.error }
+        if not utils.isObject(result.data) then
+            where = xtream.describeUrl(xtream.buildApiUrl(params.apiBase, { action: "get_series_info" }))
+            kind = type(result.data)
+            if GetInterface(result.data, "ifArray") <> invalid then kind = "uma lista vazia"
+            return { data: invalid, error: xtream.newError("INVALID_FORMAT_ERROR", { host: where.host, endpoint: where.endpoint, raw: "get_series_info retornou " + kind }) }
+        end if
+        return { data: result.data, error: invalid }
+    end function
+
+    ' Converte segundos para "2h 14min" / "48min" ("" se inválido).
+    function formatDurationSecs(totalSecs as dynamic) as string
+        secs = 0
+        if utils.isNumber(totalSecs) then
+            secs = Int(totalSecs)
+        else if utils.isString(totalSecs) then
+            secs = Int(Val(totalSecs))
+        end if
+        if secs <= 0 then return ""
+        h = secs \ 3600
+        minutes = (secs mod 3600) \ 60
+        if h > 0 then return h.toStr() + "h " + minutes.toStr() + "min"
+        return minutes.toStr() + "min"
+    end function
+
+    ' Primeiro valor "verdadeiro" (como `a || b || c` do JS), em texto; "" se nenhum.
+    function firstText(values as object) as string
+        for each value in values
+            text = utils.textOr(value, "")
+            if text <> "" then return text
+        end for
+        return ""
+    end function
+
+    ' Normaliza data.info / data.movie_data (get_vod_info ou get_series_info) para a tela de detalhes. Com data
+    ' invalid, devolve só os dados básicos do próprio item.
+    function normalizeVodInfo(data as dynamic, item as dynamic) as object
+        base = {}
+        if utils.isObject(item) then base = item
+        info = {}
+        movie = {}
+        if utils.isObject(data) then
+            if utils.isObject(data.info) then info = data.info
+            if utils.isObject(data.movie_data) then movie = data.movie_data
+        end if
+        backdrop = info.backdrop_path
+        if GetInterface(backdrop, "ifArray") <> invalid then backdrop = backdrop[0]
+        cover = xtream.firstText([base.stream_icon, base.cover])
+        plot = xtream.firstText([info.plot, info.description, info.overview, base.plot])
+        if plot = "" then plot = xtream.DEFAULT_VOD_PLOT
+        duration = utils.durationLabel(info.duration)
+        if duration = "" then duration = xtream.formatDurationSecs(info.duration_secs)
+        extension = xtream.firstText([movie.container_extension, base.container_extension])
+        if extension = "" then extension = "mp4"
+        return {
+            name: xtream.firstText([movie.name, info.name, base.name]),
+            plot: plot,
+            backdrop: xtream.firstText([backdrop, info.movie_image, info.cover_big, info.cover, cover]),
+            poster: xtream.firstText([info.movie_image, info.cover_big, info.cover, cover]),
+            rating: xtream.firstText([info.rating, base.rating]),
+            year: Left(xtream.firstText([info.releasedate, info.releaseDate]), 4),
+            duration: duration,
+            genre: xtream.firstText([info.genre, base.genre]),
+            cast: xtream.firstText([info.cast, info.actors]),
+            director: xtream.firstText([info.director]),
+            container_extension: extension
+        }
+    end function
+
+    ' Metadados de um filme. Nunca falha: lista M3U (directUrl), servidor sem get_vod_info ou rede fora devolvem os
+    ' dados básicos do próprio item.
+    function fetchVodInfo(transport as object, params as object) as object
+        basic = xtream.normalizeVodInfo(invalid, params.item)
+        credentials = params.credentials
+        hasSession = utils.isString(params.apiBase) and params.apiBase <> "" and utils.isObject(credentials) and utils.textOr(credentials.username, "") <> "" and utils.textOr(credentials.password, "") <> ""
+        isDirect = utils.isObject(params.item) and utils.textOr(params.item.directUrl, "") <> ""
+        if not hasSession or params.vodId = invalid or isDirect then return basic
+        result = xtream.apiRequest(transport, params.apiBase, credentials, { action: "get_vod_info", params: { vod_id: params.vodId }, timeoutMs: params.timeoutMs })
+        if result.error <> invalid then
+            print "[xtream] get_vod_info indisponível; usando dados básicos do item: "; result.error.technicalDetail
+            return basic
+        end if
+        if not utils.isObject(result.data) then return basic
+        return xtream.normalizeVodInfo(result.data, params.item)
+    end function
+
+    ' Variante http://host:8080 usada quando o host padrão falha (redirect HTTPS com SSL inválido).
+    function port8080Variant(baseUrl as string) as dynamic
+        url = xtream.parseUrl(baseUrl)
+        if url = invalid or url.port <> "" then return invalid
+        return "http://" + url.hostname + ":8080" + CreateObject("roRegex", "\/+$", "").replaceAll(url.pathname, "")
+    end function
+
+    ' Autentica no servidor. O Xtream responde 200 mesmo com credenciais erradas, sinalizando via user_info.auth (0/1)
+    ' e user_info.status. { baseUrl, resolvedUrl, userInfo, serverInfo, insecure, error }
+    function authenticate(transport as object, params as object) as object
+        user = utils.textOr(params.username, "").trim()
+        pass = utils.textOr(params.password, "")
+        if user = "" or pass = "" then return { error: xtream.newError("INVALID_INPUT", "Preencha usuário e senha.") }
+
+        normalized = xtream.normalizeBaseUrl(params.dns)
+        if normalized.error <> invalid then return { error: normalized.error }
+        baseUrl = normalized.url
+        candidates = [baseUrl]
+        alt = xtream.port8080Variant(baseUrl)
+        if alt <> invalid and alt <> baseUrl then candidates.push(alt)
+
+        result = invalid
+        usedBase = baseUrl
+        for i = 0 to candidates.count() - 1
+            attempt = xtream.apiRequest(transport, candidates[i], { username: user, password: pass }, { timeoutMs: params.timeoutMs })
+            if attempt.error = invalid then
+                result = attempt
+                usedBase = candidates[i]
+                exit for
+            end if
+            if attempt.error.code <> "CORS_OR_NETWORK_ERROR" or i = candidates.count() - 1 then return { error: attempt.error }
+            print "[xtream] Host padrão falhou, tentando porta 8080: "; attempt.error.technicalDetail
+        end for
+
+        data = result.data
+        where = xtream.describeUrl(xtream.buildApiUrl(usedBase, {}))
+        isEmpty = data = invalid
+        if not isEmpty and GetInterface(data, "ifBoolean") <> invalid then isEmpty = not data
+        if not isEmpty and (GetInterface(data, "ifArray") <> invalid or utils.isObject(data)) then isEmpty = data.count() = 0
+        if isEmpty then return { error: xtream.newError("AUTH_INVALID_CREDENTIALS", { host: where.host, endpoint: where.endpoint, raw: "player_api.php respondeu vazio" }) }
+
+        info = invalid
+        if utils.isObject(data) then info = data.user_info
+        if not utils.isObject(info) then
+            return { error: xtream.newError("INVALID_FORMAT_ERROR", { host: where.host, endpoint: where.endpoint, raw: "JSON sem o campo " + Chr(34) + "user_info" + Chr(34) }) }
+        end if
+        if utils.textOr(info.auth, "0") <> "1" then
+            return { error: xtream.newError("AUTH_INVALID_CREDENTIALS", { host: where.host, endpoint: where.endpoint, raw: "user_info.auth=" + utils.textOr(info.auth, "0") }) }
+        end if
+        rawStatus = utils.textOr(info.status, "Active")
+        if LCase(rawStatus) <> "active" then
+            return { error: xtream.newError("AUTH_ACCOUNT_EXPIRED", { host: where.host, endpoint: where.endpoint, accountStatus: rawStatus, raw: "user_info.status=" + rawStatus + " exp_date=" + utils.textOr(info.exp_date, "-") }) }
+        end if
+
+        resolvedUrl = result.resolvedUrl
+        if resolvedUrl = invalid and usedBase <> baseUrl then resolvedUrl = usedBase
+        serverInfo = {}
+        if utils.isObject(data.server_info) then serverInfo = data.server_info
+        effective = usedBase
+        if resolvedUrl <> invalid then effective = resolvedUrl
+        return {
+            baseUrl: baseUrl,
+            resolvedUrl: resolvedUrl,
+            userInfo: info,
+            serverInfo: serverInfo,
+            ' Senha trafegando sem TLS: digitou http, redirecionou para http ou o https falhou e caiu para http.
+            insecure: result.downgraded or CreateObject("roRegex", "^http:\/\/", "i").isMatch(effective),
+            error: invalid
+        }
+    end function
+
+    function startsWithM3uHeader(text as string) as boolean
+        return CreateObject("roRegex", "^\x{FEFF}", "").replaceAll(text, "").trim().startsWith("#EXTM3U")
+    end function
+
+    ' Baixa uma playlist #EXTM3U e valida o cabeçalho. { text, finalUrl, error }
+    function fetchM3uText(transport as object, url as string, timeoutMs = xtream.PLAYLIST_TIMEOUT_MS as integer) as object
+        response = transport.get(url, timeoutMs, "*/*")
+        if response.error <> invalid then return { error: response.error }
+        where = xtream.describeUrl(url)
+        if not xtream.isOkStatus(response.status) then
+            return { error: xtream.newError("HTTP_ERROR", { host: where.host, endpoint: where.endpoint, status: response.status, statusText: response.statusText, raw: "HTTP " + response.status.toStr() + " ao baixar a playlist" }) }
+        end if
+        text = utils.textOr(response.body, "")
+        if not xtream.startsWithM3uHeader(text) then
+            head = xtream.snippet(text)
+            if head = "" then head = "(vazio)"
+            return { error: xtream.newError("INVALID_FORMAT_ERROR", { host: where.host, endpoint: where.endpoint, raw: "Cabeçalho #EXTM3U ausente. Início: " + Chr(34) + head + Chr(34) }) }
+        end if
+        return { text: text, finalUrl: xtream.finalUrlOf(response, url), error: invalid }
+    end function
+
+    function finalUrlOf(response as object, url as string) as string
+        return utils.textOr(response.finalUrl, url)
+    end function
+
+    function credsFromUrl(urlString as string) as dynamic
+        url = xtream.parseUrl(urlString)
+        if url = invalid then return invalid
+        username = xtream.queryParam(url.query, "username")
+        password = xtream.queryParam(url.query, "password")
+        if username = "" or password = "" then return invalid
+        return { username: username, password: password }
+    end function
+
+    ' Resolvedor de entrada (Link Curto / URL Xtream / Playlist M3U):
+    '  - Com usuário e senha (e URL que não seja playlist): não baixa nada; o authenticate vai no player_api.php.
+    '  - URL com ?username=&password= embutidos: extrai as credenciais sem baixar.
+    '  - Link curto, .m3u, .m3u8 ou get.php: baixa seguindo redirecionamentos e detecta credenciais na URL final ou uma
+    '    lista #EXTM3U.
+    ' { mode: "xtream"|"m3u", resolvedUrl, baseUrl, username, password, m3uText, error }
+    function resolveShortInput(transport as object, params as object) as object
+        raw = utils.textOr(params.dns, "").trim()
+        if raw = "" then return { error: xtream.newError("INVALID_INPUT", "Informe o Link Curto ou URL do Servidor.") }
+        user = utils.textOr(params.username, "").trim()
+        pass = utils.textOr(params.password, "")
+        timeoutMs = xtream.DEFAULT_TIMEOUT_MS
+        if utils.isNumber(params.timeoutMs) then timeoutMs = params.timeoutMs
+        if timeoutMs < xtream.PLAYLIST_TIMEOUT_MS then timeoutMs = xtream.PLAYLIST_TIMEOUT_MS
+
+        hasProtocol = xtream.hasScheme(raw)
+        targetUrl = raw
+        if not hasProtocol then targetUrl = "http://" + raw
+        parsed = xtream.parseUrl(targetUrl)
+        if parsed = invalid then return { error: xtream.newError("INVALID_URL_ERROR", "URL malformada: " + raw) }
+
+        ' 1. Credenciais embutidas na própria URL (ex.: get.php?username=..&password=..)
+        embedded = xtream.credsFromUrl(targetUrl)
+        if embedded <> invalid then
+            base = xtream.normalizeBaseUrl(targetUrl)
+            if base.error <> invalid then return { error: base.error }
+            return { mode: "xtream", resolvedUrl: base.url, baseUrl: base.url, username: embedded.username, password: embedded.password, error: invalid }
+        end if
+
+        isPlaylistUrl = CreateObject("roRegex", "\.(m3u8?)$", "i").isMatch(parsed.pathname) or CreateObject("roRegex", "\/get\.php$", "i").isMatch(parsed.pathname)
+
+        ' 2. REGRA DE OURO: usuário + senha => direto no player_api.php, sem tocar na raiz.
+        if user <> "" and pass <> "" and not isPlaylistUrl then
+            base = xtream.normalizeBaseUrl(targetUrl)
+            if base.error <> invalid then return { error: base.error }
+            return { mode: "xtream", resolvedUrl: base.url, baseUrl: base.url, username: user, password: pass, error: invalid }
+        end if
+
+        ' 3. Link curto / playlist: baixa seguindo redirecionamentos.
+        response = transport.get(targetUrl, timeoutMs, "*/*")
+        if response.error <> invalid then
+            if hasProtocol or response.error.code <> "CORS_OR_NETWORK_ERROR" then return { error: response.error }
+            httpsUrl = "https://" + raw
+            response = transport.get(httpsUrl, timeoutMs, "*/*")
+            if response.error <> invalid then return { error: response.error }
+            targetUrl = httpsUrl
+        end if
+        finalUrl = xtream.finalUrlOf(response, targetUrl)
+
+        ' 3a. Credenciais na URL final pós-redirect
+        finalCreds = xtream.credsFromUrl(finalUrl)
+        if finalCreds <> invalid then
+            return { mode: "xtream", resolvedUrl: xtream.normalizeBaseUrl(finalUrl).url, baseUrl: xtream.normalizeBaseUrl(targetUrl).url, username: finalCreds.username, password: finalCreds.password, error: invalid }
+        end if
+
+        where = xtream.describeUrl(finalUrl)
+        if not xtream.isOkStatus(response.status) then
+            return { error: xtream.newError("HTTP_ERROR", { host: where.host, endpoint: where.endpoint, status: response.status, statusText: response.statusText, raw: "HTTP " + response.status.toStr() + " ao resolver o link" }) }
+        end if
+
+        ' 3b. Lista #EXTM3U pura
+        text = utils.textOr(response.body, "")
+        if xtream.startsWithM3uHeader(text) then
+            username = user
+            if username = "" then username = "M3U Playlist"
+            return { mode: "m3u", m3uText: text, resolvedUrl: finalUrl, baseUrl: targetUrl, username: username, password: pass, error: invalid }
+        end if
+
+        ' 3c. Servidor Xtream (link curto) sem credenciais informadas
+        if user = "" or pass = "" then
+            return { error: xtream.newError("MISSING_CREDENTIALS", { host: where.host, endpoint: where.endpoint, raw: "O link não contém credenciais nem uma lista #EXTM3U" }) }
+        end if
+        return { mode: "xtream", resolvedUrl: xtream.normalizeBaseUrl(finalUrl).url, baseUrl: xtream.normalizeBaseUrl(targetUrl).url, username: user, password: pass, error: invalid }
+    end function
+
+end namespace
