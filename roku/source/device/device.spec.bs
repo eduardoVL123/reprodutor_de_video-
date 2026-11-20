@@ -1,0 +1,157 @@
+' D2: armazenamento, identidade do aparelho, cifra de segredos e registro de erros.
+' Casos de tests/errorLog.test.js e tests/crypto.test.js; chaves esperadas calculadas com o SHA-256 do Node.
+namespace tests
+
+    ' Armazenamento falso que recusa gravar (como o "armazenamento quebrado" do teste web).
+    function brokenStore() as object
+        return {
+            get: function(_key as string) as dynamic
+                return invalid
+            end function,
+            set: function(_key as string, _value as dynamic) as boolean
+                throw "cheio"
+            end function,
+            remove: function(_key as string) as boolean
+                return false
+            end function
+        }
+    end function
+
+    @suite("device")
+    class DeviceTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            m.store = storage.create("pulse-test")
+            m.store.clear()
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("storage")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("guarda texto, número, lista e objeto e lê de volta")
+        function _()
+            m.store.set("a", "texto")
+            m.store.set("b", 42)
+            m.store.set("c", [1, "dois"])
+            m.store.set("d", { accepted: true, version: 6 })
+            m.assertEqual(m.store.get("a"), "texto")
+            m.assertEqual(m.store.get("b"), 42)
+            m.assertEqual(m.store.get("c")[1], "dois")
+            m.assertTrue(m.store.get("d").accepted)
+        end function
+
+        @it("sobrevive a reabrir (outro objeto na mesma seção) e remove apaga")
+        function _()
+            m.store.set("chave:com:dois-pontos", "v")
+            again = storage.create("pulse-test")
+            m.assertEqual(again.get("chave:com:dois-pontos"), "v")
+            again.remove("chave:com:dois-pontos")
+            m.assertInvalid(m.store.get("chave:com:dois-pontos"))
+        end function
+
+        @it("chave que não existe é invalid")
+        function _()
+            m.assertInvalid(m.store.get("nada"))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("deviceKey")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("é o SHA-256 de 'pulse-license:' + ID, igual ao app web")
+        @params("6c5bf3a5-b2a5-4918-824d-7691d5c85364", "69e334ffc8b66a7e6cb59d0acac4a287395d775b9471870dd33f024bcc90ddfa")
+        @params("ação", "13fe89319e0066c85419eb46a2db0090a4c48617d8820c40d41575780194bd87")
+        function _(id, expected)
+            m.assertEqual(device.keyFromId(id), expected)
+        end function
+
+        @it("vem do ID do app na Roku: 64 hex, igual a cada chamada, aceito pelo servidor")
+        function _()
+            key = device.getDeviceKey(m.store)
+            m.assertTrue(CreateObject("roRegex", "^[0-9a-f]{64}$", "").isMatch(key))
+            m.assertEqual(device.getDeviceKey(m.store), key)
+        end function
+
+        @it("sem ID do sistema usa uma chave aleatória guardada, que não muda")
+        function _()
+            key = device.resolveKey("", m.store)
+            m.assertTrue(CreateObject("roRegex", "^[0-9a-f]{48}$", "").isMatch(key))
+            m.assertEqual(device.resolveKey("", m.store), key)
+            m.assertEqual(m.store.get("license:deviceKey"), key)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("secrets — cifra de segredos")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("cifra e decifra uma senha; o texto não aparece no que é guardado")
+        function _()
+            blob = secrets.encrypt("senha-secreta")
+            m.assertEqual(blob.v, 1)
+            m.assertTrue(FormatJson(blob).instr("senha-secreta") < 0)
+            m.assertEqual(secrets.decrypt(blob), "senha-secreta")
+        end function
+
+        @it("várias cifras seguidas decifram todas")
+        function _()
+            for each text in ["a", "b", "c", "d", "senhaComAcentoÇãé€"]
+                m.assertEqual(secrets.decrypt(secrets.encrypt(text)), text)
+            end for
+        end function
+
+        @it("dado adulterado ou de outra versão vira invalid")
+        function _()
+            m.assertInvalid(secrets.decrypt({ v: 1, data: "00ff" }))
+            m.assertInvalid(secrets.decrypt({ v: 2, data: secrets.encrypt("x").data }))
+            m.assertInvalid(secrets.decrypt(invalid))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("errorLog — registro local de erros (Diagnóstico)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("nunca guarda endereço, usuário ou senha da lista")
+        function _()
+            m.assertEqual(errorLog.cleanErrorText({ name: "TypeError", message: "Falhou http://painel.tv:8080/get.php?username=joao&password=segredo123 e mais" }), "TypeError: Falhou [endereço] e mais")
+            m.assertEqual(errorLog.cleanErrorText("erro token=abc"), "erro token=***")
+            m.assertEqual(Len(errorLog.cleanErrorText(String(1000, "x"))), 300)
+        end function
+
+        @it("guarda o mais recente primeiro, no máximo 20, e sobrevive a reabrir o app")
+        function _()
+            for i = 0 to errorLog.MAX + 4
+                errorLog.record({ message: "erro " + i.toStr() }, "tela", m.store)
+            end for
+            list = errorLog.read(storage.create("pulse-test"))
+            m.assertEqual(list.count(), errorLog.MAX)
+            m.assertEqual(list[0].where, "tela")
+            m.assertEqual(list[0].message, "erro " + (errorLog.MAX + 4).toStr())
+        end function
+
+        @it("erro logo ao abrir o app não apaga o histórico salvo antes")
+        function _()
+            m.store.set(errorLog.KEY, [{ at: 1, where: "", message: "antigo" }])
+            errorLog.record("novo", "", m.store)
+            list = errorLog.read(m.store)
+            m.assertEqual(list[0].message, "novo")
+            m.assertEqual(list[1].message, "antigo")
+        end function
+
+        @it("limpar apaga do aparelho")
+        function _()
+            errorLog.record("um", "", m.store)
+            errorLog.clear(m.store)
+            m.assertEqual(errorLog.read(m.store).count(), 0)
+            m.assertInvalid(m.store.get(errorLog.KEY))
+        end function
+
+        @it("armazenamento quebrado não derruba o app")
+        function _()
+            errorLog.record("qualquer", "", tests.brokenStore())
+            m.assertTrue(true)
+        end function
+
+    end class
+
+end namespace

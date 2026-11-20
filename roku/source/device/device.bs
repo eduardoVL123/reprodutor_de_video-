@@ -1,0 +1,42 @@
+' Port de src/services/deviceIdentity.js (RFC-018 §1): o ID da plataforma vira hash antes de sair do aparelho.
+' Na Roku o ID é o GetChannelClientId(): persistente, por app, sobrevive a reinstalar. Sem ID (não deveria acontecer),
+' código aleatório guardado no app, como no web.
+namespace device
+
+    const FALLBACK_KEY = "license:deviceKey"
+    const PLATFORM = "roku"
+
+    function sha256Hex(text as string) as string
+        bytes = CreateObject("roByteArray")
+        bytes.fromAsciiString(text) ' grava UTF-8, como o TextEncoder do web
+        digest = CreateObject("roEVPDigest")
+        digest.setup("sha256")
+        return LCase(digest.process(bytes))
+    end function
+
+    function keyFromId(id as string) as string
+        return device.sha256Hex("pulse-license:" + id)
+    end function
+
+    ' 24 bytes aleatórios em hex (48 caracteres), como o randomKey() do web.
+    function randomKey() as string
+        info = CreateObject("roDeviceInfo")
+        hex = LCase(info.getRandomUUID().replace("-", "") + info.getRandomUUID().replace("-", ""))
+        return Left(hex, 48)
+    end function
+
+    function resolveKey(id as string, store as object) as string
+        if id <> "" then return device.keyFromId(id)
+        saved = store.get(device.FALLBACK_KEY)
+        if utils.isString(saved) and saved <> "" then return saved
+        key = device.randomKey()
+        store.set(device.FALLBACK_KEY, key)
+        return key
+    end function
+
+    ' Chave estável do aparelho (64 caracteres hex) para a licença.
+    function getDeviceKey(store as object) as string
+        return device.resolveKey(CreateObject("roDeviceInfo").getChannelClientId(), store)
+    end function
+
+end namespace

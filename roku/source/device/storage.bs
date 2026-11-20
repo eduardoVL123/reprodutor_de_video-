@@ -1,0 +1,33 @@
+' Port de src/services/storage.js: persistência local com as mesmas chaves do app web ("auth:session",
+' "license:state"...), valores em JSON no roRegistrySection. O registro tem 32 KB por app: só estado pequeno aqui;
+' o catálogo vai para arquivos (D4).
+namespace storage
+
+    const SECTION = "pulse"
+
+    ' Um armazenamento sobre uma seção do registro: { get, set, remove, clear }.
+    function create(sectionName = storage.SECTION as string) as object
+        return {
+            section: CreateObject("roRegistrySection", sectionName),
+            get: function(key as string) as dynamic
+                if not m.section.exists(key) then return invalid
+                return ParseJson(m.section.read(key))
+            end function,
+            set: function(key as string, value as dynamic) as boolean
+                ok = m.section.write(key, FormatJson(value))
+                return m.section.flush() and ok
+            end function,
+            remove: function(key as string) as boolean
+                m.section.delete(key)
+                return m.section.flush()
+            end function,
+            clear: function() as boolean
+                for each key in m.section.getKeyList()
+                    m.section.delete(key)
+                end for
+                return m.section.flush()
+            end function
+        }
+    end function
+
+end namespace
