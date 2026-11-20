@@ -3,12 +3,28 @@ import "pkg:/source/ui/ui.bs"
 const PAD_X = 20
 const BORDER = 1
 const RING = 5 ' 3 px de afastamento + 2 px de anel
+const SPINNER = 32 ' w-8 h-8
+const SPINNER_GAP = 16 ' mr-4
 
 sub init()
     m.ring = m.top.createChild("Poster")
     m.ring.uri = "pkg:/images/ui/focus-ring.9.png"
     m.ring.visible = false
     m.bg = m.top.createChild("Poster")
+    m.spinner = m.top.createChild("Poster")
+    m.spinner.uri = "pkg:/images/ui/spinner.png"
+    m.spinner.width = SPINNER
+    m.spinner.height = SPINNER
+    m.spinner.scaleRotateCenter = [SPINNER / 2, SPINNER / 2]
+    m.spinner.visible = false
+    m.spin = m.top.createChild("Animation")
+    m.spin.duration = 1
+    m.spin.repeat = true
+    interpolator = m.spin.createChild("FloatFieldInterpolator")
+    interpolator.key = [0, 1]
+    interpolator.keyValue = [0, -6.2832] ' uma volta (animate-spin)
+    interpolator.fieldToInterp = "loadingSpinner.rotation"
+    m.spinner.id = "loadingSpinner"
     m.label = m.top.createChild("Label")
     render()
 end sub
@@ -26,11 +42,23 @@ sub render()
     if primary then m.bg.uri = "pkg:/images/ui/btn-primary.9.png"
 
     textWidth = m.label.boundingRect().width
-    width = textWidth + 2 * (PAD_X + BORDER)
+    contentWidth = textWidth
+    if m.top.loading then contentWidth = SPINNER + SPINNER_GAP + textWidth
+    width = contentWidth + 2 * (PAD_X + BORDER)
+    if m.top.fixedWidth > 0 then width = m.top.fixedWidth
     height = m.top.buttonHeight
     m.bg.width = width
     m.bg.height = height
-    m.label.translation = [PAD_X + BORDER, (height - m.label.boundingRect().height) / 2]
+    left = (width - contentWidth) / 2
+    m.spinner.visible = m.top.loading
+    m.spinner.translation = [left, (height - SPINNER) / 2]
+    if m.top.loading then
+        left = left + SPINNER + SPINNER_GAP
+        m.spin.control = "start"
+    else
+        m.spin.control = "stop"
+    end if
+    m.label.translation = [left, (height - m.label.boundingRect().height) / 2]
     m.ring.translation = [-RING, -RING]
     m.ring.width = width + 2 * RING
     m.ring.height = height + 2 * RING

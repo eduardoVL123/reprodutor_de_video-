@@ -12,12 +12,17 @@ namespace ui
     const BLACK = "0x000000FF"
     const ERROR = "0xF87171FF" ' text-red-400
     const WARNING = "0xFCD34DFF" ' text-amber-300
+    const NEUTRAL_400 = "0xA3A3A3FF"
+    const NEUTRAL_500 = "0x737373FF"
+    const RED_300 = "0xFCA5A5FF"
 
     ' Fonte Roboto (a que as outras TVs mostram; roku/fonts/README.md) no peso pedido: 400 Regular, 500 Medium,
     ' 600 SemiBold, 700 Bold.
     function font(weight as integer, size as integer) as object
         name = "Regular"
-        if weight >= 700 then
+        if weight >= 900 then
+            name = "Black"
+        else if weight >= 700 then
             name = "Bold"
         else if weight >= 600 then
             name = "SemiBold"
@@ -26,6 +31,14 @@ namespace ui
         end if
         f = CreateObject("roSGNode", "Font")
         f.uri = "pkg:/fonts/Roboto-" + name + ".ttf"
+        f.size = size
+        return f
+    end function
+
+    ' Fonte monoespaçada (font-mono do web: os atalhos e a causa técnica do erro), Roboto Mono Medium.
+    function monoFont(size as integer) as object
+        f = CreateObject("roSGNode", "Font")
+        f.uri = "pkg:/fonts/RobotoMono-Medium.ttf"
         f.size = size
         return f
     end function

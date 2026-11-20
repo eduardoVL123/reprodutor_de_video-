@@ -1,3 +1,4 @@
+import "pkg:/source/utils/types.bs"
 ' Port das regras e textos de src/views/FTUE.vue e do aceite de src/services/storage.js
 ' (casos em tests/legalLicense.test.js, tests/legalPairing.test.js e roku/source/ftue/ftue.spec.bs).
 ' Diferença da Roku: não há Chromecast, então o trecho do Cast sai de todas as variantes do texto de privacidade.

@@ -23,6 +23,14 @@ BrighterScript: variável local ou função com o mesmo nome de uma `const` do n
 app no simulador (`npm run roku:preview` ou `brs-cli --ascii 120 build/roku/pulse-roku.zip`): os testes Rooibos não
 pegam erro de tela.
 
+JSON: `obj.campoX = v` grava a chave em minúsculas (`campox`) e o `FormatJson` sai assim; só literal `{ campoX: v }`
+ou `obj["campoX"] = v` mantém a caixa. Ler de volta funciona (a Roku ignora maiúsculas), mas JSON que vai para o
+servidor (licença, pareamento) tem que ser montado com literal ou colchetes.
+
+Imports: todo arquivo de `roku/source/` começa com `import "pkg:/source/..."` de cada módulo que usa (o componente
+importa só o que chama direto e o BrighterScript traz o resto). Sem isso o build do componente quebra com
+"Cannot find name".
+
 Rooibos: todo `@it` precisa de um `@describe` antes; não existe `assertNotContains` para texto
 (use `m.assertTrue(texto.instr("x") < 0)`); helpers de tipo ficam em `roku/source/utils/types.bs`.
 

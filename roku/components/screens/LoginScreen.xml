@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Conectar ao servidor (port de src/views/Login.vue, sem pareamento: como no build sem VITE_PAIR_BASE_URL).
+     Os campos abrem o StandardKeyboardDialog da Roku (certificação 4.12) no lugar do teclado na tela do web. -->
+<component name="LoginScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

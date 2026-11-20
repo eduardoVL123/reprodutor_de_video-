@@ -1,10 +1,13 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Botão .tv-btn / .tv-btn-primary de src/style.css: rounded-lg, px-5 py-2.5, text-tv-sm; com foco, anel branco de
-     2 px afastado 3 px e escala 1.02 (.tv-focusable). O foco é marcado pela tela (campo "focused"). -->
+     2 px afastado 3 px e escala 1.02 (.tv-focusable). O foco é marcado pela tela (campo "focused").
+     fixedWidth > 0 = w-full do web (texto centralizado); loading = ícone girando antes do texto (Entrar). -->
 <component name="PulseButton" extends="Group">
     <interface>
         <field id="text" type="string" onChange="render" />
         <field id="variant" type="string" value="secondary" onChange="render" />
+        <field id="fixedWidth" type="float" value="0" onChange="render" />
+        <field id="loading" type="boolean" value="false" onChange="render" />
         <field id="focused" type="boolean" value="false" onChange="renderFocus" />
         <field id="buttonWidth" type="float" />
         <field id="buttonHeight" type="float" value="50" />

@@ -1,0 +1,17 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/device/secrets.bs"
+import "pkg:/source/session/session.bs"
+
+sub init()
+    m.top.functionName = "runLogin"
+end sub
+
+sub runLogin()
+    m.top.result = session.login(net.urlTransport(), storage.create(), m.top.params)
+end sub

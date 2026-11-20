@@ -1,3 +1,5 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
 ' Port de src/services/errorLog.js (Plano de robustez, item 6): últimos erros guardados só no aparelho, para o
 ' "Diagnóstico". Endereços inteiros viram "[endereço]" e o resto passa por maskSecrets.
 ' Casos em tests/errorLog.test.js e roku/source/device/device.spec.bs.

@@ -1,3 +1,6 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/api.bs"
 ' Transporte HTTP real para xtream.* (contrato em roku/source/xtream/api.bs): o papel do fetchWithTimeout/smartFetch
 ' de src/services/xtreamTransport.js. Usa roUrlTransfer: só em Task node ou na thread principal, nunca na render.
 ' Testes: roku/source/net/transport.spec.bs (integração contra `npm run mock`).

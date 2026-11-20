@@ -104,7 +104,7 @@ end sub
 sub accept()
     store = storage.create()
     if store.set(ftue.STORAGE_KEY, ftue.acceptRecord(CreateObject("roDateTime").toISOString())) then
-        m.top.navigate = { action: "replace", screen: "HomeScreen" }
+        m.top.navigate = { action: "replace", screen: "LoginScreen" }
     else
         showMessage("Não foi possível salvar sua escolha. Tente novamente.", ui.ERROR)
     end if

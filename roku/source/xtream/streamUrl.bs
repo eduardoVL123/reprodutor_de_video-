@@ -1,3 +1,4 @@
+import "pkg:/source/utils/types.bs"
 ' Port de src/services/streamUrl.js (casos em tests/streamUrl.test.js e roku/source/xtream/streamUrl.spec.bs).
 '
 '   live:   <base>/live/<user>/<pass>/<stream_id>.m3u8   (alternativo: .ts)

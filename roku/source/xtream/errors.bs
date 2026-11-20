@@ -1,3 +1,5 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
 ' Port de src/services/xtreamErrors.js (casos em tests/xtreamApi.test.js e roku/source/xtream/errors.spec.bs).
 ' O XtreamError do JS vira um objeto { code, userMessage, technicalDetail, detail, status }.
 namespace xtream

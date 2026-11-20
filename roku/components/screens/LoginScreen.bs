@@ -1,0 +1,249 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/session/loginForm.bs"
+
+' Medidas de src/views/Login.vue em px (1920×1080): cartão w-[50rem] com px-14 py-12, cabeçalho mb-8, campos com
+' rótulo mb-2 e space-y-6, atalhos px-4 py-1.5 mr-2, erro mt-8, Entrar mt-10 e o pb-8 do aviso do site embaixo.
+const CARD_WIDTH = 800
+const PAD_X = 56
+const PAD_Y = 48
+const INPUT_HEIGHT = 54
+const SNIPPET_HEIGHT = 42
+
+sub init()
+    m.values = { dns: "", user: "", pass: "" }
+    m.focus = loginForm.initialFocus()
+    m.error = ""
+    m.errorDetail = ""
+    m.loading = false
+    glow = m.top.createChild("Poster")
+    glow.uri = "pkg:/images/ui/glow-circle.png"
+    glow.translation = [1520, -160]
+    glow.width = 560
+    glow.height = 560
+    m.card = m.top.createChild("Group")
+    m.top.setFocus(true)
+    build()
+end sub
+
+' Monta o cartão inteiro (o erro muda a altura, e o cartão fica centralizado na tela como o my-auto do web).
+sub build()
+    m.card.removeChildrenIndex(m.card.getChildCount(), 0)
+    content = CreateObject("roSGNode", "Group")
+    width = CARD_WIDTH - 2 * PAD_X - 2
+    fields = loginForm.fields()
+
+    ' Cabeçalho
+    mark = content.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 23
+    mark.height = 24
+    mark.translation = [0, 2]
+    ui.trackedText(content, "PULSE PLAYER · CONEXÃO", ui.font(700, 20), ui.ACCENT, 31, 0, 5)
+    ui.text(content, "Conectar ao servidor", ui.font(900, 44), ui.WHITE, 0, 40, width, 56)
+    ui.text(content, "Informe o endereço do seu servidor ou a URL de uma playlist M3U.", ui.font(400, 20), ui.NEUTRAL_400, 0, 104, width, 28)
+    keyboard = content.createChild("Poster")
+    keyboard.uri = "pkg:/images/ui/icon-keyboard.png"
+    keyboard.width = 16
+    keyboard.height = 16
+    keyboard.translation = [0, 146]
+    ui.text(content, "Navegue com as setas e pressione OK para abrir o teclado", ui.font(400, 20), ui.NEUTRAL_500, 24, 140, width - 24, 28)
+    y = 168 + 32
+
+    ' Link + atalhos + dica
+    m.inputs = {}
+    y = addField(content, "dns", fields.dns, y, width)
+    ' No CSS o space-y-6 vence o -mt-3/-mb-2 da fileira: ela fica 24 px abaixo e ocupa 42 + mb-2 (8) dos botões.
+    m.snippets = []
+    x = 0
+    for each snippet in session.urlSnippets()
+        button = buildSnippet(content, snippet, x, y + 24)
+        m.snippets.push(button)
+        x = x + button.boxWidth + 8
+    end for
+    y = y + 24 + SNIPPET_HEIGHT + 8 + 24
+    dica = ui.text(content, "Dica: no app de controle remoto da sua TV no celular, dá para digitar com o teclado do celular.", ui.font(400, 20), ui.NEUTRAL_500, 0, y, width, 28)
+    y = y + ui.textHeight(dica, 28) + 24
+    y = addField(content, "user", fields.user, y, width)
+    y = addField(content, "pass", fields.pass, y + 24, width)
+
+    ' Erro (só quando há) e Entrar
+    if m.error <> "" then
+        y = y + 32
+        y = y + buildError(content, y, width)
+    end if
+    y = y + 40
+    m.submit = content.createChild("PulseButton")
+    m.submit.variant = "primary"
+    m.submit.fixedWidth = width
+    m.submit.text = "Entrar"
+    if m.loading then m.submit.text = "Conectando..."
+    m.submit.loading = m.loading
+    m.submit.translation = [0, y]
+    contentHeight = y + 50 + PAD_Y + 32 ' pb do formulário + pb-8 do aviso do site (vazio neste build)
+
+    cardHeight = 1 + PAD_Y + contentHeight + 1
+    cardX = (1920 - CARD_WIDTH) / 2
+    cardY = (1080 - cardHeight) / 2
+    ui.panel(m.card, "dialog", cardX, cardY, CARD_WIDTH, cardHeight)
+    content.translation = [cardX + 1 + PAD_X, cardY + 1 + PAD_Y]
+    m.card.appendChild(content)
+    renderFocus()
+end sub
+
+' Rótulo (mb-2) + campo .tv-input; devolve o y logo abaixo do campo.
+function addField(parent as object, key as string, field as object, y as float, width as float) as float
+    ui.text(parent, field.label, ui.font(400, 20), ui.MUTED, 0, y, width, 28)
+    top = y + 28 + 8
+    bg = ui.panel(parent, "input", 0, top, width, INPUT_HEIGHT)
+    ring = ui.panel(parent, "input-focus", -4, top - 4, width + 8, INPUT_HEIGHT + 8)
+    value = m.values[key]
+    color = ui.WHITE
+    shown = value
+    if value = "" then
+        shown = field.placeholder
+        color = ui.NEUTRAL_500
+    end if
+    label = ui.text(parent, shown, ui.font(400, 20), color, 21, top + 13, width - 42, 28)
+    label.wrap = false
+    m.inputs[key] = { bg: bg, ring: ring }
+    return top + INPUT_HEIGHT
+end function
+
+' Atalho: .tv-btn !px-4 !py-1.5 font-mono text-tv-xs.
+function buildSnippet(parent as object, text as string, x as float, y as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, y]
+    bg = group.createChild("Poster")
+    bg.uri = "pkg:/images/ui/btn.9.png"
+    label = group.createChild("Label")
+    label.font = ui.monoFont(20)
+    label.color = ui.WHITE
+    label.text = text
+    boxWidth = label.boundingRect().width + 2 * 16 + 2
+    bg.width = boxWidth
+    bg.height = SNIPPET_HEIGHT
+    label.translation = [17, (SNIPPET_HEIGHT - label.boundingRect().height) / 2]
+    ring = group.createChild("Poster")
+    ring.uri = "pkg:/images/ui/focus-ring.9.png"
+    ring.translation = [-5, -5]
+    ring.width = boxWidth + 10
+    ring.height = SNIPPET_HEIGHT + 10
+    group.insertChild(ring, 0)
+    group.scaleRotateCenter = [boxWidth / 2, SNIPPET_HEIGHT / 2]
+    return { group: group, ring: ring, boxWidth: boxWidth, text: text }
+end function
+
+' Caixa de erro: border-2 red-500/60, px-6 py-4, mensagem em semibold e "Causa técnica" em fonte mono.
+function buildError(parent as object, y as float, width as float) as float
+    bg = ui.panel(parent, "error-box", 0, y, width, 0)
+    message = ui.text(parent, m.error, ui.font(600, 20), ui.RED_300, 26, y + 18, width - 52, 28)
+    height = 2 + 16 + ui.textHeight(message, 28)
+    if m.errorDetail <> "" then
+        detailY = y + height + 10
+        detailBg = ui.panel(parent, "error-detail", 26, detailY, width - 52, 0)
+        detail = ui.text(parent, "Causa técnica: " + m.errorDetail, ui.monoFont(20), ui.RED_300, 37, detailY + 11, width - 74, 28)
+        detailHeight = 1 + 10 + ui.textHeight(detail, 28) + 10 + 1
+        detailBg.height = detailHeight
+        height = height + 10 + detailHeight
+    end if
+    height = height + 16 + 2
+    bg.height = height
+    return height
+end function
+
+sub renderFocus()
+    for each key in m.inputs
+        focused = m.focus.row = key
+        m.inputs[key].ring.visible = focused
+        m.inputs[key].bg.visible = not focused
+    end for
+    for i = 0 to m.snippets.count() - 1
+        focused = m.focus.row = "snippets" and m.focus.snippet = i
+        m.snippets[i].ring.visible = focused
+        if focused then
+            m.snippets[i].group.scale = [1.02, 1.02]
+        else
+            m.snippets[i].group.scale = [1, 1]
+        end if
+    end for
+    m.submit.focused = m.focus.row = "submit"
+end sub
+
+sub openKeyboard(key as string)
+    field = loginForm.fields()[key]
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = field.label
+    dialog.text = m.values[key]
+    dialog.buttons = ["OK", "Cancelar"]
+    dialog.keyboardDomain = "alphanumeric"
+    if key = "pass" then dialog.keyboardDomain = "password"
+    m.editing = key
+    dialog.observeField("buttonSelected", "onKeyboardButton")
+    dialog.observeField("wasClosed", "onKeyboardClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardButton(event as object)
+    dialog = m.top.getScene().dialog
+    if event.getData() = 0 and dialog <> invalid then
+        m.values[m.editing] = dialog.text
+        build()
+    end if
+    if dialog <> invalid then dialog.close = true
+end sub
+
+sub onKeyboardClosed()
+    m.top.getScene().dialog = invalid
+    m.top.setFocus(true)
+end sub
+
+sub submit()
+    if m.loading then return
+    check = loginForm.validate(m.values.dns)
+    if not check.ok then
+        showError(check.error, check.errorDetail, check.focus)
+        return
+    end if
+    m.error = ""
+    m.errorDetail = ""
+    m.loading = true
+    build()
+    m.task = CreateObject("roSGNode", "LoginTask")
+    m.task.params = { dns: m.values.dns, username: m.values.user, password: m.values.pass }
+    m.task.observeField("result", "onLoginResult")
+    m.task.control = "run"
+end sub
+
+sub onLoginResult(event as object)
+    result = event.getData()
+    m.loading = false
+    if result.ok then
+        m.top.navigate = { action: "replace", screen: "HomeScreen" }
+        return
+    end if
+    showError(result.error, result.errorDetail, loginForm.focusAfterError(result.error))
+end sub
+
+sub showError(message as string, detail as string, focusRow as string)
+    m.error = message
+    m.errorDetail = detail
+    m.focus = { row: focusRow, snippet: m.focus.snippet }
+    build()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    result = loginForm.onKey(key, m.focus, m.snippets.count())
+    m.focus = result.focus
+    renderFocus()
+    if result.action = "edit" then openKeyboard(m.focus.row)
+    if result.action = "snippet" then
+        m.values.dns = session.applySnippet(m.values.dns, m.snippets[m.focus.snippet].text)
+        build()
+    end if
+    if result.action = "submit" then submit()
+    return result.handled
+end function

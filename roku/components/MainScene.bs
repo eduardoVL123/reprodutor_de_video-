@@ -2,18 +2,27 @@ import "pkg:/source/nav/nav.bs"
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/ftue/ftue.bs"
 import "pkg:/source/device/storage.bs"
+import "pkg:/source/device/secrets.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/net/maskSecrets.bs"
+import "pkg:/source/session/session.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
-    ' Sem o aceite da versão atual dos termos, só o aviso do primeiro acesso (como a guarda do router do web).
-    if ftue.isAccepted(storage.create().get(ftue.STORAGE_KEY)) then
-        pushScreen(CreateObject("roSGNode", "HomeScreen"))
-    else
-        pushScreen(CreateObject("roSGNode", "FtueScreen"))
-    end if
+    pushScreen(CreateObject("roSGNode", initialScreen()))
 end sub
+
+' Como a guarda do router do web: sem o aceite dos termos só o FTUE; sem sessão salva, o login; senão a home.
+function initialScreen() as string
+    store = storage.create()
+    if not ftue.isAccepted(store.get(ftue.STORAGE_KEY)) then return "FtueScreen"
+    if session.hydrate(store) = invalid then return "LoginScreen"
+    return "HomeScreen"
+end function
 
 ' Abre uma tela por cima da atual; a anterior fica escondida e volta com o Voltar.
 sub pushScreen(screen as object)

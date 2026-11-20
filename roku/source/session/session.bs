@@ -1,0 +1,169 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/device/secrets.bs"
+' Port de login/hydrate de src/stores/authStore.js e de src/utils/urlSnippets.js (casos em tests/authStore.test.js,
+' tests/login.test.js e roku/source/session/session.spec.bs). Roda num Task node (usa a rede e a cifra).
+' Ainda não portado: importar o catálogo da lista e limpar o catálogo/player da conta anterior (D4/D6), trocar e
+' excluir listas (ListManager) e migrar dados legados do web (a Roku começa sem dados antigos).
+namespace session
+
+    const SESSION_KEY = "auth:session"
+    const SAVED_LISTS_KEY = "auth:savedLists"
+
+    ' Pedaços que mais se repetem nos links de lista: um botão para cada, para digitar menos no controle remoto.
+    function urlSnippets() as object
+        return ["http://", "https://", "www.", ".com", ".net", ":8080", "/"]
+    end function
+
+    ' Aplica um atalho ao texto: protocolo vai no começo (trocando o que houver), o resto no fim.
+    function applySnippet(value as string, snippet as string) as string
+        protocol = CreateObject("roRegex", "^https?:\/\/", "i")
+        if protocol.isMatch(snippet) then return snippet + protocol.replaceAll(value, "")
+        return value + snippet
+    end function
+
+    function nowIso() as string
+        return CreateObject("roDateTime").toISOString()
+    end function
+
+    ' Id estável da lista M3U, sem pôr a URL (que pode carregar um token) dentro do id.
+    function m3uListId(url as string) as string
+        return "list_m3u_" + xtream.hashText(url)
+    end function
+
+    function hostOf(url as string, fallback as string) as string
+        parsed = xtream.parseUrl(url)
+        if parsed = invalid or parsed.hostname = "" then return fallback
+        return parsed.hostname
+    end function
+
+    function copyOf(item as object) as object
+        copy = {}
+        copy.append(item)
+        return copy
+    end function
+
+    ' M3U: a URL pode ter token, então vai cifrada como a senha do Xtream (texto só se a cifra falhar).
+    function protectM3u(item as object) as object
+        if item.urlEnc <> invalid then return item
+        urlEnc = secrets.encrypt(FormatJson({ baseUrl: item.baseUrl, resolvedUrl: item.resolvedUrl }))
+        if urlEnc = invalid then return item
+        stored = session.copyOf(item)
+        parsed = xtream.parseUrl(utils.textOr(item.baseUrl, ""))
+        stored.baseUrl = ""
+        if parsed <> invalid then stored.baseUrl = parsed.origin
+        stored.resolvedUrl = invalid
+        stored.urlEnc = urlEnc
+        return stored
+    end function
+
+    ' Versão persistida: a senha (ou a URL, no M3U) vai cifrada.
+    function toStored(item as object) as object
+        if item.type = "m3u" then return session.protectM3u(item)
+        stored = session.copyOf(item)
+        if utils.isString(item.password) and item.password <> "" then
+            passwordEnc = secrets.encrypt(item.password)
+            if passwordEnc <> invalid then
+                stored.password = invalid
+                stored.passwordEnc = passwordEnc
+            end if
+        end if
+        return stored
+    end function
+
+    ' Reconstrói a sessão em memória; invalid (e apaga a salva) se a senha ou a URL não puderem ser recuperadas.
+    function hydrate(store as object) as dynamic
+        saved = store.get(session.SESSION_KEY)
+        if not utils.isObject(saved) or utils.textOr(saved.baseUrl, "") = "" or utils.textOr(saved.username, "") = "" then return invalid
+        restored = session.copyOf(saved)
+        if saved.type = "m3u" then
+            if saved.urlEnc = invalid then return restored
+            json = secrets.decrypt(saved.urlEnc)
+            urls = invalid
+            if json <> invalid then urls = ParseJson(json)
+            if not utils.isObject(urls) then
+                store.remove(session.SESSION_KEY) ' chave perdida/dado adulterado: exige novo login
+                return invalid
+            end if
+            restored.append(urls)
+            restored.urlEnc = invalid
+            restored.id = session.m3uListId(utils.textOr(restored.resolvedUrl, restored.baseUrl))
+            return restored
+        end if
+        if saved.passwordEnc = invalid then
+            if utils.textOr(saved.password, "") = "" then return invalid
+            return restored
+        end if
+        password = secrets.decrypt(saved.passwordEnc)
+        if password = invalid then
+            store.remove(session.SESSION_KEY)
+            return invalid
+        end if
+        restored.password = password
+        restored.passwordEnc = invalid
+        return restored
+    end function
+
+    ' Coloca/atualiza a lista nas listas salvas (mesmo id, ou mesmo servidor e usuário).
+    sub saveList(store as object, listItem as object)
+        lists = store.get(session.SAVED_LISTS_KEY)
+        if GetInterface(lists, "ifArray") = invalid then lists = []
+        stored = session.toStored(listItem)
+        for i = 0 to lists.count() - 1
+            same = lists[i].id = listItem.id
+            if not same and listItem.type = "xtream" then same = lists[i].baseUrl = listItem.baseUrl and lists[i].username = listItem.username
+            if same then
+                lists[i] = stored
+                store.set(session.SAVED_LISTS_KEY, lists)
+                return
+            end if
+        end for
+        lists.push(stored)
+        store.set(session.SAVED_LISTS_KEY, lists)
+    end sub
+
+    function failure(err as dynamic) as object
+        described = xtream.describeError(err)
+        message = described.message
+        if utils.isObject(err) and (err.code = "MISSING_CREDENTIALS" or err.code = "missing_credentials") then message = xtream.MISSING_CREDENTIALS_ERROR
+        print "[auth] Falha no login: "; described.detail
+        return { ok: false, error: message, errorDetail: described.detail, session: invalid }
+    end function
+
+    ' Entra com o que foi digitado (link curto, URL Xtream ou playlist M3U). { ok, error, errorDetail, session }
+    function login(transport as object, store as object, params as object) as object
+        resolved = xtream.resolveShortInput(transport, { dns: params.dns, username: params.username, password: params.password })
+        if resolved.error <> invalid then return session.failure(resolved.error)
+        label = utils.textOr(params.label, "").trim()
+
+        if resolved.mode = "m3u" then
+            ' Lista vazia ou ilegível falha aqui, antes de mexer no que já estava salvo.
+            read = xtream.readM3u(resolved.m3uText)
+            if read.error <> invalid then return session.failure(read.error)
+            if label = "" then label = "Lista M3U @ " + session.hostOf(resolved.resolvedUrl, "m3u")
+            listId = session.m3uListId(resolved.resolvedUrl)
+            username = utils.textOr(resolved.username, "M3U Playlist")
+            insecure = CreateObject("roRegex", "^http:\/\/", "i").isMatch(resolved.resolvedUrl)
+            ' TODO(D4): importar read.parsed no catálogo e limpar o catálogo/player da lista anterior.
+            session.saveList(store, { id: listId, type: "m3u", label: label, baseUrl: resolved.baseUrl, resolvedUrl: resolved.resolvedUrl, username: username, password: invalid, passwordEnc: invalid, insecure: insecure, updatedAt: session.nowIso() })
+            current = { id: listId, type: "m3u", label: label, baseUrl: resolved.baseUrl, resolvedUrl: resolved.resolvedUrl, username: username, password: "", userInfo: { auth: 1, status: "Active", exp_date: invalid }, serverInfo: { port: "", server_protocol: "http" }, savedAt: session.nowIso() }
+            store.set(session.SESSION_KEY, session.toStored(current))
+            return { ok: true, error: "", errorDetail: "", session: current }
+        end if
+
+        ' Modo Xtream Codes
+        auth = xtream.authenticate(transport, { dns: resolved.resolvedUrl, username: resolved.username, password: resolved.password })
+        if auth.error <> invalid then return session.failure(auth.error)
+        username = utils.textOr(resolved.username, "").trim()
+        password = utils.textOr(resolved.password, "")
+        if label = "" then label = username + " @ " + session.hostOf(auth.baseUrl, auth.baseUrl)
+        listId = CreateObject("roRegex", "[^a-z0-9_]", "i").replaceAll("list_" + auth.baseUrl + "_" + username, "_")
+        session.saveList(store, { id: listId, type: "xtream", label: label, baseUrl: auth.baseUrl, resolvedUrl: auth.resolvedUrl, username: username, password: password, passwordEnc: invalid, insecure: auth.insecure, updatedAt: session.nowIso() })
+        ' TODO(D4/D6): conta possivelmente diferente: descartar o catálogo e o player anteriores antes da sessão nova.
+        current = { id: listId, type: "xtream", label: label, baseUrl: auth.baseUrl, resolvedUrl: auth.resolvedUrl, username: username, password: password, userInfo: auth.userInfo, serverInfo: auth.serverInfo, savedAt: session.nowIso() }
+        store.set(session.SESSION_KEY, session.toStored(current))
+        return { ok: true, error: "", errorDetail: "", session: current }
+    end function
+
+end namespace

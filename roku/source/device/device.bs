@@ -1,3 +1,4 @@
+import "pkg:/source/utils/types.bs"
 ' Port de src/services/deviceIdentity.js (RFC-018 §1): o ID da plataforma vira hash antes de sair do aparelho.
 ' Na Roku o ID é o GetChannelClientId(): persistente, por app, sobrevive a reinstalar. Sem ID (não deveria acontecer),
 ' código aleatório guardado no app, como no web.
