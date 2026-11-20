@@ -1,0 +1,16 @@
+{
+  "extends": "bsconfig.test.json",
+  "stagingFolderPath": "build/roku/integration-staging",
+  "outFile": "build/roku/pulse-roku-integration.zip",
+  "rooibos": {
+    "tags": ["integration", "!device"],
+    "showOnlyFailures": false,
+    "catchCrashes": true,
+    "failFast": false,
+    "sendHomeOnFinish": true,
+    "keepAppOpen": false,
+    "colorizeOutput": false,
+    "reporters": ["console"],
+    "lineWidth": 70
+  }
+}

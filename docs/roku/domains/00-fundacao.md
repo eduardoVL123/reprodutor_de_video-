@@ -23,7 +23,9 @@ conferida no simulador via ECP. Passo 1 (conta Roku e spikes em aparelho) penden
 
 ### 1. Conta Roku e spikes (Fase 0)
 **O que muda**: nada no repo além de `docs/roku/spikes/`. Testar no aparelho: `roRSA.Verify` sha256, `roEVPCipher`
-aes-128-gcm com tag, TS cru por HTTP, `ParseJson` de 50k itens (lista gerada pelo `npm run mock`).
+aes-128-gcm com tag, TS cru por HTTP, `ParseJson` de 50k itens (lista gerada pelo `npm run mock`), e se
+`GetResponseHeadersArray` traz o `Location` dos redirecionamentos (teste `@tags("device")` em
+`roku/source/net/transport.spec.bs`; o simulador não traz — sem isso o link curto que só redireciona pede usuário e senha).
 **Teste**: script BrightScript mínimo por spike, resultado (tempo, memória, sucesso) anotado.
 **Rollback**: n/a. **Sucesso**: os 4 resultados registrados em `docs/roku/spikes/RESULTADOS.md`.
 

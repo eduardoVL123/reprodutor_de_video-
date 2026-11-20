@@ -28,7 +28,8 @@
     "roku:lint": "bslint --project bsconfig.json",
     "roku:deploy": "npm run roku:build && node scripts/roku.mjs deploy",
     "roku:test": "bsc --project bsconfig.test.json && node scripts/roku.mjs sim",
-    "roku:test:device": "bsc --project bsconfig.test.json && node scripts/roku.mjs test"
+    "roku:test:device": "bsc --project bsconfig.test.json && node scripts/roku.mjs test",
+    "roku:test:integration": "bsc --project bsconfig.integration.json && node scripts/roku.mjs integration"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",

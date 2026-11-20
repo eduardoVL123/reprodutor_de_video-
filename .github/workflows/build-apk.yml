@@ -291,6 +291,9 @@ jobs:
       - name: Testes Rooibos no simulador
         run: npm run roku:test
 
+      - name: Testes de integração contra o servidor falso
+        run: npm run roku:test:integration
+
       - name: Enviar pacote Roku
         uses: actions/upload-artifact@v4
         with:

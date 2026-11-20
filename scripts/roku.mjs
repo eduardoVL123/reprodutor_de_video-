@@ -1,5 +1,6 @@
 // Ferramentas do app Roku.
 //   sim    → roda os testes Rooibos no simulador brs-engine (sem aparelho); falha sem "[Rooibos Result]: PASS"
+//   integration → sobe o servidor falso (scripts/mock-xtream.mjs) e roda os testes com a tag "integration"
 //   deploy → envia build/roku/pulse-roku.zip para um aparelho em modo desenvolvedor (ROKU_HOST, ROKU_PASSWORD)
 //   test   → envia build/roku/pulse-roku-test.zip ao aparelho; resultado no console 8085
 //   size   → falha se o pacote passar de 4 MB (certificação Roku 3.x)
@@ -9,7 +10,8 @@ import { pathToFileURL } from 'node:url'
 
 export const MAX_PACKAGE_BYTES = 4 * 1024 * 1024
 const OUT_DIR = 'build/roku'
-const FILES = { deploy: 'pulse-roku.zip', test: 'pulse-roku-test.zip' }
+const FILES = { deploy: 'pulse-roku.zip', test: 'pulse-roku-test.zip', integration: 'pulse-roku-integration.zip' }
+const MOCK_PORT = 8787
 
 export function checkSize(bytes, max = MAX_PACKAGE_BYTES) {
   if (bytes > max) throw new Error(`Pacote Roku com ${bytes} bytes passa do limite de ${max} bytes`)
@@ -23,10 +25,34 @@ export function rooibosPassed(output) {
 
 const SIM_TIMEOUT_MS = 5 * 60 * 1000
 
-function runSimulator() {
+/** Sobe o mock com catálogo pequeno e espera ele responder; devolve o processo para encerrar depois. */
+async function startMock() {
+  const mock = spawn(process.execPath, ['scripts/mock-xtream.mjs'], {
+    env: { ...process.env, MOCK_PORT: String(MOCK_PORT), MOCK_LIVE: '20', MOCK_VOD: '20', MOCK_SERIES: '5' },
+    stdio: 'ignore',
+  })
+  for (let i = 0; i < 50; i++) {
+    const up = await fetch(`http://127.0.0.1:${MOCK_PORT}/lista.m3u`).then(() => true, () => false)
+    if (up) return mock
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  mock.kill()
+  throw new Error(`O servidor falso não subiu na porta ${MOCK_PORT}`)
+}
+
+async function runIntegration() {
+  const mock = await startMock()
+  try {
+    await runSimulator(FILES.integration)
+  } finally {
+    mock.kill()
+  }
+}
+
+function runSimulator(zipFile = FILES.test) {
   return new Promise((resolve, reject) => {
     // Comando inteiro numa string (caminho fixo): shell é preciso para o npx no Windows, e args + shell dão DEP0190.
-    const child = spawn(`npx brs-cli --colors 0 ${OUT_DIR}/${FILES.test}`, {
+    const child = spawn(`npx brs-cli --colors 0 ${OUT_DIR}/${zipFile}`, {
       shell: true,
       env: { ...process.env, BRS_NO_UPDATE_CHECK: '1' },
     })
@@ -52,6 +78,7 @@ function runSimulator() {
 
 async function main(command) {
   if (command === 'sim') return runSimulator()
+  if (command === 'integration') return runIntegration()
   if (command === 'size') {
     const bytes = checkSize(statSync(`${OUT_DIR}/${FILES.deploy}`).size)
     console.log(`[roku] pacote com ${(bytes / 1024).toFixed(0)} KB (limite 4096 KB)`)
