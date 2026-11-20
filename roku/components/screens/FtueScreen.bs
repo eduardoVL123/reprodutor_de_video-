@@ -1,0 +1,127 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/ftue/ftue.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/device/storage.bs"
+
+' Medidas de src/views/FTUE.vue em px (1920×1080): painel w-[96rem] px-16 py-12, cabeçalho com ícone 80 e gap 32,
+' aviso px-8 py-6 com border-l-8, grade de 2 colunas com gap 24, cartões px-6 py-5 com borda 2, rodapé mt-10.
+const DIALOG_WIDTH = 1536
+const PAD_X = 64
+const PAD_Y = 48
+const GAP = 24
+
+sub init()
+    m.focus = ftue.INITIAL_FOCUS
+    m.message = invalid
+    m.top.setFocus(true)
+    layout()
+end sub
+
+sub layout()
+    content = CreateObject("roSGNode", "Group")
+    innerWidth = DIALOG_WIDTH - 2 * PAD_X
+    y = 0
+
+    ' Cabeçalho: ícone do escudo + "PRIMEIRO ACESSO" + título
+    ui.panel(content, "icon-box", 0, 2, 80, 80)
+    shield = content.createChild("Poster")
+    shield.uri = "pkg:/images/ui/icon-shield.png"
+    shield.width = 56
+    shield.height = 56
+    shield.translation = [12, 14]
+    ui.trackedText(content, "PRIMEIRO ACESSO", ui.font(400, 20), ui.ACCENT_SOFT, 112, 0, 6)
+    ui.text(content, "Termos de Uso e Aviso Legal", ui.font(700, 44), ui.TEXT_COLOR, 112, 28, innerWidth - 112, 56)
+    y = 84 + 32
+
+    ' Aviso legal em destaque (texto literal obrigatório)
+    noticeBg = ui.panel(content, "notice", 0, y, innerWidth, 0)
+    notice = ui.text(content, ftue.LEGAL_NOTICE, ui.font(500, 32), ui.TEXT_COLOR, 8 + 32, y + 24, innerWidth - 8 - 64, 44)
+    noticeHeight = 24 + ui.textHeight(notice, 44) + 24
+    noticeBg.height = noticeHeight
+    y = y + noticeHeight + 32
+
+    ' Grade 2×2 de cartões: cada linha tem a altura do cartão mais alto
+    terms = ftue.terms({ license: config.LICENSE_ENABLED, pairing: config.PAIRING_ENABLED })
+    cardWidth = (innerWidth - GAP) / 2
+    for row = 0 to 1
+        cards = []
+        rowHeight = 0
+        for col = 0 to 1
+            term = terms[row * 2 + col]
+            x = col * (cardWidth + GAP)
+            bg = ui.panel(content, "term-card", x, y, cardWidth, 0)
+            ui.text(content, term.title, ui.font(600, 24), ui.ACCENT_SOFT, x + 26, y + 22, cardWidth - 52, 36)
+            body = ui.text(content, term.text, ui.font(400, 20), ui.MUTED, x + 26, y + 22 + 36 + 8, cardWidth - 52, 28)
+            height = 2 + 20 + 36 + 8 + ui.textHeight(body, 28) + 20 + 2
+            if height > rowHeight then rowHeight = height
+            cards.push(bg)
+        end for
+        for each bg in cards
+            bg.height = rowHeight
+        end for
+        y = y + rowHeight
+        if row = 0 then y = y + GAP
+    end for
+
+    ' Mensagem de erro/recusa (só aparece quando há) e rodapé com os botões à direita
+    m.messageY = y + 24
+    m.messageWidth = innerWidth
+    m.content = content
+    y = y + 40
+    m.accept = content.createChild("PulseButton")
+    m.accept.variant = "primary"
+    m.accept.text = "Aceitar"
+    m.decline = content.createChild("PulseButton")
+    m.decline.text = "Recusar e sair"
+    m.accept.translation = [innerWidth - m.accept.buttonWidth, y]
+    m.decline.translation = [innerWidth - m.accept.buttonWidth - GAP - m.decline.buttonWidth, y]
+    contentHeight = y + 50
+
+    ' Painel centralizado na tela (my-auto), com a borda de 1 px por fora do conteúdo
+    dialogHeight = 2 * PAD_Y + contentHeight + 2
+    dialogX = (1920 - DIALOG_WIDTH) / 2
+    dialogY = (1080 - dialogHeight) / 2
+    ui.panel(m.top, "dialog", dialogX, dialogY, DIALOG_WIDTH, dialogHeight)
+    content.translation = [dialogX + PAD_X + 1, dialogY + PAD_Y + 1]
+    m.top.appendChild(content)
+    renderFocus()
+end sub
+
+sub renderFocus()
+    m.accept.focused = m.focus = "accept"
+    m.decline.focused = m.focus = "decline"
+end sub
+
+sub showMessage(text as string, color as string)
+    if m.message = invalid then
+        m.message = ui.text(m.content, text, ui.font(400, 24), color, 0, m.messageY, m.messageWidth, 36)
+    end if
+    m.message.text = text
+    m.message.color = color
+end sub
+
+sub accept()
+    store = storage.create()
+    if store.set(ftue.STORAGE_KEY, ftue.acceptRecord(CreateObject("roDateTime").toISOString())) then
+        m.top.navigate = { action: "replace", screen: "HomeScreen" }
+    else
+        showMessage("Não foi possível salvar sua escolha. Tente novamente.", ui.ERROR)
+    end if
+end sub
+
+sub decline()
+    ' Sem aceite o app não pode ser usado: encerra.
+    showMessage("É necessário aceitar os termos para usar o aplicativo. Você pode fechá-lo pelo botão de saída do controle.", ui.WARNING)
+    m.top.navigate = { action: "exit" }
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    result = ftue.onKey(key, m.focus)
+    m.focus = result.focus
+    renderFocus()
+    if result.action = "accept" then accept()
+    if result.action = "decline" then decline()
+    return result.handled
+end function

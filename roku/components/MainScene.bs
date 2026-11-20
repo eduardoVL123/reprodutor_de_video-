@@ -1,10 +1,18 @@
 import "pkg:/source/nav/nav.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/ftue/ftue.bs"
+import "pkg:/source/device/storage.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
-    pushScreen(CreateObject("roSGNode", "HomeScreen"))
+    ' Sem o aceite da versão atual dos termos, só o aviso do primeiro acesso (como a guarda do router do web).
+    if ftue.isAccepted(storage.create().get(ftue.STORAGE_KEY)) then
+        pushScreen(CreateObject("roSGNode", "HomeScreen"))
+    else
+        pushScreen(CreateObject("roSGNode", "FtueScreen"))
+    end if
 end sub
 
 ' Abre uma tela por cima da atual; a anterior fica escondida e volta com o Voltar.
@@ -12,8 +20,27 @@ sub pushScreen(screen as object)
     current = topScreen()
     if current <> invalid then current.visible = false
     m.screens.appendChild(screen)
+    if screen.hasField("navigate") then screen.observeField("navigate", "onNavigate")
     screen.visible = true
     screen.setFocus(true)
+end sub
+
+' Troca a tela atual (sem voltar para ela), como o router.replace do web.
+sub replaceScreen(screen as object)
+    count = m.screens.getChildCount()
+    if count > 0 then m.screens.removeChildIndex(count - 1)
+    pushScreen(screen)
+end sub
+
+sub onNavigate(event as object)
+    request = event.getData()
+    if request.action = "exit" then
+        m.top.exitApp = true
+    else if request.action = "replace" then
+        replaceScreen(CreateObject("roSGNode", request.screen))
+    else if request.action = "push" then
+        pushScreen(CreateObject("roSGNode", request.screen))
+    end if
 end sub
 
 sub popScreen()

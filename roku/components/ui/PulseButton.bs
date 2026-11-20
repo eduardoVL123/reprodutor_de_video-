@@ -1,0 +1,50 @@
+import "pkg:/source/ui/ui.bs"
+
+const PAD_X = 20
+const BORDER = 1
+const RING = 5 ' 3 px de afastamento + 2 px de anel
+
+sub init()
+    m.ring = m.top.createChild("Poster")
+    m.ring.uri = "pkg:/images/ui/focus-ring.9.png"
+    m.ring.visible = false
+    m.bg = m.top.createChild("Poster")
+    m.label = m.top.createChild("Label")
+    render()
+end sub
+
+sub render()
+    if m.label = invalid then return
+    primary = m.top.variant = "primary"
+    weight = 500
+    if primary then weight = 600
+    m.label.font = ui.font(weight, 20)
+    m.label.color = ui.WHITE
+    if primary then m.label.color = ui.BLACK
+    m.label.text = m.top.text
+    m.bg.uri = "pkg:/images/ui/btn.9.png"
+    if primary then m.bg.uri = "pkg:/images/ui/btn-primary.9.png"
+
+    textWidth = m.label.boundingRect().width
+    width = textWidth + 2 * (PAD_X + BORDER)
+    height = m.top.buttonHeight
+    m.bg.width = width
+    m.bg.height = height
+    m.label.translation = [PAD_X + BORDER, (height - m.label.boundingRect().height) / 2]
+    m.ring.translation = [-RING, -RING]
+    m.ring.width = width + 2 * RING
+    m.ring.height = height + 2 * RING
+    m.top.scaleRotateCenter = [width / 2, height / 2]
+    m.top.buttonWidth = width
+    renderFocus()
+end sub
+
+sub renderFocus()
+    if m.ring = invalid then return
+    m.ring.visible = m.top.focused
+    if m.top.focused then
+        m.top.scale = [1.02, 1.02]
+    else
+        m.top.scale = [1, 1]
+    end if
+end sub

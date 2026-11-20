@@ -1,0 +1,103 @@
+' Casos de tests/legalLicense.test.js, tests/legalPairing.test.js e do comportamento de src/views/FTUE.vue.
+namespace tests
+
+    @suite("ftue")
+    class FtueTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("textos")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("aviso legal literal exigido pelas lojas")
+        function _()
+            m.assertEqual(ftue.LEGAL_NOTICE, "Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo. O usuário é o único responsável pelos links inseridos.")
+        end function
+
+        @it("quatro cartões na ordem do web")
+        function _()
+            terms = ftue.terms({ license: false, pairing: false })
+            m.assertEqual(terms.count(), 4)
+            m.assertEqual(terms[0].title, "Ferramenta neutra")
+            m.assertEqual(terms[1].title, "Responsabilidade do usuário")
+            m.assertEqual(terms[2].title, "Sem conteúdo nosso")
+            m.assertEqual(terms[3].title, "Privacidade")
+        end function
+
+        @it("sem os serviços no build, a promessa continua a mesma de antes")
+        function _()
+            text = ftue.privacyText({ license: false, pairing: false })
+            m.assertTrue(text.instr("Não coletamos nem enviamos seus dados.") = 0)
+            m.assertTrue(text.instr("código do aparelho") < 0)
+            m.assertTrue(text.instr("pareamento") < 0)
+        end function
+
+        @it("com a licença ligada, conta o teste de 7 dias e o que vai para o desenvolvedor")
+        function _()
+            text = ftue.privacyText({ license: true, pairing: false })
+            m.assertTrue(text.instr("teste grátis de 7 dias") >= 0)
+            m.assertTrue(text.instr("código do aparelho") >= 0)
+            m.assertTrue(text.instr("domínio da lista") >= 0)
+            m.assertTrue(text.instr("nunca usuário, senha ou o endereço completo") >= 0)
+            m.assertTrue(text.instr("Não coletamos") < 0)
+        end function
+
+        @it("na Roku não existe Chromecast: o trecho não aparece em nenhuma variante")
+        @params(false, false)
+        @params(true, false)
+        @params(false, true)
+        @params(true, true)
+        function _(license, pairing)
+            m.assertTrue(ftue.privacyText({ license: license, pairing: pairing }).instr("Chromecast") < 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("aceite")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("vale só o aceite da versão atual (6)")
+        function _()
+            m.assertEqual(ftue.VERSION, 6)
+            m.assertTrue(ftue.isAccepted({ accepted: true, version: 6 }))
+            m.assertTrue(ftue.isAccepted({ accepted: true, version: "7" }))
+            m.assertFalse(ftue.isAccepted({ accepted: true, version: 4 }))
+            m.assertFalse(ftue.isAccepted({ accepted: false, version: 6 }))
+            m.assertFalse(ftue.isAccepted(invalid))
+        end function
+
+        @it("o registro do aceite leva data e versão, como no web")
+        function _()
+            record = ftue.acceptRecord("2026-11-20T15:00:00Z")
+            m.assertTrue(record.accepted)
+            m.assertEqual(record.version, 6)
+            m.assertEqual(record.acceptedAt, "2026-11-20T15:00:00Z")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("controle remoto")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("foco começa em Aceitar; esquerda vai para Recusar e direita volta")
+        function _()
+            m.assertEqual(ftue.INITIAL_FOCUS, "accept")
+            m.assertEqual(ftue.onKey("left", "accept").focus, "decline")
+            m.assertEqual(ftue.onKey("right", "decline").focus, "accept")
+            m.assertEqual(ftue.onKey("left", "decline").focus, "decline")
+        end function
+
+        @it("OK aciona o botão com foco")
+        function _()
+            m.assertEqual(ftue.onKey("OK", "accept").action, "accept")
+            m.assertEqual(ftue.onKey("OK", "decline").action, "decline")
+        end function
+
+        @it("Voltar não contorna o aviso (é obrigatório)")
+        function _()
+            result = ftue.onKey("back", "accept")
+            m.assertTrue(result.handled)
+            m.assertEqual(result.action, "")
+            m.assertEqual(result.focus, "accept")
+        end function
+
+    end class
+
+end namespace

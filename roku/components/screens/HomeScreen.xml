@@ -1,12 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Tela inicial provisória (só a marca). A home real é o domínio D5 (docs/roku/domains/05-telas.md). -->
 <component name="HomeScreen" extends="Group">
-    <children>
-        <Label id="title" text="Pulse Player" color="0xB8F000FF" width="1920" translation="[0, 470]" horizAlign="center">
-            <Font role="font" uri="font:BoldSystemFontFile" size="72" />
-        </Label>
-        <Label id="status" text="Em construção" color="0xFFFFFFFF" width="1920" translation="[0, 570]" horizAlign="center">
-            <Font role="font" uri="font:SystemFontFile" size="32" />
-        </Label>
-    </children>
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
 </component>

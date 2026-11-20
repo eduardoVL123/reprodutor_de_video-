@@ -83,7 +83,7 @@ function chunk(type, data) {
   return out
 }
 
-function encodePng(width, height, raw) {
+export function encodePng(width, height, raw) {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(width, 0)
   header.writeUInt32BE(height, 4)

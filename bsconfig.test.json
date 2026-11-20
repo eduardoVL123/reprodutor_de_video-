@@ -1,6 +1,6 @@
 {
   "extends": "bsconfig.json",
-  "files": ["manifest", "source/**/*", "components/**/*", "images/**/*"],
+  "files": ["manifest", "source/**/*", "components/**/*", "images/**/*", "fonts/*.ttf"],
   "stagingFolderPath": "build/roku/test-staging",
   "outFile": "build/roku/pulse-roku-test.zip",
   "plugins": ["rooibos-roku"],

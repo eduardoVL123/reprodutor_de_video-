@@ -1,0 +1,67 @@
+' Port das regras e textos de src/views/FTUE.vue e do aceite de src/services/storage.js
+' (casos em tests/legalLicense.test.js, tests/legalPairing.test.js e roku/source/ftue/ftue.spec.bs).
+' Diferença da Roku: não há Chromecast, então o trecho do Cast sai de todas as variantes do texto de privacidade.
+namespace ftue
+
+    ' Sobe quando o Aviso Legal / Privacidade muda: quem aceitou uma versão anterior vê o aviso de novo.
+    const VERSION = 6
+    const STORAGE_KEY = "ftue:accepted"
+    const INITIAL_FOCUS = "accept"
+
+    ' Texto jurídico OBRIGATÓRIO (literal exigido pelas lojas).
+    const LEGAL_NOTICE = "Este é um reprodutor de mídia genérico. Nenhum conteúdo é fornecido, endossado ou vendido neste aplicativo. O usuário é o único responsável pelos links inseridos."
+
+    const PRIVACY_TEXT = "Não coletamos nem enviamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista."
+    ' TODO(D9): na Roku o pareamento não tem cifra de ponta a ponta (sem ECDH); antes de ligar o pareamento, trocar
+    ' "cifrada ... não consegue ler" por um texto verdadeiro (docs/roku/domains/09-pareamento-inbox.md).
+    const PAIRING_TEXT = "Se você adicionar a lista pelo celular, ela passa cifrada, por alguns minutos, pelo serviço de pareamento do desenvolvedor, que não consegue ler esse conteúdo e o apaga em seguida. "
+    ' TODO(D8): com Roku Pay o teste grátis passa a ser da Roku; revisar este trecho junto com a licença.
+    const LICENSE_TEXT = "O app tem um teste grátis de 7 dias. Para controlar o teste e a ativação, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você enviar a lista pelo site, ela passa cifrada pelo serviço do desenvolvedor, que não consegue lê-la, por até 7 dias, e é apagada quando a TV recebe. Capas e logotipos vêm dos endereços da sua lista."
+
+    ' A promessa de privacidade tem que ser verdadeira para o build: flags = { license, pairing }.
+    function privacyText(flags as object) as string
+        pairing = ""
+        if flags.pairing then pairing = ftue.PAIRING_TEXT
+        if flags.license then
+            text = ftue.LICENSE_TEXT
+            if pairing <> "" then text = text + " " + pairing.trim()
+            return text
+        end if
+        if pairing = "" then return ftue.PRIVACY_TEXT
+        return "Não coletamos seus dados. Endereços, usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. " + pairing + "Capas e logotipos vêm dos endereços da sua lista."
+    end function
+
+    function terms(flags as object) as object
+        return [
+            { title: "Ferramenta neutra", text: "Este aplicativo é apenas um reprodutor. Ele não contém, hospeda, distribui nem recomenda qualquer canal, filme, série ou lista." },
+            { title: "Responsabilidade do usuário", text: "Você é o único responsável pelos endereços, credenciais e conteúdos que inserir e reproduzir, incluindo a legalidade e os direitos de uso." },
+            { title: "Sem conteúdo nosso", text: "Não fornecemos, vendemos nem recomendamos canais, filmes ou listas, e não damos suporte ao conteúdo de serviços de terceiros." },
+            { title: "Privacidade", text: ftue.privacyText(flags) }
+        ]
+    end function
+
+    ' Aceite da versão atual (o web também aceita versão maior, de um app mais novo).
+    function isAccepted(record as dynamic) as boolean
+        if not utils.isObject(record) or record.accepted <> true then return false
+        ' Não chamar de "version": o BrighterScript troca o nome pela constante VERSION (maiúsculas não contam).
+        recordVersion = 0
+        if utils.isNumber(record.version) then recordVersion = record.version
+        if utils.isString(record.version) then recordVersion = Val(record.version)
+        return recordVersion >= ftue.VERSION
+    end function
+
+    ' Registro do aceite com carimbo de data/hora (útil para auditoria).
+    function acceptRecord(isoNow as string) as object
+        return { accepted: true, acceptedAt: isoNow, version: ftue.VERSION }
+    end function
+
+    ' Teclas na tela: { focus, action ("accept"|"decline"|""), handled }. Voltar é engolido: o aviso é obrigatório.
+    function onKey(key as string, focus as string) as object
+        if key = "left" then return { focus: "decline", action: "", handled: true }
+        if key = "right" then return { focus: "accept", action: "", handled: true }
+        if key = "OK" then return { focus: focus, action: focus, handled: true }
+        if key = "back" then return { focus: focus, action: "", handled: true }
+        return { focus: focus, action: "", handled: false }
+    end function
+
+end namespace

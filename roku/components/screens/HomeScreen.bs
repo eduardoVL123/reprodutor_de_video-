@@ -1,0 +1,8 @@
+import "pkg:/source/ui/ui.bs"
+
+sub init()
+    title = ui.text(m.top, "Pulse Player", ui.font(700, 72), ui.ACCENT, 0, 460, 1920, 88)
+    title.horizAlign = "center"
+    status = ui.text(m.top, "Em construção", ui.font(400, 32), ui.TEXT_COLOR, 0, 570, 1920, 44)
+    status.horizAlign = "center"
+end sub

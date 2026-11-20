@@ -29,7 +29,9 @@
     "roku:deploy": "npm run roku:build && node scripts/roku.mjs deploy",
     "roku:test": "bsc --project bsconfig.test.json && node scripts/roku.mjs sim",
     "roku:test:device": "bsc --project bsconfig.test.json && node scripts/roku.mjs test",
-    "roku:test:integration": "bsc --project bsconfig.integration.json && node scripts/roku.mjs integration"
+    "roku:test:integration": "bsc --project bsconfig.integration.json && node scripts/roku.mjs integration",
+    "roku:preview": "npm run roku:build && node scripts/roku-preview.mjs",
+    "roku:ui": "node scripts/make-roku-ui.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.3",
@@ -51,6 +53,7 @@
     "@vue/test-utils": "^2.5.1",
     "autoprefixer": "^10.6.1",
     "brighterscript": "^0.73.8",
+    "brs-engine": "2.7.0",
     "brs-node": "2.7.0",
     "brs-scenegraph": "0.7.0",
     "electron": "^45.2.3",

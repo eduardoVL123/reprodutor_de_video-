@@ -1,0 +1,8 @@
+' Configuração do build (equivale às variáveis VITE_* do app web). Por enquanto fixa; quando licença (D8) e
+' pareamento (D9) entrarem, passa a ser gerada no build a partir do .env.
+namespace config
+
+    const LICENSE_ENABLED = false
+    const PAIRING_ENABLED = false
+
+end namespace

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed } from '../scripts/roku.mjs'
+import { OUTPUTS, over } from '../scripts/make-roku-ui.mjs'
 
 const manifest = Object.fromEntries(
   readFileSync('roku/manifest', 'utf8')
@@ -32,6 +33,23 @@ describe('app Roku — manifest e ativos exigidos pela loja', () => {
 
   it('splash usa o fundo grafite da marca', () => {
     expect(manifest.splash_color).toBe('#0B0F0C')
+  })
+})
+
+describe('app Roku — imagens da interface (npm run roku:ui)', () => {
+  it.each(OUTPUTS.map(([name, render]) => [name, render]))('%s está igual ao que o script gera', (name, render) => {
+    expect(readFileSync(`roku/images/ui/${name}`).equals(render())).toBe(true)
+  })
+
+  it('mistura cores com opacidade como o navegador (white/10 sobre o painel #121215)', () => {
+    // 255 × 0,1 + 18 × 0,9 = 41,7 → 42; 255 × 0,1 + 21 × 0,9 = 44,4 → 44
+    expect(over([255, 255, 255], 0.1, [18, 18, 21])).toEqual([42, 42, 44])
+  })
+
+  it('9-patch tem a marca preta de 1 px no topo e na esquerda', () => {
+    const buf = readFileSync('roku/images/ui/btn.9.png')
+    expect(buf.subarray(1, 4).toString('ascii')).toBe('PNG')
+    expect(pngSize('roku/images/ui/btn.9.png')).toEqual([19, 19]) // 2 × raio 8 + 1, mais a borda da marca
   })
 })
 
