@@ -1,0 +1,126 @@
+' Casos de tests/railOffset.test.js, tests/artwork.test.js e das regras do destaque de src/views/Dashboard.vue.
+namespace tests
+
+    function railRow() as object
+        ' Fileira de 10 itens de 200px com 20px de espaço, numa janela de 1000px: largura total 2180px.
+        return { itemSize: 200, gap: 20, count: 10, viewport: 1000 }
+    end function
+
+    function withIndex(base as object, index as integer) as object
+        copy = {}
+        copy.append(base)
+        copy.index = index
+        return copy
+    end function
+
+    @suite("home")
+    class HomeTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("railOffset — deslocamento da fileira deslizante")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o primeiro item fica no início")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 0)), 0)
+        end function
+
+        @it("o item focado vai para a posição inicial da fileira")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 3)), -660)
+        end function
+
+        @it("no fim, não deixa espaço vazio à direita")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 9)), -1180)
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 7)), -1180)
+        end function
+
+        @it("fileira que cabe inteira na tela não desliza")
+        function _()
+            m.assertEqual(home.railOffset({ itemSize: 200, gap: 20, count: 3, viewport: 1000, index: 2 }), 0)
+        end function
+
+        @it("ignora medidas inválidas (antes do layout existir)")
+        function _()
+            m.assertEqual(home.railOffset({ itemSize: 0, gap: 20, count: 10, viewport: 0, index: 5 }), 0)
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), -1)), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("pickArtwork — arte do destaque só com imagens da lista")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("fundo próprio do servidor vence o pôster")
+        function _()
+            art = home.pickArtwork({ stream_icon: "http://i.test/p.jpg" }, { backdrop: "http://i.test/b.jpg", poster: "http://i.test/p.jpg" })
+            m.assertEqual(art, { url: "http://i.test/b.jpg", mode: "backdrop" })
+        end function
+
+        @it("fundo igual ao pôster conta como só pôster")
+        function _()
+            art = home.pickArtwork({}, { backdrop: "http://i.test/p.jpg", poster: "http://i.test/p.jpg" })
+            m.assertEqual(art.mode, "poster")
+        end function
+
+        @it("sem imagem http (comum em M3U) usa o fundo neutro")
+        function _()
+            m.assertEqual(home.pickArtwork({ stream_icon: "logo.png" }, invalid), { url: "", mode: "none" })
+            m.assertEqual(home.pickArtwork(invalid, invalid).mode, "none")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("destaque (sem histórico ainda)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("filme: selo, botão e duração como no web")
+        function _()
+            hero = home.heroTexts({ section: "vod", name: "Rambo" }, { name: "Rambo II", rating: "7.5", year: "1985", duration: "1h 36min", genre: "Ação", plot: "Sinopse." })
+            m.assertEqual(hero.badge, "Filme da sua lista")
+            m.assertEqual(hero.title, "Rambo II")
+            m.assertEqual(hero.rating, "Nota 7.5")
+            m.assertEqual(hero.year, "1985")
+            m.assertEqual(hero.duration, "1h 36min")
+            m.assertEqual(hero.genre, "Ação")
+            m.assertEqual(hero.synopsis, "Sinopse.")
+            m.assertEqual(hero.playText, "Assistir agora")
+        end function
+
+        @it("série e canal mudam selo, duração e botão")
+        function _()
+            series = home.heroTexts({ section: "series", name: "S" }, {})
+            m.assertEqual(series.badge, "Série da sua lista")
+            m.assertEqual(series.duration, "Série")
+            m.assertEqual(series.playText, "Assistir T1:E1")
+            live = home.heroTexts({ section: "live", name: "Canal" }, {})
+            m.assertEqual(live.badge, "Canal da sua lista")
+            m.assertEqual(live.duration, "Ao vivo")
+        end function
+
+        @it("nota zero some; sinopse padrão vira o texto da lista")
+        function _()
+            hero = home.heroTexts({ section: "vod", name: "X" }, { rating: "0", plot: "Sem sinopse disponível." })
+            m.assertEqual(hero.rating, "")
+            m.assertEqual(hero.synopsis, "Disponível diretamente da sua lista conectada.")
+            m.assertEqual(hero.duration, "Filme")
+        end function
+
+        @it("sem nenhum item: marca e convite para explorar")
+        function _()
+            hero = home.heroTexts(invalid, invalid)
+            m.assertEqual(hero.badge, "Da sua lista")
+            m.assertEqual(hero.title, "PULSE PLAYER")
+            m.assertEqual(hero.synopsis, "Explore o catálogo da sua lista conectada.")
+        end function
+
+        @it("fileiras ganham o cartão final do web")
+        function _()
+            m.assertEqual(home.seeAllCard("vod").name, "Ver todos os filmes")
+            m.assertEqual(home.seeAllCard("series").name, "Ver todas as séries")
+            m.assertEqual(home.seeAllCard("live").name, "Explorar canais")
+            m.assertTrue(home.seeAllCard("vod").isSeeAll)
+        end function
+
+    end class
+
+end namespace

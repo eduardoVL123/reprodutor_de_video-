@@ -1,0 +1,98 @@
+import "pkg:/source/utils/types.bs"
+' Regras do Início de src/views/Dashboard.vue, src/utils/railOffset.js e src/utils/artwork.js (casos em
+' tests/railOffset.test.js, tests/artwork.test.js e roku/source/home/home.spec.bs).
+' O "Continuar assistindo" (histórico) entra com o player (D6): por enquanto o destaque é o primeiro item.
+namespace home
+
+    ' Deslocamento horizontal (px, ≤ 0) de uma fileira para o item focado ficar na posição inicial, sem sobrar espaço
+    ' vazio no fim. Medidas inválidas (antes do layout) → 0. params = { index, itemSize, gap, count, viewport }
+    function railOffset(params as object) as integer
+        if not (params.itemSize > 0) or not (params.viewport > 0) or not (params.count > 0) or not (params.index > 0) then return 0
+        total = params.count * params.itemSize + (params.count - 1) * params.gap
+        maxShift = total - params.viewport
+        if maxShift < 0 then maxShift = 0
+        shift = params.index * (params.itemSize + params.gap)
+        if shift > maxShift then shift = maxShift
+        if shift > 0 then return -shift
+        return 0
+    end function
+
+    function isHttpUrl(value as dynamic) as boolean
+        return utils.isString(value) and CreateObject("roRegex", "^https?:\/\/", "i").isMatch(value)
+    end function
+
+    ' Arte de fundo só com imagens da lista: backdrop próprio → pôster → nenhuma. { url, mode }
+    function pickArtwork(item as dynamic, info as dynamic) as object
+        poster = ""
+        candidates = []
+        if utils.isObject(info) then candidates.push(info.poster)
+        if utils.isObject(item) then
+            candidates.push(item.stream_icon)
+            candidates.push(item.cover)
+        end if
+        for each candidate in candidates
+            if home.isHttpUrl(candidate) then
+                poster = candidate
+                exit for
+            end if
+        end for
+        backdrop = ""
+        if utils.isObject(info) and home.isHttpUrl(info.backdrop) then backdrop = info.backdrop
+        if backdrop <> "" and backdrop <> poster then return { url: backdrop, mode: "backdrop" }
+        if poster <> "" then return { url: poster, mode: "poster" }
+        return { url: "", mode: "none" }
+    end function
+
+    ' Textos do destaque (heroBadgeLabel, heroTitle, heroRating... do Dashboard.vue), ainda sem o histórico.
+    function heroTexts(item as dynamic, info as dynamic) as object
+        details = {}
+        if utils.isObject(info) then details = info
+        section = ""
+        name = ""
+        if utils.isObject(item) then
+            section = utils.textOr(item.section, "")
+            name = utils.textOr(item.name, "")
+        end if
+
+        badge = "Filme da sua lista"
+        if not utils.isObject(item) then badge = "Da sua lista"
+        if section = "series" then badge = "Série da sua lista"
+        if section = "live" then badge = "Canal da sua lista"
+
+        title = utils.textOr(details.name, name)
+        if title = "" then title = "PULSE PLAYER"
+
+        rating = utils.textOr(details.rating, "")
+        if rating <> "" and Val(rating) = 0 then rating = ""
+        if rating <> "" then rating = "Nota " + rating
+
+        duration = utils.textOr(details.duration, "")
+        if section = "live" then
+            duration = "Ao vivo"
+        else if duration = "" and section = "series" then
+            duration = "Série"
+        else if duration = "" then
+            duration = "Filme"
+        end if
+
+        synopsis = utils.textOr(details.plot, "")
+        if synopsis = "" or synopsis = "Sem sinopse disponível." then
+            synopsis = "Explore o catálogo da sua lista conectada."
+            if name <> "" then synopsis = "Disponível diretamente da sua lista conectada."
+        end if
+
+        playText = "Assistir agora"
+        if section = "series" then playText = "Assistir T1:E1"
+
+        return { badge: badge, title: title, rating: rating, year: utils.textOr(details.year, ""), duration: duration, genre: utils.textOr(details.genre, ""), synopsis: synopsis, playText: playText }
+    end function
+
+    ' Cartão "Ver todos" no fim de cada fileira.
+    function seeAllCard(section as string) as object
+        name = "Ver todos os filmes"
+        if section = "series" then name = "Ver todas as séries"
+        if section = "live" then name = "Explorar canais"
+        return { isSeeAll: true, section: section, name: name }
+    end function
+
+end namespace
