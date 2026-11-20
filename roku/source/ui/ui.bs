@@ -13,7 +13,8 @@ namespace ui
     const ERROR = "0xF87171FF" ' text-red-400
     const WARNING = "0xFCD34DFF" ' text-amber-300
 
-    ' Fonte Outfit (a mesma do style.css) no peso pedido: 400 Regular, 500 Medium, 600 SemiBold, 700 Bold.
+    ' Fonte Roboto (a que as outras TVs mostram; roku/fonts/README.md) no peso pedido: 400 Regular, 500 Medium,
+    ' 600 SemiBold, 700 Bold.
     function font(weight as integer, size as integer) as object
         name = "Regular"
         if weight >= 700 then
@@ -24,7 +25,7 @@ namespace ui
             name = "Medium"
         end if
         f = CreateObject("roSGNode", "Font")
-        f.uri = "pkg:/fonts/Outfit-" + name + ".ttf"
+        f.uri = "pkg:/fonts/Roboto-" + name + ".ttf"
         f.size = size
         return f
     end function
