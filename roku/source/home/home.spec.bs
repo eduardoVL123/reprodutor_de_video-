@@ -121,6 +121,52 @@ namespace tests
             m.assertTrue(home.seeAllCard("vod").isSeeAll)
         end function
 
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("foco no Início")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("menu na ordem do SideMenu.vue")
+        function _()
+            labels = []
+            for each item in home.menuItems()
+                labels.push(item.label)
+            end for
+            m.assertEqual(labels, ["Busca", "Início", "TV ao vivo", "Filmes", "Séries", "Favoritos", "Conta", "Trocar perfil"])
+        end function
+
+        @it("do destaque desce para as fileiras e volta")
+        function _()
+            counts = { buttons: 3, menu: 8, rails: [21, 21, 21] }
+            focus = home.onKey("down", { area: "hero", index: 1, rail: 0 }, counts, invalid).focus
+            m.assertEqual(focus, { area: "rail", index: 0, rail: 0 })
+            focus = home.onKey("down", focus, counts, invalid).focus
+            m.assertEqual(focus.rail, 1)
+            focus = home.onKey("up", home.onKey("up", focus, counts, invalid).focus, counts, invalid).focus
+            m.assertEqual(focus.area, "hero")
+        end function
+
+        @it("esquerda na primeira coluna abre o menu no Início e direita volta para onde estava")
+        function _()
+            counts = { buttons: 3, menu: 8, rails: [21] }
+            from = { area: "rail", index: 0, rail: 0 }
+            focus = home.onKey("left", from, counts, invalid).focus
+            m.assertEqual(focus, { area: "menu", index: 1, rail: 0 })
+            m.assertEqual(home.onKey("right", focus, counts, from).focus, from)
+        end function
+
+        @it("direita e esquerda andam na fileira sem passar das pontas")
+        function _()
+            counts = { buttons: 3, menu: 8, rails: [2] }
+            focus = home.onKey("right", { area: "rail", index: 0, rail: 0 }, counts, invalid).focus
+            m.assertEqual(focus.index, 1)
+            m.assertEqual(home.onKey("right", focus, counts, invalid).focus.index, 1)
+        end function
+
+        @it("Voltar não é tratado aqui (a tela inicial pergunta se quer sair)")
+        function _()
+            m.assertFalse(home.onKey("back", { area: "hero", index: 0, rail: 0 }, { buttons: 3, menu: 8, rails: [] }, invalid).handled)
+        end function
+
     end class
 
 end namespace

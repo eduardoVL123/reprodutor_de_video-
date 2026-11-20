@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Monta o Início em segundo plano (loadCatalogShowcase do Dashboard.vue): uma seção por vez (filmes, séries,
+     canais), cada fileira com os 20 primeiros itens assim que a seção fica pronta, e os detalhes do destaque.
+     ctx = { dir, apiBase, credentials, type }; hidden = { live: [...], vod: [...], series: [...] } (controle parental). -->
+<component name="HomeTask" extends="Task">
+    <interface>
+        <field id="ctx" type="assocarray" />
+        <field id="hidden" type="assocarray" />
+        <!-- { section, ok, items, error, errorDetail } -->
+        <field id="rail" type="assocarray" alwaysNotify="true" />
+        <!-- { item, info } -->
+        <field id="hero" type="assocarray" />
+    </interface>
+</component>

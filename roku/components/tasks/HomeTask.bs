@@ -1,0 +1,42 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/xtream/api.bs"
+
+sub init()
+    m.top.functionName = "runHome"
+end sub
+
+sub runHome()
+    ctx = m.top.ctx
+    hidden = m.top.hidden
+    if hidden = invalid then hidden = {}
+    transport = net.urlTransport()
+    heroItem = invalid
+    ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
+    for each section in ["vod", "series", "live"]
+        loaded = catalog.loadSection(transport, ctx, section, false)
+        items = []
+        if loaded.ok then
+            sectionHidden = hidden[section]
+            if sectionHidden = invalid then sectionHidden = []
+            items = catalog.getItems(ctx.dir, section, catalog.ALL_CATEGORIES, 0, 20, sectionHidden)
+        end if
+        m.top.rail = { section: section, ok: loaded.ok, items: items, error: loaded.error, errorDetail: loaded.errorDetail }
+        if heroItem = invalid and items.count() > 0 then
+            heroItem = items[0]
+            m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
+        end if
+    end for
+end sub
+
+' Detalhes do destaque: filme pelo get_vod_info, série pelo get_series_info (como o watch do heroKey no web).
+function heroDetails(transport as object, ctx as object, item as object) as object
+    if item.directUrl <> invalid and item.directUrl <> "" then return xtream.normalizeVodInfo(invalid, item)
+    if item.section = "series" then
+        result = xtream.fetchSeriesInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, seriesId: item.stream_id })
+        if result.error = invalid and result.data.info <> invalid then return xtream.normalizeVodInfo({ info: result.data.info }, item)
+        return xtream.normalizeVodInfo(invalid, item)
+    end if
+    if item.section = "vod" then return xtream.fetchVodInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, vodId: item.stream_id, item: item })
+    return xtream.normalizeVodInfo(invalid, item)
+end function

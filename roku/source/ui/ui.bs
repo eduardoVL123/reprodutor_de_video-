@@ -12,6 +12,7 @@ namespace ui
     const BLACK = "0x000000FF"
     const ERROR = "0xF87171FF" ' text-red-400
     const WARNING = "0xFCD34DFF" ' text-amber-300
+    const TEXT_ON_ACCENT = "0x0B0F0CFF" ' tv-on-accent: texto sobre o limão é grafite, nunca branco
     const NEUTRAL_400 = "0xA3A3A3FF"
     const NEUTRAL_500 = "0x737373FF"
     const RED_300 = "0xFCA5A5FF"
@@ -29,18 +30,26 @@ namespace ui
         else if weight >= 500 then
             name = "Medium"
         end if
-        f = CreateObject("roSGNode", "Font")
-        f.uri = "pkg:/fonts/Roboto-" + name + ".ttf"
-        f.size = size
-        return f
+        return ui.cachedFont("pkg:/fonts/Roboto-" + name + ".ttf", size)
+    end function
+
+    ' Um nó Font por arquivo e tamanho, guardado no m do componente: criar um a cada texto carrega o TTF de novo e
+    ' trava a render thread (a Roku fecha o app depois de 10 s travada).
+    function cachedFont(uri as string, size as integer) as object
+        if m.uiFonts = invalid then m.uiFonts = {}
+        key = uri + "@" + size.toStr()
+        if m.uiFonts[key] = invalid then
+            f = CreateObject("roSGNode", "Font")
+            f.uri = uri
+            f.size = size
+            m.uiFonts[key] = f
+        end if
+        return m.uiFonts[key]
     end function
 
     ' Fonte monoespaçada (font-mono do web: os atalhos e a causa técnica do erro), Roboto Mono Medium.
     function monoFont(size as integer) as object
-        f = CreateObject("roSGNode", "Font")
-        f.uri = "pkg:/fonts/RobotoMono-Medium.ttf"
-        f.size = size
-        return f
+        return ui.cachedFont("pkg:/fonts/RobotoMono-Medium.ttf", size)
     end function
 
     ' Label com quebra de linha e altura de linha do CSS (line-height). O espaço extra fica metade em cima, metade
@@ -60,10 +69,15 @@ namespace ui
 
     ' Altura de uma linha da fonte sem espaçamento extra.
     function naturalLineHeight(fontNode as object) as float
-        probe = CreateObject("roSGNode", "Label")
-        probe.font = fontNode
-        probe.text = "Ág"
-        return probe.boundingRect().height
+        if m.uiLineHeights = invalid then m.uiLineHeights = {}
+        key = fontNode.uri + "@" + fontNode.size.toStr()
+        if m.uiLineHeights[key] = invalid then
+            probe = CreateObject("roSGNode", "Label")
+            probe.font = fontNode
+            probe.text = "Ág"
+            m.uiLineHeights[key] = probe.boundingRect().height
+        end if
+        return m.uiLineHeights[key]
     end function
 
     ' Altura ocupada por um texto com quebra (linhas × altura de linha), como o navegador mede.
@@ -94,6 +108,16 @@ namespace ui
     function panel(parent as object, image as string, x as float, y as float, width as float, height as float) as object
         poster = parent.createChild("Poster")
         poster.uri = "pkg:/images/ui/" + image + ".9.png"
+        poster.translation = [x, y]
+        poster.width = width
+        poster.height = height
+        return poster
+    end function
+
+    ' Imagem esticada (degradês e máscaras sem 9-patch), de roku/images/ui.
+    function panelImage(parent as object, image as string, x as float, y as float, width as float, height as float) as object
+        poster = parent.createChild("Poster")
+        poster.uri = "pkg:/images/ui/" + image
         poster.translation = [x, y]
         poster.width = width
         poster.height = height

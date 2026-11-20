@@ -1,8 +1,430 @@
 import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/home/home.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+
+' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
+' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
+' e espaço de 16, títulos das fileiras a 40 px uma da outra.
+const CONTENT_X = 176
+const RAIL_WIDTH = 1648
+const RAIL_GAP = 16
+const RAILS_TOP = 480
+const RAIL_SPACING = 40
+const META_COLOR = "0xD4D4D8FF"
+const BADGE_COLOR = "0xD4D4D4FF"
+const RATING_COLOR = "0x4ADE80FF"
 
 sub init()
-    title = ui.text(m.top, "Pulse Player", ui.font(700, 72), ui.ACCENT, 0, 460, 1920, 88)
-    title.horizAlign = "center"
-    status = ui.text(m.top, "Em construção", ui.font(400, 32), ui.TEXT_COLOR, 0, 570, 1920, 44)
-    status.horizAlign = "center"
+    m.focus = { area: "hero", index: 0, rail: 0 }
+    m.lastContent = m.focus
+    m.rails = []
+    m.heroItem = invalid
+    m.heroInfo = invalid
+
+    m.heroArt = m.top.createChild("Poster")
+    m.heroArt.translation = [660, -12]
+    m.heroArt.width = 1291
+    m.heroArt.height = 521
+    m.heroArt.opacity = 0.35
+    m.heroArt.loadDisplayMode = "scaleToZoom"
+    vignetteH = ui.panelImage(m.top, "vignette-h.png", 112, 0, 1808, 496)
+    vignetteV = ui.panelImage(m.top, "vignette-v.png", 112, 0, 1808, 496)
+
+    m.content = m.top.createChild("Group")
+    m.hero = m.content.createChild("Group")
+    m.railsGroup = m.content.createChild("Group")
+    m.menu = m.top.createChild("Group")
+
+    renderHero()
+    renderMenu()
+    m.top.setFocus(true)
+    startLoading()
 end sub
+
+' ---------- Dados ----------
+
+sub startLoading()
+    current = session.hydrate(storage.create())
+    if current = invalid then return
+    apiBase = current.resolvedUrl
+    if apiBase = invalid or apiBase = "" then apiBase = current.baseUrl
+    m.task = CreateObject("roSGNode", "HomeTask")
+    m.task.ctx = { dir: catalog.DEFAULT_DIR, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+    m.task.observeField("rail", "onRail")
+    m.task.observeField("hero", "onHero")
+    m.task.control = "run"
+end sub
+
+sub onRail(event as object)
+    data = event.getData()
+    if not data.ok or data.items.count() = 0 then return
+    items = []
+    items.append(data.items)
+    items.push(home.seeAllCard(data.section))
+    m.rails.push({ section: data.section, items: items })
+    renderRails()
+end sub
+
+sub onHero(event as object)
+    data = event.getData()
+    m.heroItem = data.item
+    m.heroInfo = data.info
+    renderHero()
+end sub
+
+' ---------- Destaque ----------
+
+sub renderHero()
+    m.hero.removeChildrenIndex(m.hero.getChildCount(), 0)
+    texts = home.heroTexts(m.heroItem, m.heroInfo)
+    art = home.pickArtwork(m.heroItem, m.heroInfo)
+    m.heroArt.uri = art.url
+
+    mark = m.hero.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 19
+    mark.height = 20
+    mark.translation = [CONTENT_X, 115]
+    ui.trackedText(m.hero, UCase(texts.badge), ui.font(700, 20), BADGE_COLOR, 205, 111, 4.4)
+
+    title = ui.text(m.hero, UCase(texts.title), ui.font(900, 64), ui.WHITE, CONTENT_X, 153, 1100, 61)
+    title.wrap = false
+
+    ' Nota · ano · duração  gênero
+    x = CONTENT_X
+    parts = []
+    if texts.rating <> "" then parts.push({ text: texts.rating, color: RATING_COLOR, weight: 700, dot: true })
+    if texts.year <> "" then parts.push({ text: texts.year, color: META_COLOR, weight: 500, dot: true })
+    parts.push({ text: texts.duration, color: META_COLOR, weight: 500, dot: false })
+    if texts.genre <> "" then parts.push({ text: texts.genre, color: META_COLOR, weight: 500, dot: false })
+    for each part in parts
+        label = ui.text(m.hero, part.text, ui.font(part.weight, 20), part.color, x, 227, 400, 28)
+        label.wrap = false
+        x = x + label.boundingRect().width + 12
+        if part.dot then
+            dot = m.hero.createChild("Rectangle")
+            dot.color = "0x737373FF"
+            dot.width = 4
+            dot.height = 4
+            dot.translation = [x, 239]
+            x = x + 4 + 12
+        end if
+    end for
+
+    synopsis = ui.text(m.hero, texts.synopsis, ui.font(400, 20), META_COLOR, CONTENT_X, 269, 544, 32.5)
+    synopsis.maxLines = 3
+
+    m.heroButtons = []
+    x = 174
+    x = addHeroButton("icon-play", texts.playText, true, x) + 12
+    x = addHeroButton("icon-info", "Mais informações", false, x) + 12
+    addHeroButton("icon-heart-small", "Favoritos", false, x)
+    renderFocus()
+end sub
+
+' Botão do destaque: primário branco (px-7, bold) ou de vidro (px-6, medium), h-[3.2rem], ícone w-4 e o texto.
+function addHeroButton(icon as string, text as string, primary as boolean, x as float) as float
+    group = m.hero.createChild("Group")
+    group.translation = [x, 388]
+    ring = group.createChild("Poster")
+    ring.uri = "pkg:/images/ui/focus-ring.9.png"
+    bg = group.createChild("Poster")
+    padX = 24
+    weight = 500
+    color = ui.WHITE
+    bg.uri = "pkg:/images/ui/btn-glass.9.png"
+    if primary then
+        padX = 28
+        weight = 700
+        color = ui.BLACK
+        bg.uri = "pkg:/images/ui/btn-primary.9.png"
+    end if
+    iconNode = group.createChild("Poster")
+    iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+    iconNode.width = 16
+    iconNode.height = 16
+    iconNode.blendColor = color
+    label = group.createChild("Label")
+    label.font = ui.font(weight, 20)
+    label.color = color
+    label.text = text
+    width = padX + 16 + 11 + label.boundingRect().width + padX
+    height = 52
+    bg.width = width
+    bg.height = height
+    iconNode.translation = [padX, (height - 16) / 2]
+    label.translation = [padX + 16 + 11, (height - label.boundingRect().height) / 2]
+    ring.translation = [-5, -5]
+    ring.width = width + 10
+    ring.height = height + 10
+    group.scaleRotateCenter = [width / 2, height / 2]
+    m.heroButtons.push({ group: group, ring: ring })
+    return x + width
+end function
+
+' ---------- Fileiras ----------
+
+sub renderRails()
+    m.railsGroup.removeChildrenIndex(m.railsGroup.getChildCount(), 0)
+    y = RAILS_TOP
+    for r = 0 to m.rails.count() - 1
+        rail = m.rails[r]
+        live = rail.section = "live"
+        rail.top = y
+        titleX = CONTENT_X
+        if live then
+            broadcast = m.railsGroup.createChild("Poster")
+            broadcast.uri = "pkg:/images/ui/icon-broadcast.png"
+            broadcast.width = 20
+            broadcast.height = 20
+            broadcast.blendColor = ui.ACCENT
+            broadcast.translation = [CONTENT_X, y + 4]
+            titleX = CONTENT_X + 30
+        end if
+        titleText = "Filmes da sua lista"
+        if rail.section = "series" then titleText = "Séries da sua lista"
+        if live then titleText = "Canais da sua lista"
+        title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
+        title.wrap = false
+        seeAll = "Ver todos  ›"
+        if live then seeAll = "Explorar canais  ›"
+        more = ui.text(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, CONTENT_X, y, RAIL_WIDTH, 28)
+        more.horizAlign = "right"
+
+        cardWidth = 168
+        cardHeight = 252
+        if live then
+            cardWidth = 256
+            cardHeight = 144
+        end if
+        rail.cardWidth = cardWidth
+        track = m.railsGroup.createChild("Group")
+        track.translation = [CONTENT_X, y + 56]
+        ' overflow-hidden da fileira: sobra 12 px dos lados e 16/24 em cima/embaixo para o cartão focado crescer.
+        track.clippingRect = [-12, -16, RAIL_WIDTH + 24, cardHeight + 40]
+        strip = track.createChild("Group")
+        rail.strip = strip
+        rail.cards = []
+        for i = 0 to rail.items.count() - 1
+            item = rail.items[i]
+            card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+            rail.cards.push(card)
+        end for
+        y = y + 56 + cardHeight + RAIL_SPACING
+    end for
+    renderFocus()
+end sub
+
+' Cartão de pôster 2:3 (ou canal 16:9) com o anel de foco e o zoom 1.08 do .tv-rail-item.
+function buildCard(parent as object, item as object, live as boolean, x as float, width as float, height as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, 0]
+    ring = group.createChild("Poster")
+    ring.uri = "pkg:/images/ui/focus-ring-12.9.png"
+    ring.translation = [-5, -5]
+    ring.width = width + 10
+    ring.height = height + 10
+    ui.panel(group, "card", 0, 0, width, height)
+    if item.isSeeAll = true then
+        circleSize = 48
+        iconSize = 24
+        if live then
+            circleSize = 40
+            iconSize = 20
+        end if
+        label = group.createChild("Label")
+        label.font = ui.font(700, 20)
+        label.color = ui.WHITE
+        label.text = item.name
+        label.width = width - 32
+        label.wrap = true
+        label.horizAlign = "center"
+        labelHeight = label.boundingRect().height
+        top = (height - (circleSize + 12 + labelHeight)) / 2
+        circle = group.createChild("Poster")
+        circle.uri = "pkg:/images/ui/glass-circle.png"
+        circle.width = circleSize
+        circle.height = circleSize
+        circle.translation = [(width - circleSize) / 2, top]
+        chevron = group.createChild("Poster")
+        chevron.uri = "pkg:/images/ui/icon-chevron-right.png"
+        chevron.width = iconSize
+        chevron.height = iconSize
+        chevron.translation = [(width - iconSize) / 2, top + (circleSize - iconSize) / 2]
+        label.translation = [16, top + circleSize + 12]
+    else if live then
+        buildLiveCard(group, item, width, height)
+    else
+        art = group.createChild("Poster")
+        art.translation = [1, 1]
+        art.width = width - 2
+        art.height = height - 2
+        art.loadDisplayMode = "scaleToZoom"
+        if home.isHttpUrl(item.stream_icon) then art.uri = item.stream_icon
+        ui.panelImage(group, "card-shade.png", 0, 0, width, height)
+        ui.panel(group, "card-mask", 0, 0, width, height)
+        name = ui.text(group, UCase(utils.textOr(item.name, "")), ui.font(900, 20), ui.WHITE, 12, height - 10 - 28, width - 24, 28)
+        name.wrap = false
+    end if
+    group.scaleRotateCenter = [width / 2, height / 2]
+    return { group: group, ring: ring }
+end function
+
+' Cartão de canal (p-4): nome + selo AO VIVO, "Transmissão contínua", "Canal N · Ao vivo" e a barra de 2 px.
+sub buildLiveCard(group as object, item as object, width as float, height as float)
+    badge = group.createChild("Rectangle")
+    badge.color = ui.ACCENT
+    badgeLabel = group.createChild("Label")
+    badgeLabel.font = ui.font(700, 20)
+    badgeLabel.color = ui.TEXT_ON_ACCENT
+    badgeLabel.text = "AO VIVO"
+    badgeWidth = badgeLabel.boundingRect().width + 16
+    badge.width = badgeWidth
+    badge.height = 32
+    badge.translation = [width - 16 - badgeWidth, 14]
+    badgeLabel.translation = [width - 16 - badgeWidth + 8, 16]
+    name = ui.text(group, UCase(utils.textOr(item.name, "Canal")), ui.font(900, 20), ui.WHITE, 16, 16, width - 32 - badgeWidth - 8, 28)
+    name.wrap = false
+    ui.text(group, "Transmissão contínua", ui.font(500, 20), ui.WHITE, 16, height - 16 - 2 - 4 - 28 - 2 - 28, width - 32, 28).wrap = false
+    schedule = "Canal " + utils.textOr(item.num, "") + " · Ao vivo"
+    ui.text(group, schedule, ui.font(400, 20), ui.NEUTRAL_400, 16, height - 16 - 2 - 4 - 28, width - 32, 28).wrap = false
+    track = group.createChild("Rectangle")
+    track.color = "0xFFFFFF1A"
+    track.width = width - 32
+    track.height = 2
+    track.translation = [16, height - 16 - 2]
+    progress = group.createChild("Rectangle")
+    progress.color = ui.ACCENT
+    progress.width = (width - 32) * 0.4
+    progress.height = 2
+    progress.translation = [16, height - 16 - 2]
+end sub
+
+' ---------- Menu lateral ----------
+
+sub renderMenu()
+    m.menu.removeChildrenIndex(m.menu.getChildCount(), 0)
+    open = m.focus.area = "menu"
+    width = 112
+    padX = 12
+    if open then
+        width = 304
+        padX = 24
+        ui.panelImage(m.menu, "menu-open.png", 0, 0, 360, 1080)
+    else
+        ui.panelImage(m.menu, "menu-fade.png", 0, 0, width, 1080)
+    end if
+
+    mark = m.menu.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 30
+    mark.height = 32
+    mark.translation = [padX + 12, 68]
+    if open then
+        pulse = ui.text(m.menu, "PULSE", ui.font(900, 24), "0xF4F7EEFF", padX + 54, 72, 100, 24)
+        pulse.wrap = false
+        ui.text(m.menu, "PLAYER", ui.font(900, 24), ui.ACCENT, padX + 54 + pulse.boundingRect().width + 4, 72, 140, 24).wrap = false
+    end if
+
+    m.menuNodes = []
+    items = home.menuItems()
+    tops = [136, 200, 264, 328, 392, 456, 904, 968]
+    for i = 0 to items.count() - 1
+        item = items[i]
+        y = tops[i]
+        active = item.id = "home"
+        focused = open and m.focus.index = i
+        group = m.menu.createChild("Group")
+        group.translation = [padX, y]
+        itemWidth = width - 2 * padX
+        if focused then
+            ring = ui.panel(group, "focus-ring-12", -5, -5, itemWidth + 10, 66)
+            group.scaleRotateCenter = [itemWidth / 2, 28]
+            group.scale = [1.02, 1.02]
+        end if
+        if active then ui.panel(group, "nav-active", 0, 0, itemWidth, 56)
+        color = ui.NEUTRAL_400
+        if active or focused then color = ui.WHITE
+        weight = 400
+        if active then weight = 700
+        if item.id = "profile" then
+            buildAvatar(group)
+            if open then
+                ui.text(group, "Principal", ui.font(500, 20), ui.WHITE, 60, 0, itemWidth - 72, 28).wrap = false
+                ui.text(group, "Trocar perfil", ui.font(400, 20), ui.NEUTRAL_400, 60, 28, itemWidth - 72, 28).wrap = false
+            end if
+        else
+            icon = group.createChild("Poster")
+            icon.uri = "pkg:/images/ui/" + item.icon + ".png"
+            icon.width = 24
+            icon.height = 24
+            icon.blendColor = color
+            icon.translation = [16, 16]
+            if open then ui.text(group, item.label, ui.font(weight, 20), color, 60, 14, itemWidth - 72, 28).wrap = false
+        end if
+    end for
+end sub
+
+' Avatar do perfil (w-8 rounded-lg, cor do perfil e a inicial em font-black). Por enquanto o perfil Principal (D7).
+sub buildAvatar(group as object)
+    avatar = ui.panel(group, "avatar", 12, 12, 32, 32)
+    avatar.blendColor = ui.ACCENT
+    ui.panel(group, "avatar-border", 12, 12, 32, 32)
+    letter = ui.text(group, "P", ui.font(900, 20), ui.TEXT_ON_ACCENT, 12, 14, 32, 28)
+    letter.horizAlign = "center"
+end sub
+
+' ---------- Foco ----------
+
+sub renderFocus()
+    for i = 0 to m.heroButtons.count() - 1
+        focused = m.focus.area = "hero" and m.focus.index = i
+        m.heroButtons[i].ring.visible = focused
+        if focused then
+            m.heroButtons[i].group.scale = [1.02, 1.02]
+        else
+            m.heroButtons[i].group.scale = [1, 1]
+        end if
+    end for
+    for r = 0 to m.rails.count() - 1
+        rail = m.rails[r]
+        if rail.cards <> invalid then
+            for i = 0 to rail.cards.count() - 1
+                focused = m.focus.area = "rail" and m.focus.rail = r and m.focus.index = i
+                rail.cards[i].ring.visible = focused
+                if focused then
+                    rail.cards[i].group.scale = [1.08, 1.08]
+                else
+                    rail.cards[i].group.scale = [1, 1]
+                end if
+            end for
+            index = 0
+            if m.focus.area = "rail" and m.focus.rail = r then index = m.focus.index
+            if rail.strip <> invalid then rail.strip.translation = [home.railOffset({ index: index, itemSize: rail.cardWidth, gap: RAIL_GAP, count: rail.items.count(), viewport: RAIL_WIDTH }), 0]
+        end if
+    end for
+    ' Rolagem: a fileira focada sobe para o lugar da primeira; no destaque e na primeira, a tela fica no topo.
+    scroll = 0
+    if m.focus.area = "rail" and m.focus.rail > 0 and m.rails[m.focus.rail].top <> invalid then scroll = m.rails[m.focus.rail].top - RAILS_TOP
+    m.content.translation = [0, -scroll]
+    m.heroArt.visible = scroll = 0
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    counts = { buttons: m.heroButtons.count(), menu: home.menuItems().count(), rails: [] }
+    for each rail in m.rails
+        counts.rails.push(rail.items.count())
+    end for
+    wasMenu = m.focus.area = "menu"
+    result = home.onKey(key, m.focus, counts, m.lastContent)
+    if not wasMenu and result.focus.area = "menu" then m.lastContent = m.focus
+    m.focus = result.focus
+    if wasMenu <> (m.focus.area = "menu") then renderMenu()
+    if m.focus.area = "menu" and wasMenu then renderMenu()
+    renderFocus()
+    return result.handled
+end function

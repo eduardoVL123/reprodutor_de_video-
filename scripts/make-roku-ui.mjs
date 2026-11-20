@@ -35,11 +35,14 @@ function roundedBoxDistance(px, py, x, y, w, h, r) {
 }
 
 /**
- * Desenha camadas de retângulos arredondados (a última por cima), cada uma { inset, radius, color, maxX? }:
- * `inset` recua a camada da borda da imagem; `maxX` corta a camada à esquerda (faixa do border-left).
+ * Desenha camadas de retângulos arredondados (a última por cima), cada uma { inset, radius, color, maxX?, alpha?,
+ * outside?, hole? }: `inset` recua a camada da borda da imagem; `maxX` corta a camada à esquerda (faixa do
+ * border-left); `alpha` é a opacidade da cor (bg-white/15 sobre o que estiver atrás, na TV); `outside` pinta o lado
+ * de fora do retângulo (máscara dos cantos); `hole` { inset, radius } tira um retângulo de dentro (só a borda fica).
  */
 function renderLayers(width, height, layers) {
   const pixels = new Float64Array(width * height * 4)
+  const inBox = (px, py, inset, radius) => roundedBoxDistance(px, py, inset, inset, width - 2 * inset, height - 2 * inset, radius) <= 0
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let [r, g, b, a] = [0, 0, 0, 0]
@@ -49,12 +52,12 @@ function renderLayers(width, height, layers) {
           for (let sx = 0; sx < SAMPLES; sx++) {
             const px = x + (sx + 0.5) / SAMPLES
             const py = y + (sy + 0.5) / SAMPLES
-            const i = layer.inset
-            const inside = roundedBoxDistance(px, py, i, i, width - 2 * i, height - 2 * i, layer.radius) <= 0
+            let inside = inBox(px, py, layer.inset, layer.radius) !== Boolean(layer.outside)
+            if (inside && layer.hole) inside = !inBox(px, py, layer.hole.inset, layer.hole.radius)
             if (inside && (layer.maxX === undefined || px <= layer.maxX)) hits++
           }
         }
-        const cover = hits / (SAMPLES * SAMPLES)
+        const cover = (hits / (SAMPLES * SAMPLES)) * (layer.alpha ?? 1)
         if (!cover) continue
         // "por cima" em alfa direto: a camada nova cobre a anterior na proporção da cobertura
         const outA = cover + a * (1 - cover)
@@ -133,6 +136,209 @@ function strokeIcon(size, layers, color) {
     }
   }
   return toPng(size, size, pixels)
+}
+
+/** Arco SVG (A rx ry rot large sweep x y) em pontos, pela conversão de ponto final para centro da especificação SVG. */
+function svgArc([x1, y1], rx, ry, rotation, largeArc, sweep, x2, y2, steps = 24) {
+  if (rx === 0 || ry === 0) return [[x2, y2]]
+  const phi = (rotation * Math.PI) / 180
+  const cos = Math.cos(phi)
+  const sin = Math.sin(phi)
+  const dx = (x1 - x2) / 2
+  const dy = (y1 - y2) / 2
+  const x1p = cos * dx + sin * dy
+  const y1p = -sin * dx + cos * dy
+  rx = Math.abs(rx)
+  ry = Math.abs(ry)
+  const lambda = (x1p * x1p) / (rx * rx) + (y1p * y1p) / (ry * ry)
+  if (lambda > 1) {
+    rx *= Math.sqrt(lambda)
+    ry *= Math.sqrt(lambda)
+  }
+  const num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p
+  const den = rx * rx * y1p * y1p + ry * ry * x1p * x1p
+  const coef = (largeArc === sweep ? -1 : 1) * Math.sqrt(Math.max(0, num / den))
+  const cxp = (coef * rx * y1p) / ry
+  const cyp = (-coef * ry * x1p) / rx
+  const cx = cos * cxp - sin * cyp + (x1 + x2) / 2
+  const cy = sin * cxp + cos * cyp + (y1 + y2) / 2
+  const angle = (ux, uy, vx, vy) => Math.atan2(ux * vy - uy * vx, ux * vx + uy * vy)
+  const theta = angle(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+  let delta = angle((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry)
+  if (!sweep && delta > 0) delta -= 2 * Math.PI
+  if (sweep && delta < 0) delta += 2 * Math.PI
+  return Array.from({ length: steps }, (_, i) => {
+    const t = theta + (delta * (i + 1)) / steps
+    return [cos * rx * Math.cos(t) - sin * ry * Math.sin(t) + cx, sin * rx * Math.cos(t) + cos * ry * Math.sin(t) + cy]
+  })
+}
+
+/** Atributo `d` de um <path> em polylines (uma por subcaminho): M L H V C S Q A Z, maiúsculas e minúsculas. */
+export function svgPath(d) {
+  const tokens = d.match(/[a-zA-Z]|-?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/g) || []
+  const lines = []
+  let current = null
+  let [x, y] = [0, 0]
+  let [startX, startY] = [0, 0]
+  let lastControl = null
+  let command = ''
+  let i = 0
+  const number = () => parseFloat(tokens[i++])
+  const flag = () => {
+    // Flags de arco podem vir coladas ("0 0117"): consome um dígito por vez.
+    const token = tokens[i]
+    if (token.length > 1 && /^[01]/.test(token)) {
+      tokens[i] = token.slice(1)
+      return Number(token[0])
+    }
+    i++
+    return Number(token)
+  }
+  while (i < tokens.length) {
+    if (/[a-zA-Z]/.test(tokens[i])) command = tokens[i++]
+    const relative = command === command.toLowerCase()
+    const ox = relative ? x : 0
+    const oy = relative ? y : 0
+    switch (command.toUpperCase()) {
+      case 'M':
+        x = ox + number()
+        y = oy + number()
+        current = [[x, y]]
+        lines.push(current)
+        ;[startX, startY] = [x, y]
+        command = relative ? 'l' : 'L' // pares seguintes ao M são linhas
+        lastControl = null
+        break
+      case 'L':
+        x = ox + number()
+        y = oy + number()
+        current.push([x, y])
+        lastControl = null
+        break
+      case 'H':
+        x = ox + number()
+        current.push([x, y])
+        lastControl = null
+        break
+      case 'V':
+        y = oy + number()
+        current.push([x, y])
+        lastControl = null
+        break
+      case 'C':
+      case 'S': {
+        let c1
+        if (command.toUpperCase() === 'C') {
+          c1 = [ox + number(), oy + number()]
+        } else {
+          c1 = lastControl ? [2 * x - lastControl[0], 2 * y - lastControl[1]] : [x, y]
+        }
+        const c2 = [ox + number(), oy + number()]
+        const end = [ox + number(), oy + number()]
+        current.push(...cubic([x, y], c1, c2, end))
+        lastControl = c2
+        ;[x, y] = end
+        break
+      }
+      case 'Q': {
+        const c = [ox + number(), oy + number()]
+        const end = [ox + number(), oy + number()]
+        current.push(...cubic([x, y], [x + (2 / 3) * (c[0] - x), y + (2 / 3) * (c[1] - y)], [end[0] + (2 / 3) * (c[0] - end[0]), end[1] + (2 / 3) * (c[1] - end[1])], end))
+        lastControl = null
+        ;[x, y] = end
+        break
+      }
+      case 'A': {
+        const rx = number()
+        const ry = number()
+        const rotation = number()
+        const large = flag()
+        const sweep = flag()
+        const end = [ox + number(), oy + number()]
+        current.push(...svgArc([x, y], rx, ry, rotation, large, sweep, end[0], end[1]))
+        ;[x, y] = end
+        lastControl = null
+        break
+      }
+      case 'Z':
+        current.push([startX, startY])
+        ;[x, y] = [startX, startY]
+        lastControl = null
+        break
+      default:
+        throw new Error(`Comando SVG não suportado: ${command}`)
+    }
+  }
+  return lines
+}
+
+/** Formas SVG (viewBox 24) em polylines: { d } | { circle: [cx, cy, r] } | { rect: [x, y, w, h, rx] } | { points: [...] }. */
+function svgShapes(shapes) {
+  return shapes.flatMap((shape) => {
+    if (shape.d) return svgPath(shape.d)
+    if (shape.circle) {
+      const [cx, cy, r] = shape.circle
+      return [arcPath(cx, cy, r, 0, 2 * Math.PI, 64)]
+    }
+    if (shape.rect) {
+      const [x, y, w, h, rx = 0] = shape.rect
+      return [rx ? roundedRectPath(x, y, w, h, rx) : [[x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y]]]
+    }
+    if (shape.points) {
+      const pts = []
+      for (let k = 0; k < shape.points.length; k += 2) pts.push([shape.points[k], shape.points[k + 1]])
+      return [shape.closed ? [...pts, pts[0]] : pts]
+    }
+    return []
+  })
+}
+
+/** Ícone SVG de traço (stroke-current) em branco: a Roku tinge com blendColor, como o currentColor do CSS. */
+function svgIcon(size, shapes, { stroke = 2, fill = false } = {}) {
+  const polylines = svgShapes(shapes)
+  if (fill) return fillIcon(size, polylines, WHITE)
+  return strokeIcon(size, [{ polylines, stroke }], WHITE)
+}
+
+/** Polígonos preenchidos (fill="currentColor"), viewBox 24. */
+function fillIcon(size, polygons, color) {
+  const scale = size / 24
+  const pixels = new Float64Array(size * size * 4)
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      let hits = 0
+      for (let sy = 0; sy < SAMPLES; sy++) {
+        for (let sx = 0; sx < SAMPLES; sx++) {
+          const px = (x + (sx + 0.5) / SAMPLES) / scale
+          const py = (y + (sy + 0.5) / SAMPLES) / scale
+          if (polygons.some((points) => insidePolygon(points, px, py))) hits++
+        }
+      }
+      pixels.set([...color, hits / (SAMPLES * SAMPLES)], (y * size + x) * 4)
+    }
+  }
+  return toPng(size, size, pixels)
+}
+
+/**
+ * Degradê linear do CSS em PNG estreito (a Roku estica): `stops` = [[posição 0..1, [r,g,b], alfa], ...].
+ * vertical = de cima para baixo; horizontal = da esquerda para a direita.
+ */
+function gradient(length, stops, { vertical = false } = {}) {
+  const pixels = new Float64Array(length * 4)
+  for (let i = 0; i < length; i++) {
+    const t = (i + 0.5) / length
+    let k = 0
+    while (k < stops.length - 2 && t > stops[k + 1][0]) k++
+    const [p0, c0, a0] = stops[k]
+    const [p1, c1, a1] = stops[k + 1]
+    const f = Math.min(1, Math.max(0, (t - p0) / (p1 - p0 || 1)))
+    // Mistura em alfa pré-multiplicado, como o navegador faz nos degradês.
+    const alpha = a0 + (a1 - a0) * f
+    const rgb = c0.map((c, j) => (alpha ? (c * a0 * (1 - f) + c1[j] * a1 * f) / alpha : c))
+    pixels.set([...rgb, alpha], i * 4)
+  }
+  return vertical ? toPng(1, length, pixels) : toPng(length, 1, pixels)
 }
 
 /** Símbolo da marca como o BrandMark.vue: caminhos "small" do kit no recorte 52 48 152 160, altura `height` px. */
@@ -245,6 +451,48 @@ export const OUTPUTS = [
   ['glow-circle.png', () => toPng(560, 560, renderLayers(560, 560, [{ inset: 0, radius: 280, color: over(LIME, 0.1, DEEP) }]))],
   // "Conectando...": anel a 25 % + arco "M21 12a9 9 0 0 0-9-9", traço 3, 32 px, preto (sobre o botão branco).
   ['spinner.png', () => strokeIcon(32, [{ polylines: [arcPath(12, 12, 9, 0, 2 * Math.PI, 48)], stroke: 3, opacity: 0.25 }, { polylines: [arcPath(12, 12, 9, 0, -Math.PI / 2)], stroke: 3 }], [0, 0, 0])],
+
+  // ---- Início (src/views/Dashboard.vue e src/components/SideMenu.vue) ----
+  // Ícones do menu lateral (w-6, stroke 2), brancos: a tela tinge (neutral-400 / branco no ativo).
+  ['icon-search.png', () => svgIcon(24, [{ circle: [11, 11, 7] }, { d: 'M20 20l-3.5-3.5' }])],
+  ['icon-home.png', () => svgIcon(24, [{ d: 'M3 10l9-7 9 7v10H3z' }])],
+  ['icon-live.png', () => svgIcon(24, [{ rect: [3, 6, 18, 12, 2] }, { d: 'M8 3l4 3 4-3' }])],
+  ['icon-vod.png', () => svgIcon(24, [{ rect: [4, 3, 16, 18, 2] }, { d: 'M4 8h16M4 16h16' }])],
+  ['icon-series.png', () => svgIcon(24, [{ rect: [3, 5, 18, 12, 2] }, { d: 'M8 21h8' }])],
+  ['icon-heart.png', () => svgIcon(24, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }])],
+  ['icon-account.png', () => svgIcon(24, [{ circle: [12, 8, 4] }, { d: 'M4 21c0-4 3.5-7 8-7s8 3 8 7' }])],
+  // Botões do destaque (w-4): play cheio, informação e favoritos (contorno e cheio).
+  ['icon-play.png', () => svgIcon(16, [{ points: [5, 3, 19, 12, 5, 21, 5, 3] }], { fill: true })],
+  ['icon-info.png', () => svgIcon(16, [{ circle: [12, 12, 10] }, { points: [12, 16, 12, 12] }, { points: [12, 8, 12.01, 8] }])],
+  ['icon-heart-small.png', () => svgIcon(16, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }])],
+  ['icon-heart-filled.png', () => svgIcon(16, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }], { fill: true })],
+  // "Ver todos" (chevron) e o ícone de canais da fileira ao vivo (w-5).
+  ['icon-chevron-right.png', () => svgIcon(24, [{ points: [9, 18, 15, 12, 9, 6] }])],
+  ['icon-broadcast.png', () => svgIcon(20, [{ d: 'M4.93 19.07A10 10 0 0 1 19.07 4.93' }, { d: 'M7.76 16.24a6 6 0 0 1 8.48-8.48' }, { circle: [12, 12, 2] }])],
+  // Item do menu: ativo bg-white/15, rounded-xl (12).
+  ['nav-active.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE, alpha: 0.15 }])],
+  // Anel de foco em volta de algo rounded-xl (cartões e itens do menu): ring 2 branco + offset 3 grafite.
+  ['focus-ring-12.9.png', () => ninePatch([{ inset: 0, radius: 17, color: WHITE }, { inset: 2, radius: 15, color: DEEP }])],
+  // Cartão de pôster e "Ver todos": rounded-xl, bg #141418, borda white/10.
+  ['card.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.1, CARD) }, { inset: 1, radius: 11, color: CARD }])],
+  // Por cima da capa: cantos arredondados (o fundo da tela fora deles) e a borda white/10 (overflow-hidden do card).
+  ['card-mask.9.png', () => ninePatch([{ inset: 0, radius: 12, color: DEEP, outside: true }, { inset: 0, radius: 12, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 11 } }])],
+  // bg-gradient-to-t from-black/85 via-black/20 to-transparent (de cima para baixo: transparente → 20 % → 85 %).
+  ['card-shade.png', () => gradient(252, [[0, [0, 0, 0], 0], [0.5, [0, 0, 0], 0.2], [1, [0, 0, 0], 0.85]], { vertical: true })],
+  // Botões de vidro do destaque (.tv-btn-glass): white/12, borda white/14, rounded-lg.
+  ['btn-glass.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.14, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.12 }])],
+  // Círculo de vidro do "Ver todos" (w-12 rounded-full tv-glass).
+  ['glass-circle.png', () => toPng(48, 48, renderLayers(48, 48, [{ inset: 0, radius: 24, color: WHITE, alpha: 0.14 }, { inset: 1, radius: 23, color: over(WHITE, 0.12, CARD) }]))],
+  // .tv-vignette: horizontal (#0b0f0c 0 → .92 30% → .35 60% → 0 80%) e de baixo para cima (#0b0f0c 4% → .6 32% → 0 60%).
+  ['vignette-h.png', () => gradient(256, [[0, DEEP, 1], [0.3, DEEP, 0.92], [0.6, DEEP, 0.35], [0.8, DEEP, 0], [1, DEEP, 0]])],
+  ['vignette-v.png', () => gradient(256, [[0, DEEP, 0], [0.4, DEEP, 0], [0.68, DEEP, 0.6], [0.96, DEEP, 1], [1, DEEP, 1]], { vertical: true })],
+  // Menu lateral fechado: bg-gradient-to-r from-black/85 via-black/40 to-transparent.
+  ['menu-fade.png', () => gradient(112, [[0, [0, 0, 0], 0.85], [0.5, [0, 0, 0], 0.4], [1, [0, 0, 0], 0]])],
+  // Menu lateral aberto (w-[19rem] = 304): bg-tv-deep/95, border-r white/10 e shadow-[12px_0_40px_rgba(0,0,0,0.85)].
+  ['menu-open.png', () => gradient(360, [[0, DEEP, 0.95], [303 / 360, DEEP, 0.95], [303 / 360, over(WHITE, 0.1, DEEP), 0.96], [304 / 360, over(WHITE, 0.1, DEEP), 0.96], [304 / 360, [0, 0, 0], 0.6], [1, [0, 0, 0], 0]])],
+  // Avatar do perfil: w-8 rounded-lg, cor do perfil (a tela tinge) e borda white/20 por cima.
+  ['avatar.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE }])],
+  ['avatar-border.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.2, hole: { inset: 1, radius: 7 } }])],
 ]
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

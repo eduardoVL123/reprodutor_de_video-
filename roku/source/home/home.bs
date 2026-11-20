@@ -87,6 +87,61 @@ namespace home
         return { badge: badge, title: title, rating: rating, year: utils.textOr(details.year, ""), duration: duration, genre: utils.textOr(details.genre, ""), synopsis: synopsis, playText: playText }
     end function
 
+    ' Itens do menu lateral, na ordem do SideMenu.vue (as abas que ainda não existem na Roku só recebem foco).
+    function menuItems() as object
+        return [
+            { id: "search", label: "Busca", icon: "icon-search" },
+            { id: "home", label: "Início", icon: "icon-home" },
+            { id: "live", label: "TV ao vivo", icon: "icon-live" },
+            { id: "vod", label: "Filmes", icon: "icon-vod" },
+            { id: "series", label: "Séries", icon: "icon-series" },
+            { id: "favorites", label: "Favoritos", icon: "icon-heart" },
+            { id: "account", label: "Conta", icon: "icon-account" },
+            { id: "profile", label: "Trocar perfil", icon: "" }
+        ]
+    end function
+
+    ' Foco no Início: { area: "menu"|"hero"|"rail", index, rail }. counts = { buttons, menu, rails: [n por fileira] }.
+    ' Esquerda na primeira coluna abre o menu; direita no menu volta para onde estava (lastContent).
+    function onKey(key as string, focus as object, counts as object, lastContent as object) as object
+        nextFocus = { area: focus.area, index: focus.index, rail: focus.rail }
+        if focus.area = "menu" then
+            if key = "up" and focus.index > 0 then nextFocus.index = focus.index - 1
+            if key = "down" and focus.index < counts.menu - 1 then nextFocus.index = focus.index + 1
+            if key = "right" then nextFocus = { area: lastContent.area, index: lastContent.index, rail: lastContent.rail }
+            return { focus: nextFocus, handled: key = "up" or key = "down" or key = "right" }
+        end if
+        if key = "left" then
+            if focus.index > 0 then
+                nextFocus.index = focus.index - 1
+            else
+                nextFocus = { area: "menu", index: 1, rail: 0 }
+            end if
+            return { focus: nextFocus, handled: true }
+        end if
+        if key = "right" then
+            limit = counts.buttons
+            if focus.area = "rail" then limit = counts.rails[focus.rail]
+            if focus.index < limit - 1 then nextFocus.index = focus.index + 1
+            return { focus: nextFocus, handled: true }
+        end if
+        if key = "down" then
+            nextRail = 0
+            if focus.area = "rail" then nextRail = focus.rail + 1
+            if nextRail < counts.rails.count() then nextFocus = { area: "rail", index: 0, rail: nextRail }
+            return { focus: nextFocus, handled: true }
+        end if
+        if key = "up" and focus.area = "rail" then
+            if focus.rail = 0 then
+                nextFocus = { area: "hero", index: 0, rail: 0 }
+            else
+                nextFocus = { area: "rail", index: 0, rail: focus.rail - 1 }
+            end if
+            return { focus: nextFocus, handled: true }
+        end if
+        return { focus: nextFocus, handled: key = "up" }
+    end function
+
     ' Cartão "Ver todos" no fim de cada fileira.
     function seeAllCard(section as string) as object
         name = "Ver todos os filmes"
