@@ -17,7 +17,7 @@ domínio antes de começar e siga os passos dele.
 5. Mensagens para o usuário são as mesmas do app web (português, mesmo texto).
 6. Confira o valor esperado rodando o JS original (`node -e`) quando o teste Vitest não cobrir o caso.
 
-BrighterScript: variável local ou função com o mesmo nome de uma `const` do namespace (ignorando maiúsculas:
+BrighterScript: variável local com o mesmo nome de uma `const` ou de uma função do namespace, ou função com o nome de uma `const` (ignorando maiúsculas:
 `version`/`VERSION`, `ui.text()`/`ui.TEXT`) é trocada pelo valor da constante sem aviso — vira `return 6 >= 6` ou
 `"0xF1F5F9FF"(...)`. Nunca reuse o nome de uma constante em variável ou função. Depois de mexer em componente, rode o
 app no simulador (`npm run roku:preview` ou `brs-cli --ascii 120 build/roku/pulse-roku.zip`): os testes Rooibos não

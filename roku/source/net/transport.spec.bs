@@ -52,6 +52,21 @@ namespace tests
             m.assertEqual(result.password, "senha123")
         end function
 
+        @it("catálogo: baixa e grava a seção ao vivo do mock e lê a primeira página")
+        function _()
+            dir = "cachefs:/pulse-test-integration"
+            catalog.clearCatalog(dir)
+            ctx = { dir: dir, apiBase: tests.MOCK, credentials: { username: "teste123", password: "senha123" }, type: "xtream" }
+            result = catalog.loadSection(net.urlTransport(), ctx, "live", false)
+            m.assertTrue(result.ok)
+            m.assertEqual(result.list[0].category_name, "Todos")
+            m.assertTrue(result.list[0].count > 0)
+            page = catalog.getItems(dir, "live", catalog.ALL_CATEGORIES, 0, 5, [])
+            m.assertEqual(page.count(), 5)
+            m.assertNotInvalid(page[0].stream_id)
+            catalog.clearCatalog(dir)
+        end function
+
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         @describe("falhas de rede")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

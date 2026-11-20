@@ -1,0 +1,213 @@
+' Casos de tests/catalogDb.test.js, tests/parental.test.js ("catálogo com categorias fora da vista"),
+' tests/catalogStore.m3u.test.js e de src/utils/normalizeText.js. Grava em cachefs:/pulse-test-catalog.
+namespace tests
+
+    const CATALOG_DIR = "cachefs:/pulse-test-catalog"
+
+    function numberedStreams(n as integer) as object
+        list = []
+        for i = 1 to n
+            list.push({ stream_id: i, name: "Item " + i.toStr(), category_id: ((i - 1) mod 2 + 1).toStr() })
+        end for
+        return list
+    end function
+
+    function ids(items as object) as object
+        result = []
+        for each item in items
+            result.push(item.stream_id)
+        end for
+        return result
+    end function
+
+    ' Filmes 3 e 4 na categoria 2 (escondida nos testes do controle parental).
+    function parentalStreams() as object
+        return [
+            { stream_id: 1, name: "Filme Um", category_id: "1" },
+            { stream_id: 2, name: "Filme Dois", category_id: "1" },
+            { stream_id: 3, name: "Filme Tres", category_id: "2" },
+            { stream_id: 4, name: "Filme Quatro", category_id: "2" },
+            { stream_id: 5, name: "Filme Cinco", category_id: "3" },
+            { stream_id: 6, name: "Filme Seis", category_id: "3" }
+        ]
+    end function
+
+    @suite("catalog")
+    class CatalogTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            catalog.clearCatalog(tests.CATALOG_DIR)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("normalizeText — forma canônica para busca")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("minúsculas, sem acentos, pontuação vira espaço")
+        @params("Homem-Aranha: Longe de Casa", "homem aranha longe de casa")
+        @params("AÇÃO e Comédia", "acao e comedia")
+        @params("  ★ Série  │ Ñandú ", "serie nandu")
+        @params("Ωmega Жар 東京", "ωmega жар 東京")
+        function _(text, expected)
+            m.assertEqual(catalog.normalizeText(text), expected)
+        end function
+
+        @it("foldText tira acento e põe em minúsculas sem mexer na pontuação")
+        function _()
+            m.assertEqual(catalog.foldText("Ação: É Já!"), "acao: e ja!")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("gravação e leitura em janelas")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("lê janelas de itens por categoria e conta corretamente")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.numberedStreams(1200))
+            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 1200)
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 498, 4, [])), [499, 500, 501, 502])
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", "1", 0, 3, [])), [1, 3, 5])
+        end function
+
+        @it("item em várias categorias (category_ids dos painéis novos) aparece em todas elas")
+        function _()
+            multi = [
+                { stream_id: 1, name: "Ação e Comédia", category_id: "10", category_ids: [10, 20] },
+                { stream_id: 2, name: "Só Comédia", category_id: "20", category_ids: [20] },
+                { stream_id: 3, name: "Lançamento", category_id: "10", category_ids: [10, 30] },
+                { stream_id: 4, name: "Antigo", category_id: "10" }
+            ]
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], multi)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertEqual(meta.count, 4)
+            m.assertEqual(meta.counts["10"], 3)
+            m.assertEqual(meta.counts["20"], 2)
+            m.assertEqual(meta.counts["30"], 1)
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", "20", 0, 10, [])), [1, 2])
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", "30", 0, 10, [])), [3])
+        end function
+
+        @it("normaliza o item como o web: série usa series_id, capa em stream_icon, extensão mp4")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "series", [], [{ series_id: 77, name: "Série", cover: "http://i.test/c.jpg", category_id: "5" }])
+            item = catalog.getItems(tests.CATALOG_DIR, "series", "5", 0, 1, [])[0]
+            m.assertEqual(item.stream_id, 77)
+            m.assertEqual(item.stream_icon, "http://i.test/c.jpg")
+            m.assertEqual(item.container_extension, "mp4")
+            m.assertEqual(item.section, "series")
+        end function
+
+        @it("descarta catálogo salvo por versão anterior do app, forçando novo download")
+        function _()
+            CreateDirectory(tests.CATALOG_DIR)
+            CreateDirectory(tests.CATALOG_DIR + "/vod")
+            WriteAsciiFile(tests.CATALOG_DIR + "/vod/meta.json", FormatJson({ count: 1, chunkSize: 500, chunkCount: 1, counts: { "1": 1 } }))
+            m.assertInvalid(catalog.getMeta(tests.CATALOG_DIR, "vod"))
+        end function
+
+        @it("clearCatalog remove tudo")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], tests.numberedStreams(3))
+            catalog.clearCatalog(tests.CATALOG_DIR)
+            m.assertInvalid(catalog.getMeta(tests.CATALOG_DIR, "live"))
+            m.assertEqual(catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 10, []).count(), 0)
+        end function
+
+        @it("índice de busca guarda o nome normalizado na posição do item")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], [{ stream_id: 9, name: "Homem-Aranha", category_id: "1" }])
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod"), ["homem aranha"])
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("categorias fora da vista (controle parental)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("'Todos' e a contagem deixam de fora as categorias escondidas/bloqueadas")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.parentalStreams())
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 0, 10, ["2"])), [1, 2, 5, 6])
+            m.assertEqual(catalog.visibleCount(tests.CATALOG_DIR, "vod", ["2"]), 4)
+            m.assertInvalid(catalog.visibleCount(tests.CATALOG_DIR, "vod", []))
+            m.assertEqual(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 0, 10, []).count(), 6)
+        end function
+
+        @it("item em duas categorias: bloqueado em uma, some também da outra (itens e contagem)")
+        function _()
+            streams = [{ stream_id: 1, name: "Ação comum", category_id: "1" }, { stream_id: 2, name: "Duplo", category_id: "1", category_ids: ["1", "9"] }]
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", "1", 0, 10, ["9"])), [1])
+            m.assertEqual(catalog.visibleCategoryCounts(tests.CATALOG_DIR, "vod", ["9"])["1"], 1)
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", "1", 0, 10, [])), [1, 2])
+            m.assertInvalid(catalog.visibleCategoryCounts(tests.CATALOG_DIR, "vod", []))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("lista de categorias publicada")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("começa por 'Todos' e só traz categorias com itens")
+        function _()
+            cats = [{ category_id: 1, category_name: "Ação" }, { category_id: 2, category_name: "Vazia" }, { category_id: 3, category_name: "Drama" }]
+            catalog.saveSection(tests.CATALOG_DIR, "vod", cats, [{ stream_id: 1, name: "A", category_id: "1" }, { stream_id: 2, name: "B", category_id: "3" }])
+            list = catalog.publishList(tests.CATALOG_DIR, "vod")
+            m.assertEqual(list.count(), 3)
+            m.assertEqual(list[0].category_name, "Todos")
+            m.assertEqual(list[0].count, 2)
+            m.assertEqual(list[1].category_id, "1")
+            m.assertEqual(list[2].category_name, "Drama")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("carga da seção (catalogStore)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("Xtream: baixa categorias e itens, grava e não baixa de novo se já houver cache")
+        function _()
+            base = "http://srv.test"
+            t = tests.fakeTransport([
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_categories", response: tests.jsonResponse([{ category_id: "1", category_name: "Ação" }]) },
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_streams", response: tests.jsonResponse(tests.numberedStreams(3)) }
+            ])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: base, credentials: { username: "u", password: "p" }, type: "xtream" }
+            result = catalog.loadSection(t, ctx, "vod", false)
+            m.assertTrue(result.ok)
+            m.assertEqual(result.list[0].count, 3)
+            m.assertEqual(t.calls.count(), 2)
+            catalog.loadSection(t, ctx, "vod", false)
+            m.assertEqual(t.calls.count(), 2)
+        end function
+
+        @it("Xtream: painel que devolve false para lista vazia vira seção vazia, sem erro")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse(false) }])
+            result = catalog.loadSection(t, { dir: tests.CATALOG_DIR, apiBase: "http://srv.test", credentials: { username: "u", password: "p" }, type: "xtream" }, "live", false)
+            m.assertTrue(result.ok)
+            m.assertEqual(result.list[0].count, 0)
+        end function
+
+        @it("Xtream: erro do servidor vira a mensagem do web")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse({}, 503) }])
+            result = catalog.loadSection(t, { dir: tests.CATALOG_DIR, apiBase: "http://srv.test", credentials: { username: "u", password: "p" }, type: "xtream" }, "vod", false)
+            m.assertFalse(result.ok)
+            m.assertEqual(result.error, "O servidor da lista está com problema (erro 503). Tente de novo em alguns minutos.")
+        end function
+
+        @it("M3U: uma leitura grava as três seções; Séries fica vazia sem erro")
+        function _()
+            m3uText = "#EXTM3U" + Chr(10) + "#EXTINF:-1 group-title=" + Chr(34) + "Canais" + Chr(34) + ",Canal A" + Chr(10) + "http://srv.test/live/a.m3u8" + Chr(10) + "#EXTINF:-1 group-title=" + Chr(34) + "Canais" + Chr(34) + ",Canal B" + Chr(10) + "http://srv.test/live/b.m3u8" + Chr(10) + "#EXTINF:-1 group-title=" + Chr(34) + "Filmes" + Chr(34) + ",Filme A" + Chr(10) + "http://srv.test/movie/a.mp4" + Chr(10)
+            t = tests.fakeTransport([{ prefix: "http://srv.test/lista.m3u", response: tests.textResponse(m3uText) }])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: "http://srv.test/lista.m3u", credentials: { username: "M3U Playlist", password: "" }, type: "m3u" }
+            m.assertTrue(catalog.loadSection(t, ctx, "series", false).ok)
+            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "series").count, 0)
+            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "live").count, 2)
+            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 1)
+            catalog.loadSection(t, ctx, "live", false)
+            catalog.loadSection(t, ctx, "vod", false)
+            m.assertEqual(t.calls.count(), 1)
+        end function
+
+    end class
+
+end namespace
