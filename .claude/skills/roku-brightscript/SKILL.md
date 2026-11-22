@@ -33,6 +33,16 @@ importa só o que chama direto e o BrighterScript traz o resto). Sem isso o buil
 
 Rooibos: todo `@it` precisa de um `@describe` antes; não existe `assertNotContains` para texto
 (use `m.assertTrue(texto.instr("x") < 0)`); helpers de tipo ficam em `roku/source/utils/types.bs`.
+`assertEqual` diferencia `0` (Integer) de `0.0` (Float): devolva `Cint(...)` quando o teste espera inteiro.
+`pos` é função nativa: não serve de nome de variável (como campo `x.pos` pode).
+
+Texto lado a lado: `Label` com `width` fixo devolve esse `width` no `boundingRect()`; para posicionar o pedaço seguinte
+use `ui.inlineText` (sem largura).
+
+Foco: telas usam `roku/source/nav/spatial.bs` (port do `spatialNavigation.js`: geometria, memória por painel/linha,
+rolagem do `focusEl`) com os mesmos ids do web; a tela só descreve os retângulos (ex.: `home.navItems`).
+Ao medir o web no painel do navegador, `focusin` não dispara (janela sem foco): fileiras não deslizam e a memória de
+foco não grava, então rastros de `__pulse.walk` ali não valem como referência de navegação.
 
 ## Arquitetura (não quebrar)
 
