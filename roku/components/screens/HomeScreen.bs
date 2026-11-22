@@ -101,8 +101,7 @@ sub renderHero()
     parts.push({ text: texts.duration, color: META_COLOR, weight: 500, dot: false })
     if texts.genre <> "" then parts.push({ text: texts.genre, color: META_COLOR, weight: 500, dot: false })
     for each part in parts
-        label = ui.text(m.hero, part.text, ui.font(part.weight, 20), part.color, x, 227, 400, 28)
-        label.wrap = false
+        label = ui.inlineText(m.hero, part.text, ui.font(part.weight, 20), part.color, x, 227, 28)
         x = x + label.boundingRect().width + 12
         if part.dot then
             dot = m.hero.createChild("Rectangle")
@@ -324,9 +323,8 @@ sub renderMenu()
     mark.height = 32
     mark.translation = [padX + 12, 68]
     if open then
-        pulse = ui.text(m.menu, "PULSE", ui.font(900, 24), "0xF4F7EEFF", padX + 54, 72, 100, 24)
-        pulse.wrap = false
-        ui.text(m.menu, "PLAYER", ui.font(900, 24), ui.ACCENT, padX + 54 + pulse.boundingRect().width + 4, 72, 140, 24).wrap = false
+        pulse = ui.inlineText(m.menu, "PULSE", ui.font(900, 24), "0xF4F7EEFF", padX + 54, 72, 24)
+        ui.inlineText(m.menu, "PLAYER", ui.font(900, 24), ui.ACCENT, padX + 54 + pulse.boundingRect().width + 4, 72, 24)
     end if
 
     m.menuNodes = []

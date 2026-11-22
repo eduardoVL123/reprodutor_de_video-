@@ -67,6 +67,14 @@ namespace ui
         return label
     end function
 
+    ' Texto de uma linha sem largura fixa, para posicionar o próximo pedaço logo depois: com width fixo o
+    ' boundingRect().width devolve o width, não a largura do texto.
+    function inlineText(parent as object, value as string, fontNode as object, color as string, x as float, y as float, lineHeight as float) as object
+        label = ui.text(parent, value, fontNode, color, x, y, 0, lineHeight)
+        label.wrap = false
+        return label
+    end function
+
     ' Altura de uma linha da fonte sem espaçamento extra.
     function naturalLineHeight(fontNode as object) as float
         if m.uiLineHeights = invalid then m.uiLineHeights = {}
