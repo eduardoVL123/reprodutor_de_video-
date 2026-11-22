@@ -1,0 +1,230 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/catalog/catalog.bs"
+' Port de src/services/catalogSearch.js (casos em catalogSearch.spec.bs, valores conferidos no JS original). Varre só o
+' índice de nomes normalizados (search.json de cada seção) e lê dos chunks apenas os itens que entram no resultado.
+' search() lê arquivos: roda num Task. O `cache` ({} guardado pelo Task enquanto a tela de busca está aberta) segura os
+' nomes já lidos e a última varredura: "fil" → "film" só revarre os acertos anteriores.
+namespace catalogSearch
+
+    const MIN_QUERY_LENGTH = 3
+    ' Chave de ordenação compacta: pontuação (0–3) * 256 + tamanho do nome (até 255).
+    const LENGTH_SLOTS = 256
+    const KEY_SLOTS = 1024
+
+    function allSections() as object
+        return ["vod", "series", "live"]
+    end function
+
+    ' Pontuação do nome (menor = melhor) ou -1 se não contém todos os tokens.
+    ' 0: igual · 1: começa com a busca · 2: uma palavra começa com o 1º token · 3: contém.
+    function scoreName(name as string, query as string, tokens as object) as integer
+        for each token in tokens
+            if Instr(1, name, token) = 0 then return -1
+        end for
+        if name = query then return 0
+        if Left(name, Len(query)) = query then return 1
+        if Left(name, Len(tokens[0])) = tokens[0] or Instr(1, name, " " + tokens[0]) > 0 then return 2
+        return 3
+    end function
+
+    function rankKey(score as integer, name as string) as integer
+        size = Len(name)
+        if size > catalogSearch.LENGTH_SLOTS - 1 then size = catalogSearch.LENGTH_SLOTS - 1
+        return score * catalogSearch.LENGTH_SLOTS + size
+    end function
+
+    ' Acertos de uma seção. Se a busca só acrescenta letras à anterior, todo acerto novo também era acerto antigo.
+    function scanNames(cache as object, section as string, names as object, query as string, tokens as object) as object
+        prev = cache[section]
+        reuse = prev <> invalid and Left(query, Len(prev.query)) = prev.query
+        positions = []
+        keys = []
+        if reuse then
+            for each position in prev.positions
+                score = catalogSearch.scoreName(names[position], query, tokens)
+                if score >= 0 then
+                    positions.push(position)
+                    keys.push(catalogSearch.rankKey(score, names[position]))
+                end if
+            end for
+        else
+            for position = 0 to names.count() - 1
+                name = names[position]
+                if utils.isString(name) and name <> "" then
+                    score = catalogSearch.scoreName(name, query, tokens)
+                    if score >= 0 then
+                        positions.push(position)
+                        keys.push(catalogSearch.rankKey(score, name))
+                    end if
+                end if
+            end for
+        end if
+        cache[section] = { names: names, query: query, positions: positions }
+        return { positions: positions, keys: keys }
+    end function
+
+    ' Os `limit` melhores acertos sem ordenar a lista inteira: o histograma das chaves acha o corte e os baldes por
+    ' chave mantêm a ordem de posição (a varredura já vem em ordem crescente).
+    function topMatches(positions as object, keys as object, limit as integer) as object
+        cutoff = catalogSearch.KEY_SLOTS - 1
+        if positions.count() > limit then
+            histogram = []
+            for k = 0 to catalogSearch.KEY_SLOTS - 1
+                histogram.push(0)
+            end for
+            for each k in keys
+                histogram[k] = histogram[k] + 1
+            end for
+            acc = 0
+            for cutoff = 0 to catalogSearch.KEY_SLOTS - 1
+                acc = acc + histogram[cutoff]
+                if acc >= limit then exit for
+            end for
+        end if
+        buckets = []
+        for k = 0 to cutoff
+            buckets.push(invalid)
+        end for
+        for i = 0 to positions.count() - 1
+            k = keys[i]
+            if k <= cutoff then
+                if buckets[k] = invalid then buckets[k] = []
+                buckets[k].push(positions[i])
+            end if
+        end for
+        picked = []
+        for k = 0 to cutoff
+            if buckets[k] <> invalid then
+                for each position in buckets[k]
+                    if picked.count() >= limit then return picked
+                    picked.push({ pos: position, key: k })
+                end for
+            end if
+        end for
+        return picked
+    end function
+
+    ' Ordem estável por chave e depois posição (byRank do web) para juntar as seções.
+    sub rankSort(list as object)
+        for i = 1 to list.count() - 1
+            current = list[i]
+            j = i - 1
+            while j >= 0 and (list[j].key > current.key or (list[j].key = current.key and list[j].pos > current.pos))
+                list[j + 1] = list[j]
+                j = j - 1
+            end while
+            list[j + 1] = current
+        end for
+    end sub
+
+    ' Busca sobre nomes já carregados: namesBySection { seção: [nome normalizado] }, blockedBySection { seção:
+    ' { "posição": true } ou invalid }. Devolve { query, total, counts, results: [{ section, pos, key }] }.
+    function searchIn(namesBySection as object, cache as object, text as dynamic, sectionList as object, limit as integer, blockedBySection as object) as object
+        normalized = catalog.normalizeText(text)
+        counts = {}
+        for each section in sectionList
+            counts[section] = 0
+        end for
+        if Len(normalized) < catalogSearch.MIN_QUERY_LENGTH then return { query: normalized, total: 0, counts: counts, results: [] }
+
+        tokens = normalized.split(" ")
+        total = 0
+        results = []
+        for each section in sectionList
+            names = namesBySection[section]
+            if names = invalid then names = []
+            scan = catalogSearch.scanNames(cache, section, names, normalized, tokens)
+            positions = scan.positions
+            keys = scan.keys
+            blocked = blockedBySection[section]
+            if blocked <> invalid then
+                keptPositions = []
+                keptKeys = []
+                for i = 0 to positions.count() - 1
+                    if blocked[positions[i].toStr()] <> true then
+                        keptPositions.push(positions[i])
+                        keptKeys.push(keys[i])
+                    end if
+                end for
+                positions = keptPositions
+                keys = keptKeys
+            end if
+            counts[section] = positions.count()
+            total = total + positions.count()
+            for each match in catalogSearch.topMatches(positions, keys, limit)
+                results.push({ section: section, pos: match.pos, key: match.key })
+            end for
+        end for
+        catalogSearch.rankSort(results)
+        return { query: normalized, total: total, counts: counts, results: results }
+    end function
+
+    ' searchCatalog do web sobre os arquivos do catálogo; cada resultado ganha o item lido do chunk.
+    ' hidden = { seção: [ids de categoria fora da vista] } (controle parental).
+    function search(dir as string, text as dynamic, sectionList as object, limit as integer, hidden as object, cache as object) as object
+        namesBySection = {}
+        blockedBySection = {}
+        for each section in sectionList
+            if cache[section] <> invalid then
+                namesBySection[section] = cache[section].names
+            else
+                namesBySection[section] = catalog.getSearchIndex(dir, section)
+            end if
+            sectionHidden = hidden[section]
+            if sectionHidden = invalid then sectionHidden = []
+            blockedBySection[section] = catalog.blockedPositions(dir, section, sectionHidden)
+        end for
+        found = catalogSearch.searchIn(namesBySection, cache, text, sectionList, limit, blockedBySection)
+        for each section in sectionList
+            positions = []
+            rows = []
+            for each r in found.results
+                if r.section = section then
+                    positions.push(r.pos)
+                    rows.push(r)
+                end if
+            end for
+            items = catalog.getItemsAt(dir, section, positions)
+            for i = 0 to rows.count() - 1
+                if i < items.count() then rows[i].item = items[i]
+            end for
+        end for
+        return found
+    end function
+
+    ' Até `max` títulos únicos para a lista de sugestões, os mais relevantes primeiro.
+    function getSuggestions(results as object, max as integer) as object
+        seen = {}
+        titles = []
+        for each r in results
+            if titles.count() >= max then exit for
+            name = ""
+            if utils.isObject(r.item) then name = utils.textOr(r.item.name, "").trim()
+            key = catalog.normalizeText(name)
+            if key <> "" and seen[key] <> true then
+                seen[key] = true
+                titles.push(name)
+            end if
+        end for
+        return titles
+    end function
+
+    ' Divide o nome em trechos para destacar a parte que casa com a busca, ignorando acentos e maiúsculas.
+    function highlightParts(name as dynamic, query as dynamic) as object
+        text = utils.textOr(name, "")
+        needle = catalog.foldText(query).trim()
+        folded = catalog.foldText(text)
+        at = 0
+        ' Só vale quando remover o acento não muda o tamanho (posições batem 1:1).
+        if needle <> "" and Len(folded) = Len(text) then at = Instr(1, folded, needle)
+        if at = 0 then return [{ text: text, match: false }]
+        parts = []
+        before = Left(text, at - 1)
+        if before <> "" then parts.push({ text: before, match: false })
+        parts.push({ text: Mid(text, at, Len(needle)), match: true })
+        after = Mid(text, at + Len(needle))
+        if after <> "" then parts.push({ text: after, match: false })
+        return parts
+    end function
+
+end namespace

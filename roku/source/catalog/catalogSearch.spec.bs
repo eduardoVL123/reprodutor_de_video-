@@ -1,0 +1,107 @@
+' Casos de src/services/catalogSearch.js (valores conferidos rodando o JS original com o catalogDb simulado) e o
+' caso de busca de tests/parental.test.js (categorias escondidas ficam fora).
+namespace tests
+
+    ' Índices de nomes normalizados como o search.json de cada seção.
+    function searchNames() as object
+        return {
+            vod: ["matrix", "matrix reloaded", "the matrix", "animatrix", "filme de acao 1", "acao total", "matrix revolutions", "o rei leao"],
+            series: ["matrix a serie", "acao em dobro"],
+            live: ["canal matrix hd"]
+        }
+    end function
+
+    ' [seção, posição, chave] de cada resultado, para comparar com o JSON do JS.
+    function searchRows(found as object) as object
+        rows = []
+        for each r in found.results
+            rows.push([r.section, r.pos, r.key])
+        end for
+        return rows
+    end function
+
+    function runNames(query as string, sectionList as object, limit as integer, blocked as dynamic) as object
+        return catalogSearch.searchIn(tests.searchNames(), {}, query, sectionList, limit, { vod: blocked })
+    end function
+
+    @suite("catalogSearch")
+    class CatalogSearchTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("ranking: igual, começa com, palavra começa, contém")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("busca em todas as seções, ordenada pela chave (pontuação × 256 + tamanho) e posição")
+        function _()
+            found = tests.runNames("Matrix", catalogSearch.allSections(), 60, invalid)
+            m.assertEqual(found.query, "matrix")
+            m.assertEqual(found.total, 7)
+            m.assertEqual(found.counts, { vod: 5, series: 1, live: 1 })
+            m.assertEqual(tests.searchRows(found), [["vod", 0, 6], ["series", 0, 270], ["vod", 1, 271], ["vod", 6, 274], ["vod", 2, 522], ["live", 0, 527], ["vod", 3, 777]])
+        end function
+
+        @it("limite por seção fica com os melhores; o total conta todos os acertos")
+        function _()
+            found = tests.runNames("matr", ["vod"], 2, invalid)
+            m.assertEqual(found.total, 5)
+            m.assertEqual(found.counts, { vod: 5 })
+            m.assertEqual(tests.searchRows(found), [["vod", 0, 262], ["vod", 1, 271]])
+        end function
+
+        @it("acentos e maiúsculas não contam; todas as palavras precisam estar no nome")
+        function _()
+            found = tests.runNames("ação total", catalogSearch.allSections(), 60, invalid)
+            m.assertEqual(found.query, "acao total")
+            m.assertEqual(tests.searchRows(found), [["vod", 5, 10]])
+            found = tests.runNames("acao", catalogSearch.allSections(), 60, invalid)
+            m.assertEqual(found.counts, { vod: 2, series: 1, live: 0 })
+            m.assertEqual(tests.searchRows(found), [["vod", 5, 266], ["series", 1, 269], ["vod", 4, 527]])
+        end function
+
+        @it("menos de 3 letras não busca")
+        function _()
+            found = tests.runNames("ma", catalogSearch.allSections(), 60, invalid)
+            m.assertEqual(found.total, 0)
+            m.assertEqual(found.counts, { vod: 0, series: 0, live: 0 })
+            m.assertEqual(found.results, [])
+        end function
+
+        @it("categorias escondidas ou bloqueadas (controle parental) não aparecem")
+        function _()
+            found = tests.runNames("matrix", ["vod"], 60, { "0": true, "2": true })
+            m.assertEqual(found.total, 3)
+            m.assertEqual(tests.searchRows(found), [["vod", 1, 271], ["vod", 6, 274], ["vod", 3, 777]])
+        end function
+
+        @it("busca que só acrescenta letras revarre só os acertos anteriores, com o mesmo resultado")
+        function _()
+            cache = {}
+            names = tests.searchNames()
+            catalogSearch.searchIn(names, cache, "mat", ["vod"], 60, {})
+            m.assertEqual(cache.vod.positions, [0, 1, 2, 3, 6])
+            found = catalogSearch.searchIn(names, cache, "matrix re", ["vod"], 60, {})
+            m.assertEqual(tests.searchRows(found), [["vod", 1, 271], ["vod", 6, 274]])
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("sugestões e destaque do trecho encontrado")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sugestões: títulos únicos (sem acento e maiúsculas), na ordem, até o máximo")
+        function _()
+            results = [{ item: { name: "Matrix" } }, { item: { name: " matrix " } }, { item: { name: "Ação" } }, { item: { name: "" } }, { item: { name: "Acao" } }]
+            m.assertEqual(catalogSearch.getSuggestions(results, 8), ["Matrix", "Ação"])
+            m.assertEqual(catalogSearch.getSuggestions([{ item: { name: "A" } }, { item: { name: "B" } }, { item: { name: "C" } }], 2), ["A", "B"])
+        end function
+
+        @it("destaca o trecho ignorando acentos e maiúsculas")
+        function _()
+            m.assertEqual(catalogSearch.highlightParts("Ação Total", "acao"), [{ text: "Ação", match: true }, { text: " Total", match: false }])
+            m.assertEqual(catalogSearch.highlightParts("O Rei Leão", "LEAO"), [{ text: "O Rei ", match: false }, { text: "Leão", match: true }])
+            m.assertEqual(catalogSearch.highlightParts("Matrix", "xyz"), [{ text: "Matrix", match: false }])
+            m.assertEqual(catalogSearch.highlightParts("Matrix", ""), [{ text: "Matrix", match: false }])
+        end function
+
+    end class
+
+end namespace
