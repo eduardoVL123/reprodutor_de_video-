@@ -1,0 +1,223 @@
+' Casos de tests/spatialNavigation.test.js (mesmas telas e retângulos; janela do jsdom: 1024×768).
+namespace tests
+
+    ' Focável: id, grupos do mais próximo ao mais externo, linha (data-focus-row) e [x, y, largura, altura].
+    function navItem(id as string, groups as object, row as string, rect as object) as object
+        return { id: id, groups: groups, row: row, rect: rect, active: false, slide: false, scroller: false }
+    end function
+
+    ' Tela inicial simplificada: menu no topo, destaque e duas seções com cabeçalho + cards.
+    function homeNav() as object
+        items = [
+            tests.navItem("nav-home", ["top-nav"], "", [20, 10, 60, 40])
+            tests.navItem("nav-lists", ["top-nav"], "", [900, 10, 80, 40])
+            tests.navItem("hero-play", ["hero"], "", [20, 180, 120, 40])
+            tests.navItem("hero-info", ["hero"], "", [150, 180, 40, 40])
+            tests.navItem("clear-history", ["continue"], "", [900, 285, 100, 30])
+            tests.navItem("card-1", ["continue"], "", [20, 330, 200, 120])
+            tests.navItem("card-2", ["continue"], "", [240, 330, 200, 120])
+            tests.navItem("see-all", ["movies"], "", [900, 505, 100, 30])
+            tests.navItem("movie-1", ["movies"], "", [20, 550, 200, 120])
+        ]
+        groups = { "top-nav": [0, 0, 1024, 60], "hero": [0, 60, 1024, 200], "continue": [0, 280, 1024, 200], "movies": [0, 500, 1024, 200] }
+        return spatial.create(items, groups, [1024, 768])
+    end function
+
+    ' Menu lateral fixo à esquerda e o conteúdo (rolável) com o destaque e uma fileira de canais.
+    function sideNav(heroY as integer) as object
+        items = [
+            tests.navItem("nav-search", ["side-menu"], "", [16, 80, 64, 56])
+            tests.navItem("nav-home", ["side-menu"], "", [16, 150, 64, 56])
+            tests.navItem("avatar", ["side-menu"], "", [16, 640, 64, 56])
+            tests.navItem("hero-play", ["hero", "home-vitrine"], "", [180, heroY, 200, 50])
+            tests.navItem("live-0", ["channels", "home-vitrine"], "", [180, 450, 260, 150])
+        ]
+        items[3].scroller = true
+        items[4].scroller = true
+        groups = { "side-menu": [0, 0, 112, 720], "home-vitrine": [112, 0, 1168, 720], "hero": [112, heroY - 300, 1168, 400], "channels": [112, 420, 1168, 220] }
+        return spatial.create(items, groups, [1024, 768])
+    end function
+
+    ' Detalhes de uma série: botão Assistir em cima e a fileira de episódios embaixo.
+    function detailsNav() as object
+        items = [
+            tests.navItem("play", ["details"], "", [20, 200, 200, 50])
+            tests.navItem("ep-0", ["episodes"], "", [20, 340, 280, 160])
+            tests.navItem("ep-1", ["episodes"], "", [320, 340, 280, 160])
+            tests.navItem("ep-2", ["episodes"], "", [620, 340, 280, 160])
+        ]
+        return spatial.create(items, { "details": [0, 0, 1280, 300], "episodes": [0, 320, 1280, 200] }, [1024, 768])
+    end function
+
+    ' Anda pelas teclas a partir de um id; devolve onde o foco parou (como o document.activeElement do teste web).
+    function walkNav(state as object, from as string, keys as object) as string
+        current = from
+        spatial.remember(state, current)
+        for each key in keys
+            target = spatial.navigate(state, current, key)
+            if target <> "" then
+                current = target
+                spatial.remember(state, current)
+            end if
+        end for
+        return current
+    end function
+
+    @suite("spatial")
+    class SpatialTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("setas horizontais não fogem da linha")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("no último botão do destaque, Direita fica parado (não pula para outra seção)")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "hero-info", ["right"]), "hero-info")
+        end function
+
+        @it("no último card de uma fileira, Direita não pula para o cabeçalho da seção de baixo")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "card-2", ["right"]), "card-2")
+        end function
+
+        @it("no primeiro item do menu, Esquerda fica parado (não desce para o conteúdo)")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "nav-home", ["left"]), "nav-home")
+        end function
+
+        @it("ainda passa entre painéis lado a lado (categorias → grade), mesmo em alturas diferentes")
+        function _()
+            items = [tests.navItem("cat-9", ["categories"], "", [10, 600, 180, 40]), tests.navItem("item-0", ["content"], "", [230, 20, 200, 100])]
+            state = spatial.create(items, { "categories": [0, 0, 200, 700], "content": [220, 0, 800, 700] }, [1024, 768])
+            m.assertEqual(tests.walkNav(state, "cat-9", ["right"]), "item-0")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("setas verticais")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("do cabeçalho de uma seção, Baixo entra nos cards da própria seção")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "clear-history", ["down"]), "card-2")
+        end function
+
+        @it("prefere o elemento logo abaixo (mesma coluna) a um cabeçalho distante na lateral")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "hero-info", ["down"]), "card-1")
+        end function
+
+        @it("do último card de uma seção, Baixo vai para a próxima seção")
+        function _()
+            m.assertEqual(tests.walkNav(tests.homeNav(), "card-1", ["down"]), "movie-1")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("menu lateral (layout 2.0)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("Baixo na última fileira não cai no menu lateral")
+        function _()
+            m.assertEqual(tests.walkNav(tests.sideNav(300), "live-0", ["down"]), "live-0")
+        end function
+
+        @it("Cima no primeiro item do menu fica no menu, mesmo com o conteúdo rolado para cima")
+        function _()
+            m.assertEqual(tests.walkNav(tests.sideNav(-120), "nav-search", ["up"]), "nav-search")
+        end function
+
+        @it("Esquerda no conteúdo ainda entra no menu lateral")
+        function _()
+            target = tests.walkNav(tests.sideNav(300), "hero-play", ["left"])
+            m.assertEqual(Left(target, 4), "nav-")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("memória de foco")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("volta ao episódio em que estava ao descer de novo na mesma tela")
+        function _()
+            m.assertEqual(tests.walkNav(tests.detailsNav(), "ep-2", ["up", "down"]), "ep-2")
+        end function
+
+        @it("não herda a posição de outra tela que usa os mesmos ids (outra série)")
+        function _()
+            tests.walkNav(tests.detailsNav(), "ep-2", [])
+            m.assertEqual(tests.walkNav(tests.detailsNav(), "play", ["down"]), "ep-0")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("fileira deslizante e linha com rolagem horizontal")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("Esquerda chega no episódio escondido à esquerda (a fileira o traz de volta ao focar)")
+        function _()
+            items = []
+            xs = [-700, -400, -100, 200]
+            for i = 0 to 3
+                item = tests.navItem("ep-" + i.toStr(), ["episodes"], "rail-ep", [xs[i], 320, 280, 160])
+                item.slide = true
+                items.push(item)
+            end for
+            state = spatial.create(items, { "episodes": [0, 300, 1024, 200] }, [1024, 768])
+            m.assertEqual(tests.walkNav(state, "ep-3", ["left", "left"]), "ep-1")
+        end function
+
+        @it("fora de fileira deslizante, item fora da tela continua ignorado")
+        function _()
+            state = spatial.create([tests.navItem("a", [], "", [100, 100, 200, 50]), tests.navItem("fora", [], "", [-400, 100, 200, 50])], {}, [1024, 768])
+            m.assertEqual(tests.walkNav(state, "a", ["left"]), "a")
+        end function
+
+        @it("Direita chega na aba que ainda está fora da tela (série com muitas temporadas)")
+        function _()
+            items = []
+            xs = [800, 980, 1160]
+            for i = 0 to 2
+                item = tests.navItem("t" + (i + 1).toStr(), ["details"], "seasons", [xs[i], 20, 150, 40])
+                item.slide = true
+                items.push(item)
+            end for
+            state = spatial.create(items, { "details": [0, 0, 1024, 100] }, [1024, 768])
+            m.assertEqual(tests.walkNav(state, "t2", ["right"]), "t3")
+        end function
+
+        @it("Baixo da aba de temporada vai para o episódio ativo (E1), não para o que estiver embaixo")
+        function _()
+            items = [
+                tests.navItem("tab-8", ["details"], "", [700, 20, 150, 40])
+                tests.navItem("ep-0", ["episodes"], "", [20, 140, 280, 160])
+                tests.navItem("ep-1", ["episodes"], "", [320, 140, 280, 160])
+                tests.navItem("ep-2", ["episodes"], "", [640, 140, 280, 160])
+            ]
+            items[1].active = true
+            state = spatial.create(items, { "details": [0, 0, 1024, 100], "episodes": [0, 120, 1024, 200] }, [1024, 768])
+            m.assertEqual(tests.walkNav(state, "tab-8", ["down"]), "ep-0")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("rolagem ao focar (focusEl)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("item longe das bordas não rola")
+        function _()
+            m.assertEqual(spatial.scrollTarget(536, 252, 1080, 0, 424), 0)
+        end function
+
+        @it("item perto da borda de baixo fica no meio do contêiner, sem passar do fim")
+        function _()
+            ' Séries do Início: cartões em 896 (sem rolar) → 896 − 540 + 126 = 482, limitado a 424.
+            m.assertEqual(spatial.scrollTarget(896, 252, 1080, 0, 424), 424)
+            m.assertEqual(spatial.scrollTarget(896, 252, 1080, 0, 2000), 482)
+        end function
+
+        @it("item perto da borda de cima volta ao meio, nunca abaixo de 0")
+        function _()
+            ' Rolado 424: os filmes (536) ficam em 112, longe da borda (folga de 70); o destaque não.
+            m.assertEqual(spatial.scrollTarget(536, 252, 1080, 424, 424), 424)
+            m.assertEqual(spatial.scrollTarget(389, 52, 1080, 424, 424), 0)
+        end function
+
+    end class
+
+end namespace

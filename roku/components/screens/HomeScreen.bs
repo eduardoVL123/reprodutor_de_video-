@@ -1,45 +1,52 @@
 import "pkg:/source/ui/ui.bs"
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/home/home.bs"
+import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
-' e espaço de 16, títulos das fileiras a 40 px uma da outra.
+' e espaço de 16; do fim dos cartões ao título seguinte, a folga de baixo da fileira (24) + space-y-7 (28).
 const CONTENT_X = 176
 const RAIL_WIDTH = 1648
 const RAIL_GAP = 16
 const RAILS_TOP = 480
-const RAIL_SPACING = 40
+const RAIL_SPACING = 52
 const META_COLOR = "0xD4D4D8FF"
 const BADGE_COLOR = "0xD4D4D4FF"
 const RATING_COLOR = "0x4ADE80FF"
 
 sub init()
-    m.focus = { area: "hero", index: 0, rail: 0 }
-    m.lastContent = m.focus
+    m.focusId = "hero-play"
     m.rails = []
     m.heroItem = invalid
     m.heroInfo = invalid
+    m.heroButtons = []
+    m.scroll = 0
+    m.maxScroll = 0
+    m.nav = spatial.create([], {}, [1920, 1080])
 
-    m.heroArt = m.top.createChild("Poster")
+    m.content = m.top.createChild("Group")
+    ' Arte do destaque e .tv-vignette dentro do destaque (overflow-hidden até 496 px), rolando com o conteúdo.
+    heroClip = m.content.createChild("Group")
+    heroClip.clippingRect = [112, 0, 1808, 496]
+    m.heroArt = heroClip.createChild("Poster")
     m.heroArt.translation = [660, -12]
     m.heroArt.width = 1291
     m.heroArt.height = 521
     m.heroArt.opacity = 0.35
     m.heroArt.loadDisplayMode = "scaleToZoom"
-    vignetteH = ui.panelImage(m.top, "vignette-h.png", 112, 0, 1808, 496)
-    vignetteV = ui.panelImage(m.top, "vignette-v.png", 112, 0, 1808, 496)
-
-    m.content = m.top.createChild("Group")
+    ui.panelImage(heroClip, "vignette-h.png", 112, 0, 1808, 496)
+    ui.panelImage(heroClip, "vignette-v.png", 112, 0, 1808, 496)
     m.hero = m.content.createChild("Group")
     m.railsGroup = m.content.createChild("Group")
     m.menu = m.top.createChild("Group")
 
     renderHero()
     renderMenu()
+    spatial.remember(m.nav, m.focusId)
     m.top.setFocus(true)
     startLoading()
 end sub
@@ -118,14 +125,14 @@ sub renderHero()
 
     m.heroButtons = []
     x = 174
-    x = addHeroButton("icon-play", texts.playText, true, x) + 12
-    x = addHeroButton("icon-info", "Mais informações", false, x) + 12
-    addHeroButton("icon-heart-small", "Favoritos", false, x)
+    x = addHeroButton("hero-play", "icon-play", texts.playText, true, x) + 12
+    x = addHeroButton("hero-info", "icon-info", "Mais informações", false, x) + 12
+    addHeroButton("hero-mylist", "icon-heart-small", "Favoritos", false, x)
     renderFocus()
 end sub
 
 ' Botão do destaque: primário branco (px-7, bold) ou de vidro (px-6, medium), h-[3.2rem], ícone w-4 e o texto.
-function addHeroButton(icon as string, text as string, primary as boolean, x as float) as float
+function addHeroButton(id as string, icon as string, text as string, primary as boolean, x as float) as float
     group = m.hero.createChild("Group")
     group.translation = [x, 388]
     ring = group.createChild("Poster")
@@ -160,7 +167,7 @@ function addHeroButton(icon as string, text as string, primary as boolean, x as 
     ring.width = width + 10
     ring.height = height + 10
     group.scaleRotateCenter = [width / 2, height / 2]
-    m.heroButtons.push({ group: group, ring: ring })
+    m.heroButtons.push({ id: id, group: group, ring: ring, x: x, width: width })
     return x + width
 end function
 
@@ -188,10 +195,17 @@ sub renderRails()
         if live then titleText = "Canais da sua lista"
         title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
         title.wrap = false
-        seeAll = "Ver todos  ›"
-        if live then seeAll = "Explorar canais  ›"
-        more = ui.text(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, CONTENT_X, y, RAIL_WIDTH, 28)
-        more.horizAlign = "right"
+        ' Botão "Ver todos ›" (px-3 py-3 -mx-3 -my-3, gap-1) alinhado à direita da fileira.
+        seeAll = "Ver todos"
+        if live then seeAll = "Explorar canais"
+        headerRight = CONTENT_X + RAIL_WIDTH + 12
+        ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
+        more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+        moreWidth = more.boundingRect().width
+        more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
+        rail.seeAllWidth = moreWidth + 34
+        rail.seeAllRing = squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
+        if rail.offset = invalid then rail.offset = 0
 
         cardWidth = 168
         cardHeight = 252
@@ -200,6 +214,7 @@ sub renderRails()
             cardHeight = 144
         end if
         rail.cardWidth = cardWidth
+        rail.cardHeight = cardHeight
         track = m.railsGroup.createChild("Group")
         track.translation = [CONTENT_X, y + 56]
         ' overflow-hidden da fileira: sobra 12 px dos lados e 16/24 em cima/embaixo para o cartão focado crescer.
@@ -214,6 +229,10 @@ sub renderRails()
         end for
         y = y + 56 + cardHeight + RAIL_SPACING
     end for
+    ' Altura do conteúdo: fim da última fileira + folga de baixo dela (24) + pb-20 (80).
+    m.maxScroll = 0
+    if m.rails.count() > 0 then m.maxScroll = y - RAIL_SPACING + 24 + 80 - 1080
+    if m.maxScroll < 0 then m.maxScroll = 0
     renderFocus()
 end sub
 
@@ -306,7 +325,7 @@ end sub
 
 sub renderMenu()
     m.menu.removeChildrenIndex(m.menu.getChildCount(), 0)
-    open = m.focus.area = "menu"
+    open = isMenuId(m.focusId)
     width = 112
     padX = 12
     if open then
@@ -334,7 +353,7 @@ sub renderMenu()
         item = items[i]
         y = tops[i]
         active = item.id = "home"
-        focused = open and m.focus.index = i
+        focused = open and home.menuNavId(item.id) = m.focusId
         group = m.menu.createChild("Group")
         group.translation = [padX, y]
         itemWidth = width - 2 * padX
@@ -377,21 +396,88 @@ end sub
 
 ' ---------- Foco ----------
 
-sub renderFocus()
-    for i = 0 to m.heroButtons.count() - 1
-        focused = m.focus.area = "hero" and m.focus.index = i
-        m.heroButtons[i].ring.visible = focused
-        if focused then
-            m.heroButtons[i].group.scale = [1.02, 1.02]
-        else
-            m.heroButtons[i].group.scale = [1, 1]
+' Anel do .tv-focusable (ring-2 branco, ring-offset 3 px) para botão sem cantos arredondados (o "Ver todos").
+function squareRing(parent as object, x as float, y as float, width as float, height as float) as object
+    ring = parent.createChild("Group")
+    ring.translation = [x - 5, y - 5]
+    sides = [[0, 0, width + 10, 2], [0, height + 8, width + 10, 2], [0, 0, 2, height + 10], [width + 8, 0, 2, height + 10]]
+    for each side in sides
+        bar = ring.createChild("Rectangle")
+        bar.color = ui.WHITE
+        bar.translation = [side[0], side[1]]
+        bar.width = side[2]
+        bar.height = side[3]
+    end for
+    ring.visible = false
+    return ring
+end function
+
+function isMenuId(id as string) as boolean
+    return Left(id, 4) = "nav-" or id = "btn-switch-profile"
+end function
+
+' Retângulos dos focáveis agora (rolagem e deslize das fileiras), para a navegação espacial do web.
+sub refreshNav()
+    menu = []
+    tops = [136, 200, 264, 328, 392, 456, 904, 968]
+    entries = home.menuItems()
+    for i = 0 to entries.count() - 1
+        menu.push({ id: home.menuNavId(entries[i].id), top: tops[i], active: entries[i].id = "home" })
+    end for
+    open = isMenuId(m.focusId)
+    menuX = 12
+    menuWidth = 88
+    if open then
+        menuX = 24
+        menuWidth = 256
+    end if
+    rails = []
+    for each rail in m.rails
+        if rail.seeAllWidth <> invalid then rails.push({ section: rail.section, top: rail.top, count: rail.items.count(), cardWidth: rail.cardWidth, cardHeight: rail.cardHeight, offset: rail.offset, seeAllWidth: rail.seeAllWidth })
+    end for
+    layout = home.navItems({ scroll: m.scroll, menuOpen: open, menuX: menuX, menuWidth: menuWidth, menu: menu, heroY: 388, hero: m.heroButtons, railX: CONTENT_X, gap: RAIL_GAP, headerRight: CONTENT_X + RAIL_WIDTH + 12, rails: rails })
+    m.nav.items = layout.items
+    m.nav.groupRects = layout.groupRects
+end sub
+
+' focusEl do web: lembra o foco, desliza a fileira até o cartão e rola o conteúdo (o destaque volta ao topo).
+sub focusOn(id as string)
+    wasMenu = isMenuId(m.focusId)
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    for each rail in m.rails
+        prefix = rail.section + "-card-"
+        if Left(id, Len(prefix)) = prefix and rail.cardWidth <> invalid then
+            index = Val(Mid(id, Len(prefix) + 1))
+            rail.offset = home.railOffset({ index: index, itemSize: rail.cardWidth, gap: RAIL_GAP, count: rail.items.count(), viewport: RAIL_WIDTH })
         end if
     end for
-    for r = 0 to m.rails.count() - 1
-        rail = m.rails[r]
+    if Left(id, 5) = "hero-" then
+        m.scroll = 0
+    else if not isMenuId(id) then
+        refreshNav()
+        item = spatial.byId(m.nav, id)
+        if item <> invalid then m.scroll = spatial.scrollTarget(item.rect[1] + m.scroll, item.rect[3], 1080, m.scroll, m.maxScroll)
+    end if
+    if wasMenu or isMenuId(id) then renderMenu()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    for each button in m.heroButtons
+        focused = button.id = m.focusId
+        button.ring.visible = focused
+        if focused then
+            button.group.scale = [1.02, 1.02]
+        else
+            button.group.scale = [1, 1]
+        end if
+    end for
+    for each rail in m.rails
         if rail.cards <> invalid then
+            prefix = rail.section + "-card-"
             for i = 0 to rail.cards.count() - 1
-                focused = m.focus.area = "rail" and m.focus.rail = r and m.focus.index = i
+                focused = m.focusId = prefix + i.toStr()
                 rail.cards[i].ring.visible = focused
                 if focused then
                     rail.cards[i].group.scale = [1.08, 1.08]
@@ -399,30 +485,18 @@ sub renderFocus()
                     rail.cards[i].group.scale = [1, 1]
                 end if
             end for
-            index = 0
-            if m.focus.area = "rail" and m.focus.rail = r then index = m.focus.index
-            if rail.strip <> invalid then rail.strip.translation = [home.railOffset({ index: index, itemSize: rail.cardWidth, gap: RAIL_GAP, count: rail.items.count(), viewport: RAIL_WIDTH }), 0]
+            if rail.strip <> invalid then rail.strip.translation = [rail.offset, 0]
+            if rail.seeAllRing <> invalid then rail.seeAllRing.visible = m.focusId = "home-see-all-" + rail.section
         end if
     end for
-    ' Rolagem: a fileira focada sobe para o lugar da primeira; no destaque e na primeira, a tela fica no topo.
-    scroll = 0
-    if m.focus.area = "rail" and m.focus.rail > 0 and m.rails[m.focus.rail].top <> invalid then scroll = m.rails[m.focus.rail].top - RAILS_TOP
-    m.content.translation = [0, -scroll]
-    m.heroArt.visible = scroll = 0
+    m.content.translation = [0, -m.scroll]
 end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-    counts = { buttons: m.heroButtons.count(), menu: home.menuItems().count(), rails: [] }
-    for each rail in m.rails
-        counts.rails.push(rail.items.count())
-    end for
-    wasMenu = m.focus.area = "menu"
-    result = home.onKey(key, m.focus, counts, m.lastContent)
-    if not wasMenu and result.focus.area = "menu" then m.lastContent = m.focus
-    m.focus = result.focus
-    if wasMenu <> (m.focus.area = "menu") then renderMenu()
-    if m.focus.area = "menu" and wasMenu then renderMenu()
-    renderFocus()
-    return result.handled
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    refreshNav()
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then focusOn(target)
+    return true
 end function

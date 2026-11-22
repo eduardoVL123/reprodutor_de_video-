@@ -1,0 +1,276 @@
+' Port de src/utils/spatialNavigation.js (casos em tests/spatialNavigation.test.js e spatial.spec.bs): escolha
+' geométrica do próximo focável, memória de foco por painel (data-focus-group) e por linha (data-focus-row) e a
+' rolagem do focusEl. Fica de fora o que a Roku não tem: barra de menu no topo (layout B usa o menu lateral),
+' ponteiro e grade virtualizada (essa usa o MarkupGrid).
+'
+' A tela descreve cada focável com retângulo na tela e aplica o id devolvido:
+'   { id, groups: [grupo mais próximo, ..., mais externo], row: nome da linha ou "", rect: [x, y, largura, altura],
+'     active: data-focus-active, slide: dentro de fileira deslizante (ou data-scroll-x), scroller: dentro de contêiner
+'     com rolagem vertical }
+namespace spatial
+
+    ' groupRects: { nome: [x, y, largura, altura] }; viewport: [largura, altura] da janela.
+    function create(items as object, groupRects as object, viewport as object) as object
+        return { items: items, groupRects: groupRects, viewport: viewport, groupMemory: {}, rowMemory: {} }
+    end function
+
+    ' onFocusIn: lembra o último focado do painel e da linha.
+    sub remember(state as object, id as string)
+        item = spatial.byId(state, id)
+        if item = invalid then return
+        group = spatial.groupOf(item)
+        if group <> "" then state.groupMemory[group] = id
+        if item.row <> "" then state.rowMemory[item.row] = id
+    end sub
+
+    ' Id do próximo focável na direção ("up"|"down"|"left"|"right"), ou "" quando o foco fica onde está.
+    function navigate(state as object, currentId as string, direction as string) as string
+        current = spatial.byId(state, currentId)
+        if current = invalid or not spatial.isNavigable(state, current) then return spatial.firstNavigable(state)
+        fromRect = current.rect
+        pool = []
+        for each item in state.items
+            if spatial.isNavigable(state, item) then pool.push(item)
+        end for
+        found = spatial.findBest(state, fromRect, pool, direction, current)
+        if found = invalid then return ""
+
+        ' Memória de foco ao trocar de painel ou de linha.
+        targetGroup = spatial.groupOf(found)
+        if targetGroup <> "" and targetGroup <> spatial.groupOf(current) then
+            preferred = spatial.rememberedIn(state, targetGroup, fromRect, direction)
+            if preferred <> invalid then found = preferred
+        else if direction = "up" or direction = "down" then
+            if found.row <> "" and found.row <> current.row then
+                preferredRow = spatial.rememberedInRow(state, found.row)
+                if preferredRow <> invalid then found = preferredRow
+            end if
+        end if
+        return found.id
+    end function
+
+    ' Rolagem do contêiner ao focar (focusEl): perto de uma borda (folga de 70 px) ou fora dela, o item vai para o
+    ' meio. elTop é a posição no conteúdo (sem rolar); o resultado fica entre 0 e maxScroll, como no navegador.
+    function scrollTarget(elTop as float, elHeight as float, containerHeight as float, currentScroll as float, maxScroll as float) as integer
+        padding = 70
+        onScreen = elTop - currentScroll
+        if onScreen >= padding and onScreen + elHeight <= containerHeight - padding then return Cint(currentScroll)
+        goal = elTop - containerHeight / 2 + elHeight / 2
+        if goal > maxScroll then goal = maxScroll
+        if goal < 0 then goal = 0
+        return Cint(goal)
+    end function
+
+    ' ---------- auxiliares ----------
+
+    function byId(state as object, id as string) as dynamic
+        for each item in state.items
+            if item.id = id then return item
+        end for
+        return invalid
+    end function
+
+    function groupOf(item as object) as string
+        if item.groups.count() = 0 then return ""
+        return item.groups[0]
+    end function
+
+    function inGroup(item as object, group as string) as boolean
+        for each name in item.groups
+            if name = group then return true
+        end for
+        return false
+    end function
+
+    function firstNavigable(state as object) as string
+        for each item in state.items
+            if item.active = true and spatial.isNavigable(state, item) then return item.id
+        end for
+        for each item in state.items
+            if spatial.isNavigable(state, item) then return item.id
+        end for
+        return ""
+    end function
+
+    function centerX(rect as object) as float
+        return rect[0] + rect[2] / 2
+    end function
+
+    function centerY(rect as object) as float
+        return rect[1] + rect[3] / 2
+    end function
+
+    function isNavigable(state as object, item as object) as boolean
+        r = item.rect
+        if r[2] <= 0 or r[3] <= 0 then return false
+        ' Fora da tela na horizontal só vale em fileira deslizante (ela traz o item ao focar).
+        if (r[0] + r[2] <= 0 or r[0] >= state.viewport[0]) and item.slide <> true then return false
+        h = state.viewport[1]
+        if item.scroller = true then return not (r[1] > h * 2.2 or r[1] + r[3] < -h * 1.5)
+        return not (r[1] + r[3] <= 0 or r[1] >= h)
+    end function
+
+    function isInDirection(fromRect as object, item as object, direction as string) as boolean
+        dx = spatial.centerX(item.rect) - spatial.centerX(fromRect)
+        dy = spatial.centerY(item.rect) - spatial.centerY(fromRect)
+        if direction = "left" then return dx < -0.1
+        if direction = "right" then return dx > 0.1
+        if direction = "up" then return dy < -0.1
+        return dy > 0.1
+    end function
+
+    function rememberedInRow(state as object, row as string) as dynamic
+        id = state.rowMemory[row]
+        if id = invalid then return invalid
+        item = spatial.byId(state, id)
+        if item <> invalid and item.row = row and spatial.isNavigable(state, item) then return item
+        return invalid
+    end function
+
+    function rememberedIn(state as object, group as string, fromRect as object, direction as string) as dynamic
+        id = state.groupMemory[group]
+        if id <> invalid then
+            item = spatial.byId(state, id)
+            if item <> invalid and spatial.inGroup(item, group) and spatial.isNavigable(state, item) and spatial.isInDirection(fromRect, item, direction) then return item
+        end if
+        for each item in state.items
+            if item.active = true and spatial.inGroup(item, group) and spatial.isNavigable(state, item) and spatial.isInDirection(fromRect, item, direction) then return item
+        end for
+        return invalid
+    end function
+
+    ' Mesma linha: data-focus-row igual; sem linha nos dois, sobreposição vertical de 35% da menor altura.
+    function sameRow(a as object, b as object) as boolean
+        if a.row <> "" and b.row <> "" then return a.row = b.row
+        if a.row <> "" or b.row <> "" then return false
+        overlap = spatial.minOf(a.rect[1] + a.rect[3], b.rect[1] + b.rect[3]) - spatial.maxOf(a.rect[1], b.rect[1])
+        minHeight = spatial.minOf(a.rect[3], b.rect[3])
+        return minHeight > 0 and overlap > minHeight * 0.35
+    end function
+
+    ' Grupos irmãos (nenhum contém o outro): ex. painel de categorias ao lado da grade.
+    function isSidePanelTransition(current as object, currentGroup as string, cand as object, candGroup as string) as boolean
+        if candGroup = "" or currentGroup = "" or candGroup = currentGroup then return false
+        return not spatial.inGroup(current, candGroup) and not spatial.inGroup(cand, currentGroup)
+    end function
+
+    ' Painel ao lado do atual (menu lateral, categorias): só se entra nele com Esquerda/Direita.
+    function isBesidePanel(state as object, current as object, currentGroup as string, cand as object) as boolean
+        candGroup = spatial.groupOf(cand)
+        if not spatial.isSidePanelTransition(current, currentGroup, cand, candGroup) then return false
+        a = state.groupRects[candGroup]
+        b = state.groupRects[currentGroup]
+        if a = invalid or b = invalid then return false
+        return not (a[0] < b[0] + b[2] and a[0] + a[2] > b[0])
+    end function
+
+    function findBest(state as object, fromRect as object, pool as object, direction as string, current as object) as dynamic
+        if direction = "up" or direction = "down" then return spatial.findBestVertical(state, fromRect, pool, direction, current)
+        if direction <> "left" and direction <> "right" then return invalid
+        cx = spatial.centerX(fromRect)
+        cy = spatial.centerY(fromRect)
+
+        ' 1. Mesma linha, na direção certa: o mais perto em x.
+        rowBest = invalid
+        rowDist = 1e9
+        for each cand in pool
+            if cand.id <> current.id and spatial.isRightWay(spatial.centerX(cand.rect), cx, direction) and spatial.sameRow(current, cand) then
+                d = Abs(spatial.centerX(cand.rect) - cx)
+                if d < rowDist then
+                    rowDist = d
+                    rowBest = cand
+                end if
+            end if
+        end for
+        if rowBest <> invalid then return rowBest
+
+        ' 2. Painel ao lado (categorias ↔ grade), nunca um item inteiro acima ou abaixo no mesmo painel.
+        currentGroup = spatial.groupOf(current)
+        top = fromRect[1]
+        bottom = fromRect[1] + fromRect[3]
+        winner = invalid
+        minScore = 1e9
+        for each cand in pool
+            candX = spatial.centerX(cand.rect)
+            if cand.id <> current.id and spatial.isRightWay(candX, cx, direction) then
+                candGroup = spatial.groupOf(cand)
+                isDiffGroup = spatial.isSidePanelTransition(current, currentGroup, cand, candGroup)
+                entirelyAbove = cand.rect[1] + cand.rect[3] <= top + 4
+                entirelyBelow = cand.rect[1] >= bottom - 4
+                skip = false
+                if not isDiffGroup and (entirelyAbove or entirelyBelow) then skip = true
+                if isDiffGroup then
+                    g = state.groupRects[candGroup]
+                    if g <> invalid and not (g[1] < bottom and g[1] + g[3] > top) then skip = true
+                end if
+                if not skip then
+                    dx = Abs(candX - cx)
+                    dy = Abs(spatial.centerY(cand.rect) - cy)
+                    score = dx + dy * 5
+                    if isDiffGroup then score = dy * 3 + dx
+                    if score < minScore then
+                        minScore = score
+                        winner = cand
+                    end if
+                end if
+            end if
+        end for
+        return winner
+    end function
+
+    function isRightWay(candX as float, fromX as float, direction as string) as boolean
+        if direction = "right" then return candX > fromX + 2
+        return candX < fromX - 2
+    end function
+
+    ' Cima/Baixo: dentro do mesmo painel primeiro; nunca para um painel ao lado (ex.: da fileira para o menu).
+    function findBestVertical(state as object, fromRect as object, pool as object, direction as string, current as object) as dynamic
+        currentGroup = spatial.groupOf(current)
+        if currentGroup = "" then return spatial.scoreVertical(fromRect, pool, direction, current)
+        allowed = []
+        sameGroup = []
+        for each cand in pool
+            if not spatial.isBesidePanel(state, current, currentGroup, cand) then
+                allowed.push(cand)
+                if spatial.groupOf(cand) = currentGroup then sameGroup.push(cand)
+            end if
+        end for
+        inside = spatial.scoreVertical(fromRect, sameGroup, direction, current)
+        if inside <> invalid then return inside
+        return spatial.scoreVertical(fromRect, allowed, direction, current)
+    end function
+
+    ' Distância dy + 5·dx, com o x atual preso dentro da largura do candidato (itens de largura total).
+    function scoreVertical(fromRect as object, pool as object, direction as string, current as object) as dynamic
+        cx = spatial.centerX(fromRect)
+        cy = spatial.centerY(fromRect)
+        winner = invalid
+        bestDistance = 1e9
+        for each cand in pool
+            skip = cand.id = current.id or (current.row <> "" and cand.row = current.row)
+            candY = spatial.centerY(cand.rect)
+            if direction = "up" and candY >= fromRect[1] + 4 then skip = true
+            if direction = "down" and candY <= fromRect[1] + fromRect[3] - 4 then skip = true
+            if not skip then
+                clampedX = spatial.maxOf(cand.rect[0], spatial.minOf(cx, cand.rect[0] + cand.rect[2]))
+                distance = Abs(candY - cy) + Abs(clampedX - cx) * 5
+                if distance < bestDistance then
+                    bestDistance = distance
+                    winner = cand
+                end if
+            end if
+        end for
+        return winner
+    end function
+
+    function minOf(a as float, b as float) as float
+        if a < b then return a
+        return b
+    end function
+
+    function maxOf(a as float, b as float) as float
+        if a > b then return a
+        return b
+    end function
+
+end namespace

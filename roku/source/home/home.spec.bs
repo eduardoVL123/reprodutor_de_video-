@@ -1,4 +1,4 @@
-' Casos de tests/railOffset.test.js, tests/artwork.test.js e das regras do destaque de src/views/Dashboard.vue.
+' Casos de tests/railOffset.test.js, tests/artwork.test.js e das regras do destaque e do foco de src/views/Dashboard.vue.
 namespace tests
 
     function railRow() as object
@@ -11,6 +11,28 @@ namespace tests
         copy.append(base)
         copy.index = index
         return copy
+    end function
+
+    ' Início como no web a 1920×1080 (sem rolar): menu fechado, os três botões do destaque e as fileiras de
+    ' filmes, séries e canais com 21 itens cada. vodOffset desliza só a fileira de filmes.
+    function homeSpatial(vodOffset as integer) as object
+        menu = []
+        tops = [136, 200, 264, 328, 392, 456, 904, 968]
+        names = home.menuItems()
+        for i = 0 to names.count() - 1
+            menu.push({ id: home.menuNavId(names[i].id), top: tops[i], active: names[i].id = "home" })
+        end for
+        layout = home.navItems({
+            scroll: 0, menuOpen: false, menuX: 12, menuWidth: 88, menu: menu, heroY: 388,
+            hero: [{ id: "hero-play", x: 176, width: 209 }, { id: "hero-info", x: 399, width: 236 }, { id: "hero-mylist", x: 649, width: 158 }],
+            railX: 176, gap: 16, headerRight: 1836,
+            rails: [
+                { section: "vod", top: 480, count: 21, cardWidth: 168, cardHeight: 252, offset: vodOffset, seeAllWidth: 119 },
+                { section: "series", top: 840, count: 21, cardWidth: 168, cardHeight: 252, offset: 0, seeAllWidth: 119 },
+                { section: "live", top: 1200, count: 21, cardWidth: 256, cardHeight: 144, offset: 0, seeAllWidth: 166 }
+            ]
+        })
+        return spatial.create(layout.items, layout.groupRects, [1920, 1080])
     end function
 
     @suite("home")
@@ -134,37 +156,46 @@ namespace tests
             m.assertEqual(labels, ["Busca", "Início", "TV ao vivo", "Filmes", "Séries", "Favoritos", "Conta", "Trocar perfil"])
         end function
 
-        @it("do destaque desce para as fileiras e volta")
+        @it("do botão Mais informações desce para o cartão logo abaixo (geometria do web)")
         function _()
-            counts = { buttons: 3, menu: 8, rails: [21, 21, 21] }
-            focus = home.onKey("down", { area: "hero", index: 1, rail: 0 }, counts, invalid).focus
-            m.assertEqual(focus, { area: "rail", index: 0, rail: 0 })
-            focus = home.onKey("down", focus, counts, invalid).focus
-            m.assertEqual(focus.rail, 1)
-            focus = home.onKey("up", home.onKey("up", focus, counts, invalid).focus, counts, invalid).focus
-            m.assertEqual(focus.area, "hero")
+            state = tests.homeSpatial(0)
+            m.assertEqual(spatial.navigate(state, "hero-info", "down"), "vod-card-1")
+            m.assertEqual(spatial.navigate(state, "hero-play", "down"), "vod-card-0")
         end function
 
-        @it("esquerda na primeira coluna abre o menu no Início e direita volta para onde estava")
+        @it("Esquerda no conteúdo abre o menu no item ativo (Início) e Direita volta para onde estava")
         function _()
-            counts = { buttons: 3, menu: 8, rails: [21] }
-            from = { area: "rail", index: 0, rail: 0 }
-            focus = home.onKey("left", from, counts, invalid).focus
-            m.assertEqual(focus, { area: "menu", index: 1, rail: 0 })
-            m.assertEqual(home.onKey("right", focus, counts, from).focus, from)
+            state = tests.homeSpatial(0)
+            spatial.remember(state, "hero-info")
+            m.assertEqual(spatial.navigate(state, "hero-play", "left"), "nav-home")
+            m.assertEqual(spatial.navigate(state, "nav-home", "right"), "hero-info")
         end function
 
-        @it("direita e esquerda andam na fileira sem passar das pontas")
+        @it("no menu, Cima e Baixo andam pelos itens e não caem no conteúdo")
         function _()
-            counts = { buttons: 3, menu: 8, rails: [2] }
-            focus = home.onKey("right", { area: "rail", index: 0, rail: 0 }, counts, invalid).focus
-            m.assertEqual(focus.index, 1)
-            m.assertEqual(home.onKey("right", focus, counts, invalid).focus.index, 1)
+            state = tests.homeSpatial(0)
+            m.assertEqual(spatial.navigate(state, "nav-home", "up"), "nav-search")
+            m.assertEqual(spatial.navigate(state, "nav-search", "up"), "")
+            m.assertEqual(spatial.navigate(state, "nav-account", "down"), "btn-switch-profile")
         end function
 
-        @it("Voltar não é tratado aqui (a tela inicial pergunta se quer sair)")
+        @it("Baixo de uma fileira volta ao cartão lembrado da fileira de baixo")
         function _()
-            m.assertFalse(home.onKey("back", { area: "hero", index: 0, rail: 0 }, { buttons: 3, menu: 8, rails: [] }, invalid).handled)
+            state = tests.homeSpatial(0)
+            spatial.remember(state, "series-card-4")
+            m.assertEqual(spatial.navigate(state, "vod-card-0", "down"), "series-card-4")
+        end function
+
+        @it("Cima do último cartão de uma fileira no fim vai para o Ver todos")
+        function _()
+            ' Fileira de 21 cartões deslizada até o fim (−2200): o cartão final fica em x 1656.
+            state = tests.homeSpatial(-2200)
+            m.assertEqual(spatial.navigate(state, "vod-card-20", "up"), "home-see-all-vod")
+        end function
+
+        @it("Voltar e OK não mexem no foco")
+        function _()
+            m.assertEqual(spatial.navigate(tests.homeSpatial(0), "hero-play", "back"), "")
         end function
 
     end class

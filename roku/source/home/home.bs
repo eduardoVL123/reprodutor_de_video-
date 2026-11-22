@@ -101,45 +101,39 @@ namespace home
         ]
     end function
 
-    ' Foco no Início: { area: "menu"|"hero"|"rail", index, rail }. counts = { buttons, menu, rails: [n por fileira] }.
-    ' Esquerda na primeira coluna abre o menu; direita no menu volta para onde estava (lastContent).
-    function onKey(key as string, focus as object, counts as object, lastContent as object) as object
-        nextFocus = { area: focus.area, index: focus.index, rail: focus.rail }
-        if focus.area = "menu" then
-            if key = "up" and focus.index > 0 then nextFocus.index = focus.index - 1
-            if key = "down" and focus.index < counts.menu - 1 then nextFocus.index = focus.index + 1
-            if key = "right" then nextFocus = { area: lastContent.area, index: lastContent.index, rail: lastContent.rail }
-            return { focus: nextFocus, handled: key = "up" or key = "down" or key = "right" }
-        end if
-        if key = "left" then
-            if focus.index > 0 then
-                nextFocus.index = focus.index - 1
-            else
-                nextFocus = { area: "menu", index: 1, rail: 0 }
-            end if
-            return { focus: nextFocus, handled: true }
-        end if
-        if key = "right" then
-            limit = counts.buttons
-            if focus.area = "rail" then limit = counts.rails[focus.rail]
-            if focus.index < limit - 1 then nextFocus.index = focus.index + 1
-            return { focus: nextFocus, handled: true }
-        end if
-        if key = "down" then
-            nextRail = 0
-            if focus.area = "rail" then nextRail = focus.rail + 1
-            if nextRail < counts.rails.count() then nextFocus = { area: "rail", index: 0, rail: nextRail }
-            return { focus: nextFocus, handled: true }
-        end if
-        if key = "up" and focus.area = "rail" then
-            if focus.rail = 0 then
-                nextFocus = { area: "hero", index: 0, rail: 0 }
-            else
-                nextFocus = { area: "rail", index: 0, rail: focus.rail - 1 }
-            end if
-            return { focus: nextFocus, handled: true }
-        end if
-        return { focus: nextFocus, handled: key = "up" }
+    ' Id do item do menu no web (SideMenu.vue): nav-<aba>, e o avatar é btn-switch-profile.
+    function menuNavId(itemId as string) as string
+        if itemId = "profile" then return "btn-switch-profile"
+        return "nav-" + itemId
+    end function
+
+    ' Focáveis do Início para a navegação espacial (roku/source/nav/spatial.bs), com os ids e linhas do web.
+    ' Retângulos na tela (o conteúdo rola; o menu não). p = { scroll, menuOpen, menuX, menuWidth,
+    '   menu: [{ id, top, active }], heroY, hero: [{ id, x, width }], railX, gap, headerRight,
+    '   rails: [{ section, top, count, cardWidth, cardHeight, offset, seeAllWidth }] }
+    function navItems(p as object) as object
+        list = []
+        for each entry in p.menu
+            list.push({ id: entry.id, groups: ["side-menu"], row: "", rect: [p.menuX, entry.top, p.menuWidth, 56], active: entry.active, slide: false, scroller: false })
+        end for
+        for each button in p.hero
+            list.push(home.vitrineItem(button.id, "hero-actions", [button.x, p.heroY - p.scroll, button.width, 52], false))
+        end for
+        for each rail in p.rails
+            list.push(home.vitrineItem("home-see-all-" + rail.section, "header-" + rail.section, [p.headerRight - rail.seeAllWidth, rail.top - 12 - p.scroll, rail.seeAllWidth, 52], false))
+            for i = 0 to rail.count - 1
+                x = p.railX + i * (rail.cardWidth + p.gap) + rail.offset
+                list.push(home.vitrineItem(rail.section + "-card-" + i.toStr(), "rail-" + rail.section + "-card", [x, rail.top + 56 - p.scroll, rail.cardWidth, rail.cardHeight], true))
+            end for
+        end for
+        sideWidth = 112
+        if p.menuOpen then sideWidth = 304
+        return { items: list, groupRects: { "side-menu": [0, 0, sideWidth, 1080], "home-vitrine": [112, 0, 1808, 1080] } }
+    end function
+
+    ' Focável do conteúdo do Início (data-focus-group="home-vitrine", rolável).
+    function vitrineItem(id as string, row as string, rect as object, slide as boolean) as object
+        return { id: id, groups: ["home-vitrine"], row: row, rect: rect, active: false, slide: slide, scroller: true }
     end function
 
     ' Cartão "Ver todos" no fim de cada fileira.
