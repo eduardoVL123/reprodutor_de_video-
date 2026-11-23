@@ -67,9 +67,12 @@ sub startLoading()
     store = storage.create()
     current = session.hydrate(store)
     if current = invalid then return
+    loadHistory()
     m.task = CreateObject("roSGNode", "HomeTask")
     m.task.ctx = catalog.contextFor(current)
     m.task.parental = parental.activeContext(store)
+    ' O destaque é o "Continuar assistindo" mais recente (recentHistoryItem); a Task busca os detalhes dele.
+    if m.heroFromHistory then m.task.heroItem = m.heroItem
     m.task.observeField("rail", "onRail")
     m.task.observeField("hero", "onHero")
     m.task.control = "run"
@@ -93,8 +96,60 @@ sub reloadRails()
     m.rails = []
     m.heroItem = invalid
     m.heroInfo = invalid
+    m.heroFromHistory = false
     renderRails()
     startLoading()
+end sub
+
+' ---------- Continuar assistindo ----------
+
+' visibleHistory do Dashboard.vue: o histórico do perfil na lista, sem o que o controle parental tira e sem seção
+' cujo catálogo não está no disco. A fileira vai na frente e o destaque passa a ser o item mais recente.
+sub loadHistory()
+    store = storage.create()
+    current = session.hydrate(store)
+    if current = invalid then return
+    dir = catalog.contextFor(current).dir
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    m.historyKey = playerState.historyKey(profileId, current.id)
+    blocked = parental.hiddenMap(parental.activeContext(store), dir)
+    for each section in ["live", "vod", "series"]
+        if catalog.getMeta(dir, section) = invalid then blocked.delete(section)
+    end for
+    visible = []
+    for each entry in playerState.loadHistory(store, m.historyKey)
+        if parental.allows(blocked, entry) then visible.push(entry)
+    end for
+    rails = []
+    for each rail in m.rails
+        if rail.section <> "history" then rails.push(rail)
+    end for
+    if visible.count() > 0 then rails.unshift({ section: "history", items: visible })
+    m.rails = rails
+    recent = home.recentHistoryItem(visible)
+    if recent <> invalid then
+        m.heroItem = recent
+        m.heroInfo = invalid
+        m.heroFromHistory = true
+    else if m.heroFromHistory then
+        m.heroItem = invalid
+        m.heroFromHistory = false
+    end if
+    renderHero()
+    renderRails()
+end sub
+
+' "Limpar histórico" (player.clearHistory do web).
+sub clearHistory()
+    storage.create().remove(m.historyKey)
+    m.focusId = "hero-play"
+    reloadRails()
+end sub
+
+' playHistoryItem: episódio toca a série inteira a partir dele (o player monta a fila com a série); o resto, o item.
+sub playHistoryItem(item as object)
+    m.top.navigate = { action: "push", screen: "PlayerScreen", params: { history: item } }
 end sub
 
 sub onTaskState()
@@ -112,11 +167,14 @@ sub onRail(event as object)
     items.append(data.items)
     items.push(home.seeAllCard(data.section))
     m.rails.push({ section: data.section, items: items })
-    renderRails()
+    ' A seção acabou de chegar ao disco: o histórico dela passa pelo filtro do controle parental agora.
+    loadHistory()
 end sub
 
 sub onHero(event as object)
     data = event.getData()
+    ' Com o "Continuar assistindo" no destaque, só os detalhes dele valem (a Task não troca o item).
+    if m.heroFromHistory and not (utils.isObject(data.item) and favorites.same(data.item, m.heroItem)) then return
     m.heroItem = data.item
     m.heroInfo = data.info
     renderHero()
@@ -126,7 +184,7 @@ end sub
 
 sub renderHero()
     m.hero.removeChildrenIndex(m.hero.getChildCount(), 0)
-    texts = home.heroTexts(m.heroItem, m.heroInfo)
+    texts = home.heroTexts(m.heroItem, m.heroInfo, m.heroFromHistory = true)
     art = home.pickArtwork(m.heroItem, m.heroInfo)
     m.heroArt.uri = art.url
 
@@ -258,26 +316,36 @@ sub renderRails()
             broadcast.translation = [CONTENT_X, y + 4]
             titleX = CONTENT_X + 30
         end if
+        history = rail.section = "history"
         titleText = "Filmes da sua lista"
         if rail.section = "series" then titleText = "Séries da sua lista"
         if live then titleText = "Canais da sua lista"
+        if history then titleText = "Continuar assistindo"
         title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
         title.wrap = false
         ' Botão "Ver todos ›" (px-3 py-3 -mx-3 -my-3, gap-1) alinhado à direita da fileira.
         seeAll = "Ver todos"
         if live then seeAll = "Explorar canais"
         headerRight = CONTENT_X + RAIL_WIDTH + 12
-        ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
-        more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
-        moreWidth = more.boundingRect().width
-        more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
-        rail.seeAllWidth = moreWidth + 34
+        if history then
+            ' "Limpar histórico" (text-tv-xs, neutral-400) no lugar do "Ver todos".
+            more = ui.inlineText(m.railsGroup, "Limpar histórico", ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+            moreWidth = more.boundingRect().width
+            more.translation = [headerRight - 12 - moreWidth, more.translation[1]]
+            rail.seeAllWidth = moreWidth + 24
+        else
+            ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
+            more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+            moreWidth = more.boundingRect().width
+            more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
+            rail.seeAllWidth = moreWidth + 34
+        end if
         rail.seeAllRing = ui.squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
         if rail.offset = invalid then rail.offset = 0
 
         cardWidth = 168
         cardHeight = 252
-        if live then
+        if live or history then
             cardWidth = 256
             cardHeight = 144
         end if
@@ -292,7 +360,11 @@ sub renderRails()
         rail.cards = []
         for i = 0 to rail.items.count() - 1
             item = rail.items[i]
-            card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+            if history then
+                card = buildHistoryCard(strip, item, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+            else
+                card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+            end if
             rail.cards.push(card)
         end for
         y = y + 56 + cardHeight + RAIL_SPACING
@@ -354,6 +426,55 @@ function buildCard(parent as object, item as object, live as boolean, x as float
         ui.panel(group, "card-mask", 0, 0, width, height)
         name = ui.text(group, UCase(utils.textOr(item.name, "")), ui.font(900, 20), ui.WHITE, 12, height - 10 - 28, width - 24, 28)
         name.wrap = false
+    end if
+    group.scaleRotateCenter = [width / 2, height / 2]
+    return { group: group, ring: ring }
+end function
+
+' Cartão do "Continuar assistindo" (w-[16rem] h-[9rem]): capa, degradê, selo (AO VIVO ou "Faltam N min"), nome em
+' maiúsculas embaixo e a barra de progresso limão (tv-progress) fora dos canais.
+function buildHistoryCard(parent as object, item as object, x as float, width as float, height as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, 0]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, width + 10, height + 10)
+    ui.panel(group, "card", 0, 0, width, height)
+    art = group.createChild("Poster")
+    art.translation = [1, 1]
+    art.width = width - 2
+    art.height = height - 2
+    art.loadDisplayMode = "scaleToZoom"
+    if home.isHttpUrl(item.stream_icon) then art.uri = item.stream_icon
+    ui.panelImage(group, "card-shade.png", 0, 0, width, height)
+    ui.panel(group, "card-mask", 0, 0, width, height)
+    live = item.section = "live"
+    label = "AO VIVO"
+    if not live then label = home.remainingText(item)
+    if label <> "" then
+        badge = ui.panel(group, "badge", 12, 12, 10, 34)
+        color = ui.WHITE
+        if live then
+            badge.uri = "pkg:/images/ui/badge-lime.9.png"
+            color = ui.TEXT_ON_ACCENT
+        end if
+        letters = ui.inlineText(group, label, ui.font(700, 20), color, 20, 15, 28)
+        badge.width = letters.boundingRect().width + 16
+    end if
+    name = ui.text(group, UCase(utils.textOr(item.name, "")), ui.font(900, 20), ui.WHITE, 12, height - 10 - 28 - 4, width - 24, 28)
+    name.wrap = false
+    if not live then
+        track = group.createChild("Rectangle")
+        track.color = "0xFFFFFF40"
+        track.translation = [1, height - 5]
+        track.width = width - 2
+        track.height = 4
+        pct = item.progressPct
+        if not utils.isNumber(pct) then pct = 0
+        if pct > 100 then pct = 100
+        fill = group.createChild("Rectangle")
+        fill.color = ui.ACCENT
+        fill.translation = [1, height - 5]
+        fill.width = (width - 2) * pct / 100
+        fill.height = 4
     end if
     group.scaleRotateCenter = [width / 2, height / 2]
     return { group: group, ring: ring }
@@ -527,6 +648,26 @@ function onSelect() as boolean
         if menuTab = "home" then showHome("nav-home")
         return true
     end if
+    if m.focusId = "home-see-all-history" then
+        clearHistory()
+        return true
+    end if
+    if Left(m.focusId, 13) = "history-card-" then
+        for each rail in m.rails
+            if rail.section = "history" then playHistoryItem(rail.items[Int(Val(Mid(m.focusId, 14)))])
+        end for
+        return true
+    end if
+    if m.focusId = "hero-play" and m.heroFromHistory = true then
+        playHistoryItem(m.heroItem)
+        return true
+    end if
+    ' "Mais informações" de um episódio do histórico abre a série dele.
+    if m.focusId = "hero-info" and m.heroFromHistory = true and m.heroItem.section = "series" and utils.textOr(m.heroItem.seriesId, "") <> "" then
+        series = { stream_id: m.heroItem.seriesId, series_id: m.heroItem.seriesId, name: playerState.seriesNameFromEpisode(m.heroItem.name), stream_icon: m.heroItem.stream_icon, category_id: m.heroItem.category_id, section: "series" }
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: series, section: "series" } }
+        return true
+    end if
     item = invalid
     index = 0
     if m.focusId = "hero-info" or m.focusId = "hero-play" then item = m.heroItem
@@ -681,6 +822,10 @@ end sub
 
 ' Voltando dos detalhes a MainScene foca o Início: devolve o foco para a aba se era lá que ele estava.
 sub onFocusChanged()
+    ' Voltando do player ou dos detalhes para o Início: o "Continuar assistindo" pode ter mudado.
+    hasFocus = m.top.focusedChild <> invalid
+    if hasFocus and m.hadFocus = false and m.tab = "home" then loadHistory()
+    m.hadFocus = hasFocus
     if m.focusId <> "tab" or m.catalogTab = invalid or m.top.focusedChild = invalid then return
     if m.top.focusedChild.subtype() = "HomeScreen" then m.catalogTab.setFocus(true)
 end sub

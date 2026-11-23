@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <!-- Janela da categoria do player (loadWindow do playerStore.js) fora da thread da tela. request = { mode: "open",
      dir, hidden, catalog: { section, categoryId, item, index, total } } ou { mode: "step", dir, hidden, state, delta }.
-     result = { mode, state, moved }. -->
+     ou { mode: "series", item, apiBase, credentials } (episódio do histórico). result = { mode, state, moved }. -->
 <component name="PlayerQueueTask" extends="Task">
     <interface>
         <field id="request" type="assocarray" />

@@ -84,6 +84,8 @@ sub onParams()
         m.state = playerState.forItem(params.catalog.item)
         m.state.mode = params.catalog.section
     end if
+    ' Do "Continuar assistindo": toca o item já; episódio ganha a fila da série inteira pela Task (playHistoryItem).
+    if params.history <> invalid then m.state = playerState.forItem(params.history)
     m.dir = utils.textOr(params.dir, "")
     m.hidden = params.hidden
     if m.hidden = invalid then m.hidden = []
@@ -101,6 +103,7 @@ sub onParams()
     m.history = playerState.loadHistory(m.store, m.historyKey)
     playCurrent()
     if params.catalog <> invalid then runQueue({ mode: "open", catalog: params.catalog })
+    if params.history <> invalid and params.history.section = "series" and utils.textOr(params.history.seriesId, "") <> "" and m.ctx <> invalid then runQueue({ mode: "series", item: params.history, apiBase: m.ctx.apiBase, credentials: m.ctx.credentials })
 end sub
 
 ' ---------- Reprodução ----------

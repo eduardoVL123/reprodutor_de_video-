@@ -14,7 +14,10 @@ sub runHome()
     transport = net.urlTransport()
     ' Só a lista ativa fica no disco (as outras ocupariam o cachefs à toa).
     catalog.pruneOtherLists(ctx.dir)
-    heroItem = invalid
+    ' "Continuar assistindo" no destaque: os detalhes dele primeiro (episódio: os da série).
+    heroItem = m.top.heroItem
+    if not utils.isObject(heroItem) or heroItem.count() = 0 then heroItem = invalid
+    if heroItem <> invalid then m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
     for each section in ["vod", "series", "live"]
         loaded = catalog.loadShared(transport, ctx, section, false)
@@ -25,7 +28,7 @@ sub runHome()
             items = catalog.getItems(ctx.dir, section, catalog.ALL_CATEGORIES, 0, 20, sectionHidden)
         end if
         m.top.rail = { section: section, ok: loaded.ok, items: items, error: loaded.error, errorDetail: loaded.errorDetail }
-        if heroItem = invalid and items.count() > 0 then
+        if not utils.isObject(heroItem) and items.count() > 0 then
             heroItem = items[0]
             m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
         end if
@@ -34,10 +37,12 @@ end sub
 
 ' Detalhes do destaque: filme pelo get_vod_info, série pelo get_series_info (como o watch do heroKey no web).
 function heroDetails(transport as object, ctx as object, item as object) as object
-    if item.directUrl <> invalid and item.directUrl <> "" then return xtream.normalizeVodInfo(invalid, item)
+    if utils.textOr(item.directUrl, "") <> "" then return xtream.normalizeVodInfo(invalid, item)
     if item.section = "series" then
-        result = xtream.fetchSeriesInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, seriesId: item.stream_id })
-        if result.error = invalid and result.data.info <> invalid then return xtream.normalizeVodInfo({ info: result.data.info }, item)
+        seriesId = item.stream_id
+        if utils.textOr(item.seriesId, "") <> "" then seriesId = item.seriesId
+        result = xtream.fetchSeriesInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, seriesId: seriesId })
+        if result.error = invalid and utils.isObject(result.data) and utils.isObject(result.data.info) then return xtream.normalizeVodInfo({ info: result.data.info }, item)
         return xtream.normalizeVodInfo(invalid, item)
     end if
     if item.section = "vod" then return xtream.fetchVodInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, vodId: item.stream_id, item: item })

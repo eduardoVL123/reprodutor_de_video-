@@ -1,5 +1,7 @@
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/player/playerState.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/xtream/api.bs"
 
 sub init()
     m.top.functionName = "runQueue"
@@ -13,6 +15,14 @@ sub runQueue()
         state = request.state
         moved = playerState.stepBy(state, request.delta, request.dir, hidden)
         m.top.result = { mode: "step", moved: moved, state: state }
+        return
+    end if
+    if request.mode = "series" then
+        ' playHistoryItem: série que não carrega fica só com o episódio (forHistory com invalid).
+        response = xtream.fetchSeriesInfo(net.urlTransport(), { apiBase: request.apiBase, credentials: request.credentials, seriesId: request.item.seriesId })
+        data = invalid
+        if response.error = invalid then data = response.data
+        m.top.result = { mode: "open", moved: true, state: playerState.forHistory(request.item, data) }
         return
     end if
     c = request.catalog
