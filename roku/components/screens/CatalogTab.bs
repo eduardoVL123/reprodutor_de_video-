@@ -60,9 +60,7 @@ sub onSection()
     current = session.hydrate(storage.create())
     m.ctx = invalid
     if current <> invalid then
-        apiBase = current.resolvedUrl
-        if apiBase = invalid or apiBase = "" then apiBase = current.baseUrl
-        m.ctx = { dir: catalog.DEFAULT_DIR, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+        m.ctx = catalog.contextFor(current)
         m.sessionType = utils.textOr(current.type, "")
     end if
     load(false)

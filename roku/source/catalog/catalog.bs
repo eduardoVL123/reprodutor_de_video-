@@ -321,6 +321,15 @@ namespace catalog
 
     ' ---------- Carga (catalogStore) ----------
 
+    ' ctx das cargas para a sessão aberta. Uma pasta por lista (hash do id): trocar de lista nunca lê o catálogo da
+    ' anterior, nem o que uma carga antiga ainda em andamento gravar depois da troca.
+    function contextFor(current as object) as object
+        apiBase = utils.textOr(current.resolvedUrl, "")
+        if apiBase = "" then apiBase = utils.textOr(current.baseUrl, "")
+        dir = catalog.DEFAULT_DIR + "/" + xtream.hashText(utils.textOr(current.id, ""))
+        return { dir: dir, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+    end function
+
     function actions(section as string) as object
         if section = "live" then return { categories: "get_live_categories", streams: "get_live_streams" }
         if section = "vod" then return { categories: "get_vod_categories", streams: "get_vod_streams" }

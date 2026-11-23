@@ -48,9 +48,7 @@ sub init()
     m.ctx = invalid
     m.sections = searchScreen.sectionsFor("")
     if current <> invalid then
-        apiBase = current.resolvedUrl
-        if apiBase = invalid or apiBase = "" then apiBase = current.baseUrl
-        m.ctx = { dir: catalog.DEFAULT_DIR, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+        m.ctx = catalog.contextFor(current)
         m.sections = searchScreen.sectionsFor(utils.textOr(current.type, ""))
     end if
     m.recent = searchScreen.parseRecent(storage.create().get(searchScreen.recentKey(invalid)))

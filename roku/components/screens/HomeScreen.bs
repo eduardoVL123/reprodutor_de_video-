@@ -59,10 +59,8 @@ end sub
 sub startLoading()
     current = session.hydrate(storage.create())
     if current = invalid then return
-    apiBase = current.resolvedUrl
-    if apiBase = invalid or apiBase = "" then apiBase = current.baseUrl
     m.task = CreateObject("roSGNode", "HomeTask")
-    m.task.ctx = { dir: catalog.DEFAULT_DIR, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+    m.task.ctx = catalog.contextFor(current)
     m.task.observeField("rail", "onRail")
     m.task.observeField("hero", "onHero")
     m.task.control = "run"

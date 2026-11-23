@@ -191,6 +191,18 @@ namespace tests
         @describe("carga da seção (catalogStore)")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
+        @it("cada lista tem a sua pasta: trocar de lista não reaproveita o catálogo da outra")
+        function _()
+            a = catalog.contextFor({ id: "list_a", type: "xtream", baseUrl: "http://a.test", resolvedUrl: "http://a2.test", username: "u", password: "p" })
+            b = catalog.contextFor({ id: "list_b", type: "m3u", baseUrl: "http://b.test", resolvedUrl: "", username: "M3U Playlist", password: "" })
+            m.assertNotEqual(a.dir, b.dir)
+            m.assertTrue(a.dir.startsWith(catalog.DEFAULT_DIR + "/"))
+            m.assertEqual(a.apiBase, "http://a2.test")
+            m.assertEqual(b.apiBase, "http://b.test")
+            m.assertEqual(a.credentials, { username: "u", password: "p" })
+            m.assertEqual(b.type, "m3u")
+        end function
+
         @it("Xtream: baixa categorias e itens, grava e não baixa de novo se já houver cache")
         function _()
             base = "http://srv.test"
