@@ -1,6 +1,7 @@
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/catalog/catalogSearch.bs"
 import "pkg:/source/search/searchScreen.bs"
+import "pkg:/source/parental/parental.bs"
 
 sub init()
     m.top.functionName = "runSearch"
@@ -10,8 +11,7 @@ sub runSearch()
     port = CreateObject("roMessagePort")
     m.top.observeField("query", port)
     ctx = m.top.ctx
-    hidden = m.top.hidden
-    if hidden = invalid then hidden = {}
+    choices = m.top.parental
     cache = {}
     while true
         msg = wait(0, port)
@@ -23,13 +23,16 @@ sub runSearch()
         end while
         if latest <> invalid then
             if latest.stop = true then return
-            answer(latest, ctx, hidden, cache)
+            answer(latest, ctx, choices, cache)
         end if
     end while
 end sub
 
-sub answer(query as object, ctx as object, hidden as object, cache as object)
+sub answer(query as object, ctx as object, choices as dynamic, cache as object)
     try
+        ' A cada busca: uma seção que acabou de baixar já chega com as categorias para o controle parental.
+        hidden = {}
+        if choices <> invalid then hidden = parental.hiddenMap(choices, ctx.dir)
         found = catalogSearch.search(ctx.dir, query.text, query.sections, searchScreen.RESULTS_PER_SECTION, hidden, cache)
         m.top.result = { seq: query.seq, ok: true, results: found.results, counts: found.counts }
     catch e

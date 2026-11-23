@@ -8,6 +8,7 @@ import "pkg:/source/session/session.bs"
 import "pkg:/source/account/account.bs"
 import "pkg:/source/profiles/profiles.bs"
 import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
@@ -27,6 +28,7 @@ sub init()
     m.catalogTab = invalid
     m.top.observeField("focusedChild", "onFocusChanged")
     m.global.observeField("profile", "onProfileChanged")
+    m.global.observeField("parental", "onParentalChanged")
     m.rails = []
     m.heroItem = invalid
     m.heroInfo = invalid
@@ -61,13 +63,45 @@ end sub
 ' ---------- Dados ----------
 
 sub startLoading()
-    current = session.hydrate(storage.create())
+    store = storage.create()
+    current = session.hydrate(store)
     if current = invalid then return
     m.task = CreateObject("roSGNode", "HomeTask")
     m.task.ctx = catalog.contextFor(current)
+    m.task.parental = parental.activeContext(store)
     m.task.observeField("rail", "onRail")
     m.task.observeField("hero", "onHero")
     m.task.control = "run"
+end sub
+
+'' Controle parental mudou (ou outro perfil, com outras escolhas): categoria escondida/bloqueada some do Início
+' (useParentalFilter → loadCatalogShowcase do web). O catálogo já está no disco: só relê as fileiras.
+sub reloadRails()
+    ' Com a carga ainda baixando, duas Tasks gravariam o mesmo catálogo ao mesmo tempo: espera ela terminar.
+    if m.task <> invalid and m.task.state = "run" then
+        m.task.observeField("state", "onTaskState")
+        m.reloadPending = true
+        return
+    end if
+    m.reloadPending = false
+    if m.task <> invalid then
+        m.task.unobserveField("rail")
+        m.task.unobserveField("hero")
+        m.task.unobserveField("state")
+    end if
+    m.rails = []
+    m.heroItem = invalid
+    m.heroInfo = invalid
+    renderRails()
+    startLoading()
+end sub
+
+sub onTaskState()
+    if m.reloadPending = true and m.task.state <> "run" then reloadRails()
+end sub
+
+sub onParentalChanged()
+    reloadRails()
 end sub
 
 sub onRail(event as object)
@@ -435,6 +469,7 @@ end function
 
 ' Perfil escolhido (onProfileSelected do web): o menu mostra o novo e, no Início, o foco vai para o Assistir.
 sub onProfileChanged()
+    reloadRails()
     if m.tab = "home" then
         m.focusId = "hero-play"
         spatial.remember(m.nav, m.focusId)

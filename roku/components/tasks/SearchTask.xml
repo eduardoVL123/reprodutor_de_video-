@@ -6,7 +6,7 @@
 <component name="SearchTask" extends="Task">
     <interface>
         <field id="ctx" type="assocarray" />
-        <field id="hidden" type="assocarray" />
+        <field id="parental" type="assocarray" />
         <field id="query" type="assocarray" alwaysNotify="true" />
         <field id="result" type="assocarray" alwaysNotify="true" />
     </interface>

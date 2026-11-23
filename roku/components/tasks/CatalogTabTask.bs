@@ -2,6 +2,7 @@ import "pkg:/source/net/transport.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/catalog/catalogTab.bs"
 import "pkg:/source/xtream/api.bs"
+import "pkg:/source/parental/parental.bs"
 
 sub init()
     m.top.functionName = "runCatalogTab"
@@ -28,15 +29,37 @@ sub runCatalogTab()
         m.top.result = { mode: "open", ok: false, error: loaded.error, categories: [], rows: [] }
         return
     end if
-    ' shortcut: categorias bloqueadas por PIN entram com o controle parental (D7); por enquanto nenhuma.
+    ' Controle parental (CatalogBrowser.vue): escondidas somem das categorias; bloqueadas ficam com cadeado e fora das
+    ' fileiras; os itens das duas saem de "Todos" e as contagens descontam (item em duas categorias conta uma vez).
+    categories = loaded.list
+    locked = {}
+    choices = m.top.parental
+    if choices <> invalid then
+        sectionHidden = parental.blockedIds(choices, section, loaded.list)
+        visible = catalog.visibleCategoryCounts(ctx.dir, section, sectionHidden)
+        categories = []
+        for each cat in loaded.list
+            status = parental.statusOf(choices, section, cat)
+            if parental.isLocked(choices, section, cat) then locked[cat.category_id] = true
+            if status <> "hidden" then
+                if cat.category_id = catalog.ALL_CATEGORIES then
+                    count = catalog.visibleCount(ctx.dir, section, sectionHidden)
+                    if count <> invalid then cat.count = count
+                else if visible <> invalid and visible[cat.category_id] <> invalid then
+                    cat.count = visible[cat.category_id]
+                end if
+                categories.push(cat)
+            end if
+        end for
+    end if
     rows = []
-    for each cat in catalogTab.rowCategories(loaded.list, {})
+    for each cat in catalogTab.rowCategories(categories, locked)
         items = catalog.getItems(ctx.dir, section, cat.category_id, 0, 15, sectionHidden)
         if items.count() > 0 then rows.push({ category_id: cat.category_id, category_name: cat.category_name, items: items })
     end for
     heroItem = invalid
     if section <> "live" and rows.count() > 0 then heroItem = rows[0].items[0]
-    m.top.result = { mode: "open", ok: true, error: "", categories: loaded.list, rows: rows, heroItem: heroItem }
+    m.top.result = { mode: "open", ok: true, error: "", categories: categories, rows: rows, heroItem: heroItem, hidden: sectionHidden, allCategories: loaded.list }
     if heroItem = invalid then return
 
     ' Detalhes do destaque (loadFeaturedInfo): série pelo get_series_info, filme pelo get_vod_info.

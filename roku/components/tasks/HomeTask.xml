@@ -5,7 +5,7 @@
 <component name="HomeTask" extends="Task">
     <interface>
         <field id="ctx" type="assocarray" />
-        <field id="hidden" type="assocarray" />
+        <field id="parental" type="assocarray" />
         <!-- { section, ok, items, error, errorDetail } -->
         <field id="rail" type="assocarray" alwaysNotify="true" />
         <!-- { item, info } -->

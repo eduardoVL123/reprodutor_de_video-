@@ -424,6 +424,9 @@ const LIST_CARD = over(WHITE, 0.02, DIALOG) // cartão de lista: bg-white/[0.02]
 const LIST_CARD_ACTIVE = over(WHITE, 0.04, DIALOG) // lista ativa: bg-white/[0.04]
 const EMERALD = hex('#10B981')
 const AMBER = hex('#F59E0B')
+const AMBER_400 = hex('#FBBF24')
+const RED_400 = hex('#F87171')
+const PARENTAL_ROW = over(WHITE, 0.03, DIALOG) // linha do Controle parental
 
 export const OUTPUTS = [
   // Painel do FTUE: rounded-2xl (16), borda white/10 de 1 px, fundo #121215.
@@ -557,6 +560,12 @@ export const OUTPUTS = [
   ['fav-card.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.08, FAV_CARD) }, { inset: 1, radius: 11, color: FAV_CARD }])],
   ['fav-art.9.png', () => ninePatch([{ inset: 0, radius: 8, color: hex('#1a1a20') }])],
   ['fav-art-mask.9.png', () => ninePatch([{ inset: 0, radius: 8, color: FAV_CARD, outside: true }])],
+  // Controle parental (ParentalModal.vue), sobre o painel #121215: linha rounded-xl bg-white/[0.03] borda white/[0.06]
+  // e o botão do estado (rounded-lg): Visível borda white/15; Bloqueada âmbar-400 (/60 e fundo /10); Escondida red-400.
+  ['parental-row.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.06, DIALOG) }, { inset: 1, radius: 11, color: over(WHITE, 0.03, DIALOG) }])],
+  ['status-visible.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(WHITE, 0.15, PARENTAL_ROW) }, { inset: 1, radius: 7, color: PARENTAL_ROW }])],
+  ['status-locked.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(AMBER_400, 0.6, PARENTAL_ROW) }, { inset: 1, radius: 7, color: over(AMBER_400, 0.1, PARENTAL_ROW) }])],
+  ['status-hidden.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(RED_400, 0.6, PARENTAL_ROW) }, { inset: 1, radius: 7, color: over(RED_400, 0.1, PARENTAL_ROW) }])],
   // Botões de vidro do destaque (.tv-btn-glass): white/12, borda white/14, rounded-lg.
   ['btn-glass.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.14, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.12 }])],
   // Círculo de vidro do "Ver todos" (w-12 rounded-full tv-glass).

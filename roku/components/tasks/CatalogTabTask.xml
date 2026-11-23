@@ -7,6 +7,7 @@
     <interface>
         <field id="ctx" type="assocarray" />
         <field id="hidden" type="assocarray" />
+        <field id="parental" type="assocarray" />
         <field id="section" type="string" />
         <field id="request" type="assocarray" />
         <field id="result" type="assocarray" alwaysNotify="true" />

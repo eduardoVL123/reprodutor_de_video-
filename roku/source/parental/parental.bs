@@ -1,0 +1,212 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/catalog/catalog.bs"
+' Port de src/stores/parentalStore.js (casos em parental.spec.bs). Cada categoria fica Visível, Bloqueada (abre com o
+' PIN e fica fora de "Todos", Início e busca) ou Escondida (some de tudo); sem escolha, nome adulto começa bloqueado.
+' Escolhas por perfil e por lista (perfil sem escolhas segue as do Principal); o PIN vale para o aparelho e nasce no
+' Controle parental. O desbloqueio e a trava de 5 erros valem até fechar o app: ficam em m.global.parental.
+' O registro da Roku não falha ao ler como o IndexedDB, então não há o estado "ilegível" do web.
+namespace parental
+
+    const PIN_KEY = "parental:pin"
+    const MAIN_PROFILE = "p1"
+    const MAX_PIN_FAILS = 5
+    const PIN_LOCK_MS = 30000
+
+    function settingsKey(profileId as dynamic, listId as dynamic) as string
+        return "parental:categories:" + utils.textOr(profileId, "default") + ":" + utils.textOr(listId, "none")
+    end function
+
+    function emptySettings() as object
+        return { live: {}, vod: {}, series: {} }
+    end function
+
+    ' PIN_PATTERN: de 4 a 8 números.
+    function validPin(pin as dynamic) as boolean
+        return utils.isString(pin) and CreateObject("roRegex", "^[0-9]{4,8}$", "").isMatch(pin)
+    end function
+
+    ' ADULT_NAME do web (o "ó" vai como alternativa: a classe [oó] não casa o caractere de 2 bytes).
+    function isAdultName(name as dynamic) as boolean
+        return CreateObject("roRegex", "adult|xxx|\+\s?18|18\s?\+|porn|er(o|ó|Ó)tic|sexy|playboy", "i").isMatch(utils.textOr(name, ""))
+    end function
+
+    ' SHA-256 de "pulse-pin:<pin>" em hex, como o web; sem o digest, texto (shortcut do web: é PIN, não senha).
+    function hashPin(pin as string) as string
+        try
+            bytes = CreateObject("roByteArray")
+            bytes.fromAsciiString("pulse-pin:" + pin)
+            digest = CreateObject("roEVPDigest")
+            digest.setup("sha256")
+            return LCase(digest.process(bytes))
+        catch e
+            return "plain:" + pin
+        end try
+    end function
+
+    ' Escolhas do perfil na lista e o PIN do aparelho: { key, settings, pinHash, owner, unlocked }.
+    ' unlocked = { "<seção>:<id>": true } desta abertura do app (o chamador junta, ver parental.current).
+    function load(store as object, profileId as dynamic, listId as dynamic) as object
+        key = parental.settingsKey(profileId, listId)
+        saved = store.get(key)
+        if not utils.isObject(saved) and utils.textOr(profileId, "") <> parental.MAIN_PROFILE then saved = store.get(parental.settingsKey(parental.MAIN_PROFILE, listId))
+        settings = parental.emptySettings()
+        if utils.isObject(saved) then
+            for each section in ["live", "vod", "series"]
+                if utils.isObject(saved[section]) then settings[section].append(saved[section])
+            end for
+        end if
+        pinHash = store.get(parental.PIN_KEY)
+        if not utils.isString(pinHash) then pinHash = ""
+        return { key: key, settings: settings, pinHash: pinHash, owner: key, unlocked: {} }
+    end function
+
+    function statusOf(ctx as object, section as string, category as dynamic) as string
+        if not utils.isObject(category) then return "visible"
+        chosen = ctx.settings[section]
+        if chosen <> invalid then
+            status = chosen[parental.categoryId(category)]
+            if utils.isString(status) and status <> "" then return status
+        end if
+        if parental.isAdultName(category.category_name) then return "locked"
+        return "visible"
+    end function
+
+    function categoryId(category as object) as string
+        id = category.category_id
+        if utils.isString(id) then return id
+        if id = invalid then return ""
+        return utils.textOr(id, "0")
+    end function
+
+    function isLocked(ctx as object, section as string, category as dynamic) as boolean
+        return parental.statusOf(ctx, section, category) = "locked" and ctx.unlocked[section + ":" + parental.categoryId(category)] <> true
+    end function
+
+    ' Ids fora de "Todos", Início e busca: escondidas e bloqueadas ainda sem PIN.
+    function blockedIds(ctx as object, section as string, categories as dynamic) as object
+        ids = []
+        if GetInterface(categories, "ifArray") = invalid then return ids
+        for each c in categories
+            if utils.isObject(c) and (parental.statusOf(ctx, section, c) = "hidden" or parental.isLocked(ctx, section, c)) then ids.push(parental.categoryId(c))
+        end for
+        return ids
+    end function
+
+    sub setStatus(store as object, ctx as object, section as string, category as object, status as string)
+        ctx.settings[section][parental.categoryId(category)] = status
+        store.set(ctx.key, ctx.settings)
+    end sub
+
+    function needsPin(ctx as object) as boolean
+        return ctx.pinHash = ""
+    end function
+
+    sub savePin(store as object, ctx as object, pin as string)
+        ctx.pinHash = parental.hashPin(pin)
+        store.set(parental.PIN_KEY, ctx.pinHash)
+    end sub
+
+    ' guard = { fails, lockedUntil } (mexido aqui). Sem PIN criado, o digitado (4 a 8 números) vira o PIN.
+    function checkPin(store as object, ctx as object, guard as object, pin as dynamic, nowMs as double) as boolean
+        if nowMs < guard.lockedUntil or not parental.validPin(pin) then return false
+        if parental.needsPin(ctx) then
+            parental.savePin(store, ctx, pin)
+            return true
+        end if
+        if parental.hashPin(pin) = ctx.pinHash then
+            guard.fails = 0
+            return true
+        end if
+        ' Só 10 mil PINs de 4 dígitos: depois de 5 erros, espera 30 s.
+        guard.fails = guard.fails + 1
+        if guard.fails >= parental.MAX_PIN_FAILS then
+            guard.fails = 0
+            guard.lockedUntil = nowMs + parental.PIN_LOCK_MS
+        end if
+        return false
+    end function
+
+    function pinError(guard as object, nowMs as double) as string
+        if nowMs < guard.lockedUntil then
+            seconds = Int((guard.lockedUntil - nowMs + 999) / 1000)
+            return "Muitas tentativas. Espere " + seconds.toStr() + " s."
+        end if
+        return "PIN incorreto."
+    end function
+
+    ' PIN certo: a categoria abre até fechar o app. Sem PIN não cria (a criança não vira dona do PIN).
+    function unlock(store as object, ctx as object, guard as object, section as string, category as object, pin as dynamic, nowMs as double) as boolean
+        if parental.needsPin(ctx) or not parental.checkPin(store, ctx, guard, pin, nowMs) then return false
+        ctx.unlocked[section + ":" + parental.categoryId(category)] = true
+        return true
+    end function
+
+    ' "" se trocou; senão o motivo.
+    function changePin(store as object, ctx as object, guard as object, current as dynamic, nextPin as dynamic, nowMs as double) as string
+        if not parental.checkPin(store, ctx, guard, current, nowMs) then
+            if nowMs < guard.lockedUntil then return parental.pinError(guard, nowMs)
+            return "PIN atual incorreto."
+        end if
+        if not parental.validPin(nextPin) then return "O novo PIN precisa ter de 4 a 8 números."
+        parental.savePin(store, ctx, nextPin)
+        return ""
+    end function
+
+    ' Item (favorito) de categoria fora da vista não aparece (allowedByParental do Dashboard.vue).
+    function allows(blockedBySection as object, item as object) as boolean
+        blocked = blockedBySection[utils.textOr(item.section, "")]
+        if blocked = invalid then return false
+        for each id in catalog.categoriesOf(item)
+            for each b in blocked
+                if b = id then return false
+            end for
+        end for
+        return true
+    end function
+
+    ' ---------- Estado da sessão (telas) ----------
+
+    function clockMs() as double
+        clock = CreateObject("roDateTime")
+        return clock.asSeconds() * 1000# + clock.getMilliseconds()
+    end function
+
+    ' Escolhas do perfil ativo na lista ativa, com o desbloqueio desta abertura (só vale para o mesmo perfil e lista).
+    function activeContext(store as object) as object
+        profileId = invalid
+        if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+        listId = invalid
+        activeList = session.hydrate(store)
+        if activeList <> invalid then listId = activeList.id
+        ctx = parental.load(store, profileId, listId)
+        shared = m.global.parental
+        if utils.isObject(shared) and shared.owner = ctx.owner and utils.isObject(shared.unlocked) then ctx.unlocked = shared.unlocked
+        return ctx
+    end function
+
+    ' rev muda a cada aviso: quem observa m.global.parental (o Início) recarrega mesmo se o desbloqueio for igual.
+    sub saveUnlocked(ctx as object)
+        m.global.parental = { owner: ctx.owner, unlocked: ctx.unlocked, rev: parental.clockMs() }
+    end sub
+
+    function readGuard() as object
+        if utils.isObject(m.global.parentalGuard) then return m.global.parentalGuard
+        return { fails: 0, lockedUntil: 0# }
+    end function
+
+    sub saveGuard(guard as object)
+        m.global.parentalGuard = guard
+    end sub
+
+    ' { live, vod, series } com os ids fora da vista, lendo as categorias gravadas do catálogo da lista.
+    function hiddenMap(ctx as object, dir as string) as object
+        result = {}
+        for each section in ["live", "vod", "series"]
+            result[section] = parental.blockedIds(ctx, section, catalog.getCategories(dir, section))
+        end for
+        return result
+    end function
+
+end namespace

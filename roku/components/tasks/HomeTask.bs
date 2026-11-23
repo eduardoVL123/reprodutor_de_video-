@@ -1,6 +1,7 @@
 import "pkg:/source/net/transport.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/xtream/api.bs"
+import "pkg:/source/parental/parental.bs"
 
 sub init()
     m.top.functionName = "runHome"
@@ -8,8 +9,8 @@ end sub
 
 sub runHome()
     ctx = m.top.ctx
-    hidden = m.top.hidden
-    if hidden = invalid then hidden = {}
+    ' Escolhas do controle parental do perfil (parental.activeContext): o que está fora da vista sai das fileiras.
+    choices = m.top.parental
     transport = net.urlTransport()
     heroItem = invalid
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
@@ -17,8 +18,8 @@ sub runHome()
         loaded = catalog.loadShared(transport, ctx, section, false)
         items = []
         if loaded.ok then
-            sectionHidden = hidden[section]
-            if sectionHidden = invalid then sectionHidden = []
+            sectionHidden = []
+            if choices <> invalid then sectionHidden = parental.blockedIds(choices, section, catalog.getCategories(ctx.dir, section))
             items = catalog.getItems(ctx.dir, section, catalog.ALL_CATEGORIES, 0, 20, sectionHidden)
         end if
         m.top.rail = { section: section, ok: loaded.ok, items: items, error: loaded.error, errorDetail: loaded.errorDetail }

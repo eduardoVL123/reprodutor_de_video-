@@ -3,6 +3,9 @@ import "pkg:/source/utils/types.bs"
 import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/catalog/catalog.bs"
 
 ' Medidas da aba Favoritos do Dashboard.vue em px (1920×1080): conteúdo de x 176 a 1824 (pl-16 pr-24 ao lado do menu)
 ' e y 56 (py-14); título de 44 px, Reproduzir Tudo (224×50) e Limpar Lista (151×50) em y 75; grade de 4 cartões de
@@ -29,12 +32,28 @@ end sub
 
 sub load()
     m.key = favorites.activeKey(m.store)
-    m.items = favorites.load(m.store, m.key)
+    m.items = visibleFavorites()
     m.focusId = "fav-play-all"
     if m.items.count() = 0 then m.focusId = ""
     m.scroll = 0
     render()
 end sub
+
+'' visibleQueue do Dashboard.vue: fora o que é de categoria escondida/bloqueada e o de seção sem catálogo carregado.
+function visibleFavorites() as object
+    current = session.hydrate(m.store)
+    if current = invalid then return []
+    dir = catalog.contextFor(current).dir
+    blocked = parental.hiddenMap(parental.activeContext(m.store), dir)
+    for each section in ["live", "vod", "series"]
+        if catalog.getMeta(dir, section) = invalid then blocked.delete(section)
+    end for
+    visible = []
+    for each item in favorites.load(m.store, m.key)
+        if parental.allows(blocked, item) then visible.push(item)
+    end for
+    return visible
+end function
 
 ' Outro perfil escolhido com a aba aberta: mostra os favoritos dele.
 sub onProfileChanged()
@@ -164,7 +183,7 @@ end function
 ' Voltando dos detalhes a série pode ter saído dos favoritos: relê e mantém o foco se o cartão ainda existe.
 sub onFocusChanged()
     if m.top.focusedChild <> invalid then
-        fresh = favorites.load(m.store, m.key)
+        fresh = visibleFavorites()
         if FormatJson(fresh) <> FormatJson(m.items) then
             m.items = fresh
             if m.focusables[m.focusId] <> invalid and m.focusables[m.focusId].index <> invalid and m.focusables[m.focusId].index >= fresh.count() then m.focusId = ""

@@ -9,6 +9,7 @@ import "pkg:/source/ui/gridItem.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
 
 ' Medidas do CatalogBrowser.vue em px (1920×1080): seção de x 152 a 1824 (pl-10/pr-24) e y 56 (py-14); cabeçalho
 ' de 75 px; conteúdo rolável de y 131 a 1024; fileiras com px-6 (x 176) e cartões 176×264 com gap-4.
@@ -64,6 +65,10 @@ sub onSection()
         m.ctx = catalog.contextFor(current)
         m.sessionType = utils.textOr(current.type, "")
     end if
+    m.parentalCtx = parental.activeContext(storage.create())
+    m.hidden = []
+    m.allCategories = []
+    m.pendingCategory = ""
     load(false)
 end sub
 
@@ -80,6 +85,11 @@ sub requestData(params as object)
     task = CreateObject("roSGNode", "CatalogTabTask")
     task.ctx = m.ctx
     task.section = m.section
+    ' Escolhas do controle parental (a abertura filtra) e os ids já fora da vista (as páginas da grade).
+    task.parental = m.parentalCtx
+    hidden = {}
+    hidden[m.section] = m.hidden
+    task.hidden = hidden
     task.request = params
     task.observeField("result", "onResult")
     task.control = "run"
@@ -99,12 +109,27 @@ sub onResult(event as object)
         else
             m.state = "ready"
             m.categories = data.categories
+            m.hidden = data.hidden
+            if m.hidden = invalid then m.hidden = []
+            m.allCategories = data.allCategories
             m.rows = withFavoritesRow(data.rows)
             m.heroItem = data.heroItem
             m.heroInfo = invalid
             if not isFocusIn("cat-") then m.focusId = "cat-" + activeCategoryIndex().toStr()
         end if
         render()
+        ' Fechou o Controle parental: o foco volta ao botão, que só existe com a aba pronta.
+        if m.restoreFocus <> invalid and m.restoreFocus <> "" and m.focusables[m.restoreFocus] <> invalid then
+            m.focusId = m.restoreFocus
+            renderFocus()
+        end if
+        m.restoreFocus = ""
+        ' Desbloqueou com o PIN: abre a categoria (unlockCategory do web).
+        if m.state = "ready" and m.pendingCategory <> "" then
+            categoryId = m.pendingCategory
+            m.pendingCategory = ""
+            chooseCategory(categoryId)
+        end if
     else if data.mode = "hero" then
         m.heroInfo = data.info
         render()
@@ -212,8 +237,19 @@ sub renderHeader()
         group.translation = [x, 76 + 1 - border]
         ring = ui.panel(group, "focus-ring-pill", -5, -5, 10, 32 + 2 * border + 10)
         pill = ui.panel(group, image, 0, 0, 10, 32 + 2 * border)
-        label = ui.inlineText(group, utils.textOr(cat.category_name, ""), ui.font(500, 14), color, 16 + border, 6, 20)
-        width = label.boundingRect().width + 32 + 2 * border
+        ' Bloqueada: cadeado antes do nome (o web usa o emoji 🔒 com mr-1.5).
+        textX = 16 + border
+        if parental.isLocked(m.parentalCtx, m.section, cat) then
+            lock = group.createChild("Poster")
+            lock.uri = "pkg:/images/ui/icon-lock.png"
+            lock.width = 16
+            lock.height = 16
+            lock.blendColor = color
+            lock.translation = [textX, 8]
+            textX = textX + 22
+        end if
+        label = ui.inlineText(group, utils.textOr(cat.category_name, ""), ui.font(500, 14), color, textX, 6, 20)
+        width = textX + label.boundingRect().width + 16 + border
         pill.width = width
         ring.width = width + 10
         group.scaleRotateCenter = [width / 2, 16]
@@ -421,8 +457,10 @@ function withFavoritesRow(rows as object) as object
     if m.section <> "live" then return rows
     result = []
     channels = []
+    ' Canal de categoria escondida/bloqueada fica fora dos Favoritos também (auditoria RFC-025, item 9).
+    blocked = { live: m.hidden }
     for each item in loadFavorites()
-        if item.section = "live" then channels.push(item)
+        if item.section = "live" and parental.allows(blocked, item) then channels.push(item)
     end for
     if channels.count() > 0 then result.push({ category_id: "favorites", category_name: "Favoritos", items: channels })
     for each row in rows
@@ -766,10 +804,53 @@ function onKeyEvent(key as string, press as boolean) as boolean
     return true
 end function
 
+'' ---------- Controle parental ----------
+
+' "unlock": PIN da categoria bloqueada; "manage": o Controle parental da aba (todas as categorias, menos "Todos").
+sub openParental(mode as string, category as dynamic)
+    managed = []
+    for each cat in m.allCategories
+        if cat.category_id <> catalog.ALL_CATEGORIES then managed.push(cat)
+    end for
+    ' Na cena, por cima do menu do Início também (fixed inset-0 do web).
+    m.parentalDialog = CreateObject("roSGNode", "ParentalDialog")
+    m.top.getScene().appendChild(m.parentalDialog)
+    m.parentalDialog.observeField("done", "onParentalDone")
+    m.parentalDialog.request = { mode: mode, section: m.section, category: category, categories: managed }
+    m.parentalDialog.setFocus(true)
+end sub
+
+' Mudou uma categoria ou desbloqueou: recarrega a aba com as escolhas novas (as fileiras de "Todos" saem/entram).
+sub onParentalDone(event as object)
+    data = event.getData()
+    m.top.getScene().removeChild(m.parentalDialog)
+    m.parentalDialog = invalid
+    m.top.setFocus(true)
+    if data.result = "unlocked" or data.changed = true then
+        m.restoreFocus = m.focusId
+        m.parentalCtx = parental.activeContext(storage.create())
+        if data.result = "unlocked" then
+            cat = m.categories[Int(Val(Mid(m.focusId, 5)))]
+            if cat <> invalid then m.pendingCategory = cat.category_id
+        end if
+        load(false)
+    else
+        renderFocus()
+    end if
+end sub
+
 function onSelect() as boolean
     if isFocusIn("cat-") then
         cat = m.categories[Int(Val(Mid(m.focusId, 5)))]
-        if cat <> invalid then chooseCategory(cat.category_id)
+        if cat <> invalid and parental.isLocked(m.parentalCtx, m.section, cat) then
+            openParental("unlock", cat)
+        else if cat <> invalid then
+            chooseCategory(cat.category_id)
+        end if
+        return true
+    end if
+    if m.focusId = "catalog-parental" then
+        openParental("manage", invalid)
         return true
     end if
     if isFocusIn("see-all-") then
@@ -788,7 +869,7 @@ function onSelect() as boolean
     if m.focusId = "catalog-hero-info" or (m.focusId = "catalog-hero-play" and m.section = "series") then item = m.heroItem
     entry = m.focusables[m.focusId]
     if entry <> invalid and entry.item <> invalid then item = entry.item
-    ' Canais e "Assistir" de filme entram com o player (D6); Controle parental com os perfis (D7).
+    ' Canais e "Assistir" de filme entram com o player (D6).
     if item <> invalid and m.section <> "live" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: m.section } }
     return true
 end function
