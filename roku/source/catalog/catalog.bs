@@ -18,7 +18,11 @@ namespace catalog
     const CHUNK_SIZE = 500
     const ALL_CATEGORIES = "all"
     ' Sobe quando o formato dos itens salvos muda: catálogos antigos são baixados de novo.
-    const CATALOG_VERSION = 3
+    const CATALOG_VERSION = 4
+    ' Espaço que o catálogo sempre deixa livre no cachefs (o sistema e as outras gravações do app precisam dele).
+    const DISK_RESERVE_BYTES = 4194304
+    ' Por item, o que o índice por categoria e o de busca ainda vão ocupar depois dos chunks.
+    const INDEX_BYTES_PER_ITEM = 48
     ' Listas grandes (50.000+ itens) podem demorar bem mais que um login.
     const CATALOG_TIMEOUT_MS = 120000
     ' Espera máxima pela carga de outra Task (duas requisições de CATALOG_TIMEOUT_MS mais a gravação).
@@ -122,10 +126,112 @@ namespace catalog
         return item
     end function
 
+    ' ---------- Formato compacto dos chunks ----------
+    ' Cada item vira uma lista de valores na ordem de itemFields() (sem repetir os nomes dos campos 50 mil vezes); o
+    ' começo comum dos links de capa fica uma vez por chunk. series_id (= stream_id) e section (= a da pasta) não são
+    ' gravados. Campo ausente vira null e continua ausente ao ler; o que não está na lista vai num objeto no fim.
+
+    function itemFields() as object
+        return ["stream_id", "name", "stream_icon", "category_id", "category_ids", "container_extension", "added", "last_modified", "num", "rating", "directUrl", "direct_source"]
+    end function
+
+    ' chunk = { p: [começos de link], i: [[valores...]] }
+    function packChunk(items as object) as object
+        prefixes = []
+        prefixIndex = {}
+        prefixIndex.setModeCaseSensitive()
+        packed = []
+        fields = catalog.itemFields()
+        for each item in items
+            row = []
+            extras = {}
+            if utils.isObject(item) then
+                extras.append(item)
+                for each field in fields
+                    value = item[field]
+                    extras.delete(field)
+                    if field = "stream_icon" and utils.isString(value) then
+                        cut = 0
+                        for i = Len(value) to 1 step -1
+                            if Mid(value, i, 1) = "/" then
+                                cut = i
+                                exit for
+                            end if
+                        end for
+                        if cut > 0 then
+                            head = Left(value, cut)
+                            if not prefixIndex.doesExist(head) then
+                                prefixIndex[head] = prefixes.count()
+                                prefixes.push(head)
+                            end if
+                            value = [prefixIndex[head], Mid(value, cut + 1)]
+                        end if
+                    end if
+                    row.push(value)
+                end for
+                extras.delete("series_id")
+                extras.delete("section")
+            end if
+            if extras.count() > 0 then row.push(extras)
+            packed.push(row)
+        end for
+        return { p: prefixes, i: packed }
+    end function
+
+    function unpackChunk(chunk as dynamic, section as string) as object
+        items = []
+        if not utils.isObject(chunk) or GetInterface(chunk.i, "ifArray") = invalid then return items
+        fields = catalog.itemFields()
+        for each row in chunk.i
+            item = {}
+            if GetInterface(row, "ifArray") <> invalid then
+                for i = 0 to fields.count() - 1
+                    if i < row.count() and row[i] <> invalid then
+                        value = row[i]
+                        if fields[i] = "stream_icon" and GetInterface(value, "ifArray") <> invalid then value = chunk.p[value[0]] + value[1]
+                        item[fields[i]] = value
+                    end if
+                end for
+                if row.count() > fields.count() and utils.isObject(row[fields.count()]) then item.append(row[fields.count()])
+                if item.stream_id <> invalid then item["series_id"] = item.stream_id
+                item["section"] = section
+            end if
+            items.push(item)
+        end for
+        return items
+    end function
+
+    ' ---------- Espaço em disco ----------
+
+    ' Bytes livres no volume (invalid se o aparelho não informa: aí vale só a falha da gravação).
+    function freeBytes(path as string) as dynamic
+        volume = "cachefs:"
+        if Instr(1, path, ":") > 0 then volume = Left(path, Instr(1, path, ":"))
+        info = CreateObject("roFileSystem").GetVolumeInfo(volume)
+        if not utils.isObject(info) or not utils.isNumber(info.freeblocks) or not utils.isNumber(info.blocksize) then return invalid
+        return info.freeblocks * info.blocksize
+    end function
+
+    ' Só a lista ativa fica no disco: os catálogos das outras listas saem antes de gravar (senão se acumulam).
+    sub pruneOtherLists(dir as string)
+        parent = catalog.DEFAULT_DIR + "/"
+        if Left(dir, Len(parent)) <> parent then return
+        fs = CreateObject("roFileSystem")
+        if not fs.exists(catalog.DEFAULT_DIR) then return
+        own = Mid(dir, Len(parent) + 1)
+        for each name in fs.getDirectoryListing(catalog.DEFAULT_DIR)
+            if name <> own then catalog.deleteTree(parent + name)
+        end for
+    end sub
+
     ' Grava a seção em pedaços, com o índice por categoria e o de busca. Substitui o que havia.
-    sub saveSection(dir as string, section as string, categories as object, streams as object)
+    ' Nunca enche o disco: antes de cada chunk confere o espaço livre (deixando DISK_RESERVE_BYTES e o que os índices
+    ' vão ocupar); se não couber, ou se a gravação falhar, a seção fica com os itens que couberam (meta.truncated) em vez
+    ' de vazia. budget = limite de bytes para os testes (-1: o espaço livre do volume).
+    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
+        catalog.pruneOtherLists(dir)
         ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
         slash = Instr(Instr(1, dir, ":/") + 2, dir, "/")
         while slash > 0
@@ -136,46 +242,73 @@ namespace catalog
         CreateDirectory(path)
         total = streams.count()
         chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
-        index = {}
-        index.setModeCaseSensitive()
-        searchIndex = []
-        incomplete = false
+        free = budget
+        if free < 0 then free = catalog.freeBytes(dir)
+        used = 0#
+        written = 0
+        names = []
+        writtenChunks = 0
         for n = 0 to chunkCount - 1
             base = n * catalog.CHUNK_SIZE
-            chunk = []
             last = base + catalog.CHUNK_SIZE - 1
             if last > total - 1 then last = total - 1
+            items = []
+            chunkNames = []
             for p = base to last
                 item = catalog.normalizeItem(streams[p], section)
-                chunk.push(item)
-                for each cat in catalog.categoriesOf(item)
+                items.push(item)
+                name = invalid
+                if utils.isObject(item) then name = item.name
+                chunkNames.push(catalog.normalizeText(name))
+            end for
+            text = FormatJson(catalog.packChunk(items))
+            need = Len(text) + (last + 1) * catalog.INDEX_BYTES_PER_ITEM
+            if budget < 0 and free <> invalid then need = need + catalog.DISK_RESERVE_BYTES
+            if free <> invalid and used + need > free then exit for
+            file = path + "/chunk-" + n.toStr() + ".json"
+            if not WriteAsciiFile(file, text) then
+                DeleteFile(file)
+                exit for
+            end if
+            used = used + Len(text)
+            written = last + 1
+            writtenChunks = n + 1
+            names.append(chunkNames)
+        end for
+
+        ' Índices só com o que coube; se ainda faltar espaço para eles, o último chunk sai e tenta de novo.
+        while true
+            index = {}
+            index.setModeCaseSensitive()
+            for p = 0 to written - 1
+                for each cat in catalog.categoriesOf(streams[p])
                     if not index.doesExist(cat) then index[cat] = []
                     index[cat].push(p)
                 end for
-                name = invalid
-                if utils.isObject(item) then name = item.name
-                searchIndex.push(catalog.normalizeText(name))
             end for
-            if not WriteAsciiFile(path + "/chunk-" + n.toStr() + ".json", FormatJson(chunk)) then incomplete = true
-        end for
-        counts = {}
-        counts.setModeCaseSensitive()
-        for each cat in index
-            counts[cat] = index[cat].count()
-        end for
-        if not WriteAsciiFile(path + "/categories.json", FormatJson(categories)) then incomplete = true
-        if not WriteAsciiFile(path + "/index.json", FormatJson(index)) then incomplete = true
-        ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
-        if not WriteAsciiFile(path + "/search.json", FormatJson(searchIndex)) then print "[catalog] Índice de busca de "; section; " não coube no disco; será refeito pelos chunks."
-        ' O resumo vai por último e só com tudo gravado: sem ele a seção conta como inexistente e é baixada de novo.
-        ' shortcut: o web segura no meio da sessão o que não coube (memoryChunks); aqui a seção fica vazia até o próximo
-        ' download. Guardar em memória exige o catálogo fora do Task; fazer se aparecer aparelho com disco cheio.
-        if incomplete then
-            print "[catalog] Seção "; section; " não coube no disco; o resumo não foi gravado (vai baixar de novo)."
-            return
-        end if
-        meta = { version: catalog.CATALOG_VERSION, count: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunkCount, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
-        WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+            counts = {}
+            counts.setModeCaseSensitive()
+            for each cat in index
+                counts[cat] = index[cat].count()
+            end for
+            ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index))
+            if ok then
+                ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
+                if not WriteAsciiFile(path + "/search.json", FormatJson(names)) then DeleteFile(path + "/search.json")
+                meta = { version: catalog.CATALOG_VERSION, count: written, total: total, truncated: written < total, chunkSize: catalog.CHUNK_SIZE, chunkCount: writtenChunks, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
+                ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+            end if
+            if ok or writtenChunks = 0 then exit while
+            writtenChunks = writtenChunks - 1
+            DeleteFile(path + "/chunk-" + writtenChunks.toStr() + ".json")
+            written = writtenChunks * catalog.CHUNK_SIZE
+            if written > total then written = total
+            names = []
+            for p = 0 to written - 1
+                names.push(catalog.normalizeText(streams[p].name))
+            end for
+        end while
+        if written < total then print "[catalog] Seção "; section; " grande demais para o disco: guardados "; written; " de "; total; " itens."
     end sub
 
     ' ---------- Leitura ----------
@@ -208,8 +341,8 @@ namespace catalog
         if GetInterface(names, "ifArray") <> invalid and names.count() = meta.count then return names
         names = []
         for n = 0 to meta.chunkCount - 1
-            chunk = catalog.readJsonFile(path + "/chunk-" + n.toStr() + ".json")
-            if GetInterface(chunk, "ifArray") <> invalid then
+            chunk = catalog.unpackChunk(catalog.readJsonFile(path + "/chunk-" + n.toStr() + ".json"), section)
+            if chunk.count() > 0 then
                 for each item in chunk
                     name = invalid
                     if utils.isObject(item) then name = item.name
@@ -301,7 +434,7 @@ namespace catalog
         for each p in positions
             n = p \ meta.chunkSize
             key = n.toStr()
-            if not chunks.doesExist(key) then chunks[key] = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + key + ".json")
+            if not chunks.doesExist(key) then chunks[key] = catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + key + ".json"), section)
             chunk = chunks[key]
             if GetInterface(chunk, "ifArray") <> invalid then
                 item = chunk[p mod meta.chunkSize]

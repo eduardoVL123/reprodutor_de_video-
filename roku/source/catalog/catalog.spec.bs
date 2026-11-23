@@ -131,6 +131,60 @@ namespace tests
             m.assertEqual(catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 1, [])[0].direct_source, "http://cdn.test/7.m3u8")
         end function
 
+        @it("formato compacto: campos extras, ausentes e capa sem barra voltam exatamente como eram")
+        function _()
+            raw = { stream_id: 5, name: "Série", cover: "http://img.test/a/5.jpg", plot: "Sinopse", category_id: "3", category_ids: ["3", "4"], rating: "8" }
+            catalog.saveSection(tests.CATALOG_DIR, "series", [], [raw, { stream_id: 6, name: "Sem capa", stream_icon: "capa.jpg", category_id: "3" }])
+            items = catalog.getItems(tests.CATALOG_DIR, "series", catalog.ALL_CATEGORIES, 0, 2, [])
+            m.assertEqual(items[0], { stream_id: 5, series_id: 5, name: "Série", cover: "http://img.test/a/5.jpg", stream_icon: "http://img.test/a/5.jpg", plot: "Sinopse", category_id: "3", category_ids: ["3", "4"], rating: "8", container_extension: "mp4", section: "series" })
+            m.assertEqual(items[1].stream_icon, "capa.jpg")
+            m.assertInvalid(items[1].rating)
+        end function
+
+        @it("o chunk compacto ocupa bem menos que o item inteiro em JSON")
+        function _()
+            streams = []
+            for i = 1 to 500
+                streams.push({ num: i, name: "Canal " + i.toStr(), stream_id: i, stream_icon: "http://painel.exemplo.com:8080/images/logos/canal" + i.toStr() + ".png", added: "1700000000", category_id: "1" })
+            end for
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], streams)
+            compact = Len(ReadAsciiFile(tests.CATALOG_DIR + "/live/chunk-0.json"))
+            full = Len(FormatJson(catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 500, [])))
+            m.assertTrue(compact < full * 0.6, compact.toStr() + " de " + full.toStr())
+        end function
+
+        @it("sem espaço para tudo, guarda os primeiros itens que couberem em vez de deixar a seção vazia")
+        function _()
+            streams = tests.numberedStreams(1200)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
+            oneChunk = Len(ReadAsciiFile(tests.CATALOG_DIR + "/vod/chunk-0.json"))
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, oneChunk + 600 * catalog.INDEX_BYTES_PER_ITEM)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertNotInvalid(meta)
+            m.assertTrue(meta.truncated)
+            m.assertEqual(meta.count, 500)
+            m.assertEqual(meta.total, 1200)
+            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 498, 10, [])), [499, 500])
+            m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 500)
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 500)
+            ' Nem um chunk cabe: a seção fica vazia mas com o resumo (não baixa de novo em laço).
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, 10)
+            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 0)
+        end function
+
+        @it("só a lista ativa fica no disco: gravar outra lista apaga o catálogo da anterior")
+        function _()
+            a = catalog.DEFAULT_DIR + "/pulse-test-a"
+            b = catalog.DEFAULT_DIR + "/pulse-test-b"
+            catalog.saveSection(a, "live", [], tests.numberedStreams(3))
+            m.assertNotInvalid(catalog.getMeta(a, "live"))
+            catalog.saveSection(b, "live", [], tests.numberedStreams(3))
+            m.assertInvalid(catalog.getMeta(a, "live"))
+            m.assertFalse(CreateObject("roFileSystem").exists(a))
+            m.assertNotInvalid(catalog.getMeta(b, "live"))
+            catalog.deleteTree(b)
+        end function
+
         @it("índice de busca que não coube no disco é refeito pelos chunks (buildSearchIndex)")
         function _()
             catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.numberedStreams(1200))
