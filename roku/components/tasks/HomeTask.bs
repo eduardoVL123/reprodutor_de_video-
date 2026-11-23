@@ -12,6 +12,8 @@ sub runHome()
     ' Escolhas do controle parental do perfil (parental.activeContext): o que está fora da vista sai das fileiras.
     choices = m.top.parental
     transport = net.urlTransport()
+    ' Só a lista ativa fica no disco (as outras ocupariam o cachefs à toa).
+    catalog.pruneOtherLists(ctx.dir)
     heroItem = invalid
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
     for each section in ["vod", "series", "live"]

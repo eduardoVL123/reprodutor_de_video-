@@ -212,7 +212,8 @@ namespace catalog
         return info.freeblocks * info.blocksize
     end function
 
-    ' Só a lista ativa fica no disco: os catálogos das outras listas saem antes de gravar (senão se acumulam).
+    ' Só a lista ativa fica no disco: o Início (HomeTask) tira os catálogos das outras listas ao começar. Não é feito a
+    ' cada gravação: a Task de uma lista anterior ainda baixando apagaria a pasta da lista nova no meio da gravação.
     sub pruneOtherLists(dir as string)
         parent = catalog.DEFAULT_DIR + "/"
         if Left(dir, Len(parent)) <> parent then return
@@ -231,7 +232,6 @@ namespace catalog
     sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
-        catalog.pruneOtherLists(dir)
         ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
         slash = Instr(Instr(1, dir, ":/") + 2, dir, "/")
         while slash > 0

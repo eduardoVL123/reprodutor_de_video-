@@ -141,6 +141,30 @@ namespace tests
             m.assertInvalid(items[1].rating)
         end function
 
+        @it("item real de painel (nulls, campos extras, capa vazia) grava e volta")
+        function _()
+            raw = ParseJson("[{""num"":1,""name"":""Teste de Conexão ⁺"",""stream_type"":""live"",""stream_id"":9999999,""stream_icon"":"""",""epg_channel_id"":null,""added"":"""",""is_adult"":""0"",""category_id"":""1264"",""custom_sid"":null,""tv_archive"":0,""direct_source"":"""",""tv_archive_duration"":null}]")
+            catalog.saveSection(tests.CATALOG_DIR, "live", [{ category_id: "1264", category_name: "TESTE" }], raw)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "live")
+            m.assertNotInvalid(meta)
+            m.assertEqual(meta.count, 1)
+            item = catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 1, [])[0]
+            m.assertEqual(item.name, "Teste de Conexão ⁺")
+            m.assertEqual(item.is_adult, "0")
+            ' Arquivos só em ASCII (o WriteAsciiFile do simulador falhava com "–", "’", "⁺"); o nome volta igual.
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "Ação – Clássicos’" }], [{ stream_id: 1, name: "Filme – O Começo’s ⁺", category_id: "1" }])
+            for each file in ["chunk-0.json", "categories.json", "search.json"]
+                text = ReadAsciiFile(tests.CATALOG_DIR + "/vod/" + file)
+                ascii = true
+                for i = 1 to Len(text)
+                    if Asc(Mid(text, i, 1)) > 127 then ascii = false
+                end for
+                m.assertTrue(ascii, file)
+            end for
+            m.assertEqual(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 0, 1, [])[0].name, "Filme – O Começo’s ⁺")
+            m.assertEqual(catalog.getCategories(tests.CATALOG_DIR, "vod")[0].category_name, "Ação – Clássicos’")
+        end function
+
         @it("o chunk compacto ocupa bem menos que o item inteiro em JSON")
         function _()
             streams = []
@@ -172,13 +196,16 @@ namespace tests
             m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 0)
         end function
 
-        @it("só a lista ativa fica no disco: gravar outra lista apaga o catálogo da anterior")
+        @it("só a lista ativa fica no disco: o Início apaga o catálogo das outras listas ao começar")
         function _()
             a = catalog.DEFAULT_DIR + "/pulse-test-a"
             b = catalog.DEFAULT_DIR + "/pulse-test-b"
             catalog.saveSection(a, "live", [], tests.numberedStreams(3))
             m.assertNotInvalid(catalog.getMeta(a, "live"))
             catalog.saveSection(b, "live", [], tests.numberedStreams(3))
+            ' Gravar não apaga a outra lista (uma Task antiga ainda gravando não perde a pasta); o Início limpa ao começar.
+            m.assertNotInvalid(catalog.getMeta(a, "live"))
+            catalog.pruneOtherLists(b)
             m.assertInvalid(catalog.getMeta(a, "live"))
             m.assertFalse(CreateObject("roFileSystem").exists(a))
             m.assertNotInvalid(catalog.getMeta(b, "live"))
