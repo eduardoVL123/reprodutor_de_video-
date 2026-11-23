@@ -5,6 +5,7 @@ import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/catalog/catalogTab.bs"
 import "pkg:/source/catalog/grid.bs"
+import "pkg:/source/ui/gridItem.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 
@@ -587,71 +588,12 @@ sub renderGrid()
         x = 176 + rect[0]
         y = CONTENT_TOP + rect[1] - m.gridScroll
         item = m.gridItems[index.toStr()]
-        node = gridCell(item, index, x, y, rect[2], rect[3])
+        node = gridItem.cell(m.scrollGroup, item, g.variant, index, x, y, rect[2], rect[3])
         entry = addFocusable("item-" + index.toStr(), "content", "grid", "content", [x, y, rect[2], rect[3]], node.group, node.ring, 1.02)
         entry.item = item
         entry.index = index
     end for
 end sub
-
-function gridCell(item as dynamic, index as integer, x as float, y as float, width as float, height as float) as object
-    group = m.scrollGroup.createChild("Group")
-    group.translation = [x, y]
-    ring = ui.panel(group, "focus-ring-12", -5, -5, width + 10, height + 10)
-    ui.panel(group, "card", 0, 0, width, height)
-    group.scaleRotateCenter = [width / 2, height / 2]
-    if item = invalid then return { group: group, ring: ring }
-    name = utils.textOr(item.name, "")
-    if m.layout.variant = "channel" then
-        ' Canal (GridItem variant channel): logo + nome em cima, AO VIVO verde, nome e "Canal N · Ao vivo" embaixo.
-        textX = 20
-        image = utils.textOr(item.stream_icon, "")
-        if home.isHttpUrl(image) then
-            logo = group.createChild("Poster")
-            logo.translation = [20, 20]
-            logo.width = 32
-            logo.height = 32
-            logo.loadDisplayMode = "scaleToFit"
-            logo.uri = image
-            textX = 62
-        end if
-        live = ui.inlineText(group, "AO VIVO", ui.font(700, 20), "0x10B981FF", 0, 22, 28)
-        liveX = width - 20 - live.boundingRect().width
-        live.translation = [liveX, live.translation[1]]
-        dot = group.createChild("Rectangle")
-        dot.color = "0x10B981FF"
-        dot.width = 6
-        dot.height = 6
-        dot.translation = [liveX - 12, 33]
-        title = ui.text(group, UCase(utils.textOr(item.name, "Canal")), ui.font(900, 24), ui.WHITE, textX, 20, liveX - 20 - textX, 32)
-        title.wrap = false
-        sub1 = ui.text(group, utils.textOr(item.name, "Transmissão contínua"), ui.font(500, 20), ui.WHITE, 20, height - 20 - 28 - 2 - 28, width - 40, 28)
-        sub1.wrap = false
-        number = utils.textOr(item.num, (index + 1).toStr())
-        sub2 = ui.text(group, "Canal " + number + " · Ao vivo", ui.font(400, 20), ui.NEUTRAL_500, 20, height - 20 - 28, width - 40, 28)
-        sub2.wrap = false
-        return { group: group, ring: ring }
-    end if
-    image = utils.textOr(item.stream_icon, utils.textOr(item.cover, ""))
-    if home.isHttpUrl(image) then
-        art = group.createChild("Poster")
-        art.width = width
-        art.height = height
-        art.loadDisplayMode = "scaleToZoom"
-        art.uri = image
-    else
-        initial = ui.inlineText(group, UCase(Left(name + "?", 1)), ui.font(700, 40), ui.NEUTRAL_400, 0, (height - 56) / 2, 56)
-        initial.translation = [(width - initial.boundingRect().width) / 2, initial.translation[1]]
-    end if
-    ui.panelImage(group, "title-shade-grid.png", 0, height - 69, width, 69)
-    ui.panel(group, "card-mask", 0, 0, width, height)
-    label = ui.text(group, name, ui.font(600, 20), ui.WHITE, 12, 0, width - 24, 25)
-    label.maxLines = 2
-    labelHeight = ui.textHeight(label, 25)
-    if labelHeight > 50 then labelHeight = 50
-    label.translation = [12, label.translation[1] + height - 12 - labelHeight]
-    return { group: group, ring: ring }
-end function
 
 ' ---------- Foco ----------
 
