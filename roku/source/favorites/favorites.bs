@@ -134,7 +134,7 @@ namespace favorites
         for each q in list
             item = {}
             item.append(q)
-            if item.directUrl <> "" then
+            if utils.textOr(item.directUrl, "") <> "" then
                 blob = secrets.encrypt(item.directUrl)
                 if blob <> invalid then
                     item.directUrl = ""

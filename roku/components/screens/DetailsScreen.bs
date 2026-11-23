@@ -44,7 +44,30 @@ sub init()
     m.activeSeason = ""
     m.episodeIndex = 0
     m.episodeOffset = 0
+    ' Voltando do player: o "Continuar assistindo" mudou (botões e barra de progresso).
+    m.top.observeField("focusedChild", "onFocusBack")
 end sub
+
+sub onFocusBack()
+    if m.item = invalid or m.top.focusedChild = invalid or m.wasFocused = true then
+        m.wasFocused = m.top.focusedChild <> invalid
+        return
+    end if
+    m.wasFocused = true
+    render()
+end sub
+
+' Histórico do perfil na lista ativa (o mesmo do player).
+function loadHistory() as object
+    store = storage.create()
+    active = session.hydrate(store)
+    listId = invalid
+    if active <> invalid then listId = active.id
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    m.historyKey = playerState.historyKey(profileId, listId)
+    return playerState.loadHistory(store, m.historyKey)
+end function
 
 sub onParams()
     params = m.top.params
@@ -144,8 +167,25 @@ function renderHeader(view as object, titleTop as float, titleWidth as float, me
 end function
 
 sub renderMovie()
-    view = mediaDetails.movieView(m.info)
-    renderHeader(view, 92, 704, 169)
+    ' hasMovieProgress: passou de 15 s → barra, "Continuar assistindo" e "Assistir do início".
+    movieId = favorites.plainItem(m.item, "vod").stream_id
+    saved = 0#
+    pct = 0#
+    for each entry in loadHistory()
+        if entry.section = "vod" and favorites.text(entry.stream_id) = favorites.text(movieId) then
+            saved = entry.currentTime
+            pct = entry.progressPct
+        end if
+    end for
+    view = mediaDetails.movieView(m.info, saved, pct)
+    metaBottom = renderHeader(view, 92, 704, 169)
+    if view.progress <> invalid then
+        ' w-80 h-1.5 bg-white/15 com o limão e "Em andamento · Retomar de …" (text-tv-xs, neutral-300), mt-5 gap-4.
+        ui.panel(m.body, "progress-track", PAD_X, metaBottom + 31, 320, 6)
+        fillWidth = Int(320 * view.progress.pct / 100)
+        if fillWidth >= 6 then ui.panel(m.body, "progress-fill", PAD_X, metaBottom + 31, fillWidth, 6)
+        ui.inlineText(m.body, view.progress.text, ui.font(400, 20), "0xD4D4D4FF", PAD_X + 336, metaBottom + 20, 28)
+    end if
     ' Bloco de baixo (justify-between): botões em 970, Elenco/Direção e a sinopse acima deles.
     buttonsTop = 970
     bottom = buttonsTop - 32
@@ -184,7 +224,7 @@ sub renderMovie()
 end sub
 
 sub renderSeries()
-    view = mediaDetails.seriesView(m.info, m.seriesData)
+    view = mediaDetails.seriesView(m.info, m.seriesData, playerState.seriesResume(loadHistory(), m.seriesData))
     metaBottom = renderHeader(view, 90, 800, 163)
     y = metaBottom + 12
     if m.loading then
@@ -294,7 +334,7 @@ end sub
 
 ' Botões h-[3.4rem]: primário branco (px-8, bold) e os de vidro (px-7, medium), ícone w-4 e gap-3.
 sub renderButtons(buttons as object, top as float, row as string)
-    icons = { "details-play-btn": "icon-play", "series-play-btn": "icon-play", "details-fav-btn": "icon-heart-small", "series-fav-btn": "icon-heart-small", "details-back-btn": "icon-back", "series-back-btn": "icon-back" }
+    icons = { "details-restart-btn": "icon-restart", "details-play-btn": "icon-play", "series-play-btn": "icon-play", "details-fav-btn": "icon-heart-small", "series-fav-btn": "icon-heart-small", "details-back-btn": "icon-back", "series-back-btn": "icon-back" }
     x = PAD_X
     saved = isSaved()
     for i = 0 to buttons.count() - 1
@@ -372,27 +412,12 @@ end sub
 sub playSeries()
     seasons = seriesPlaylist.seasonsOf(m.seriesData)
     if seasons.count() = 0 then return
-    store = storage.create()
-    active = session.hydrate(store)
-    listId = invalid
-    if active <> invalid then listId = active.id
-    profileId = invalid
-    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
-    history = playerState.loadHistory(store, playerState.historyKey(profileId, listId))
-    for each entry in history
-        if entry.section = "series" then
-            for each season in seasons
-                episodes = seriesPlaylist.episodesOf(m.seriesData, season.key)
-                for i = 0 to episodes.count() - 1
-                    if favorites.text(episodes[i].id) = favorites.text(entry.stream_id) then
-                        playEpisodeList(season.key, i)
-                        return
-                    end if
-                end for
-            end for
-        end if
-    end for
-    playEpisodeList(seasons[0].key, 0)
+    resume = playerState.seriesResume(loadHistory(), m.seriesData)
+    if resume <> invalid then
+        playEpisodeList(resume.seasonKey, resume.episodeIndex)
+    else
+        playEpisodeList(seasons[0].key, 0)
+    end if
 end sub
 
 function isSaved() as boolean
@@ -481,6 +506,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
     else if result.action = "favorite" then
         toggleFavorite()
     else if result.action = "play" and m.section <> "series" then
+        playMovie()
+    else if result.action = "restart" then
+        ' playFromStart: sai do "Continuar assistindo" e toca do começo.
+        history = loadHistory()
+        playerState.removeFromHistory(storage.create(), m.historyKey, history, favorites.plainItem(m.item, "vod").stream_id, "vod")
+        m.focusId = "details-play-btn"
         playMovie()
     else if result.action = "play" then
         playSeries()

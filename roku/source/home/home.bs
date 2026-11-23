@@ -1,7 +1,8 @@
 import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
 ' Regras do Início de src/views/Dashboard.vue, src/utils/railOffset.js e src/utils/artwork.js (casos em
 ' tests/railOffset.test.js, tests/artwork.test.js e roku/source/home/home.spec.bs).
-' O "Continuar assistindo" (histórico) entra com o player (D6): por enquanto o destaque é o primeiro item.
+' O destaque é o "Continuar assistindo" mais recente (recentHistoryItem) ou o primeiro item das fileiras.
 namespace home
 
     ' Deslocamento horizontal (px, ≤ 0) de uma fileira para o item focado ficar na posição inicial, sem sobrar espaço
@@ -43,8 +44,9 @@ namespace home
         return { url: "", mode: "none" }
     end function
 
-    ' Textos do destaque (heroBadgeLabel, heroTitle, heroRating... do Dashboard.vue), ainda sem o histórico.
-    function heroTexts(item as dynamic, info as dynamic) as object
+    ' Textos do destaque (heroBadgeLabel, heroTitle, heroRating... do Dashboard.vue); fromHistory = o item é o
+    ' "Continuar assistindo" (recentHistoryItem).
+    function heroTexts(item as dynamic, info as dynamic, fromHistory = false as boolean) as object
         details = {}
         if utils.isObject(info) then details = info
         section = ""
@@ -58,6 +60,7 @@ namespace home
         if not utils.isObject(item) then badge = "Da sua lista"
         if section = "series" then badge = "Série da sua lista"
         if section = "live" then badge = "Canal da sua lista"
+        if fromHistory then badge = "Continuar assistindo"
 
         title = utils.textOr(details.name, name)
         if title = "" then title = "PULSE PLAYER"
@@ -71,6 +74,8 @@ namespace home
             duration = "Ao vivo"
         else if duration = "" and section = "series" then
             duration = "Série"
+        else if section <> "series" and fromHistory and utils.isObject(item) and utils.isNumber(item.currentTime) and item.currentTime > 0 then
+            duration = utils.formatTime(item.currentTime)
         else if duration = "" then
             duration = "Filme"
         end if
@@ -79,12 +84,41 @@ namespace home
         if synopsis = "" or synopsis = "Sem sinopse disponível." then
             synopsis = "Explore o catálogo da sua lista conectada."
             if name <> "" then synopsis = "Disponível diretamente da sua lista conectada."
+            if fromHistory and section = "live" then synopsis = "Volte ao canal que você estava assistindo."
+            if fromHistory and section <> "live" then synopsis = "Retome a reprodução de onde você parou."
         end if
 
         playText = "Assistir agora"
         if section = "series" then playText = "Assistir T1:E1"
+        if fromHistory then
+            playText = "Continuar assistindo"
+            if section = "series" then playText = "Continuar"
+        end if
 
         return { badge: badge, title: title, rating: rating, year: utils.textOr(details.year, ""), duration: duration, genre: utils.textOr(details.genre, ""), synopsis: synopsis, playText: playText }
+    end function
+
+    ' recentHistoryItem: o filme ou episódio mais recente; canal só se não houver outro.
+    function recentHistoryItem(history as object) as dynamic
+        for each it in history
+            if it.section <> "live" then return it
+        end for
+        if history.count() > 0 then return history[0]
+        return invalid
+    end function
+
+    ' getRemainingText: "Faltam N min" (arredondado para cima), ou "" sem duração.
+    function remainingText(item as object) as string
+        duration = 0
+        if utils.isNumber(item.duration) then duration = item.duration
+        if duration <= 0 then return ""
+        current = 0
+        if utils.isNumber(item.currentTime) then current = item.currentTime
+        rest = duration - current
+        if rest < 0 then rest = 0
+        minutes = Int(rest / 60)
+        if minutes * 60 < rest then minutes = minutes + 1
+        return "Faltam " + minutes.toStr() + " min"
     end function
 
     ' Itens do menu lateral, na ordem do SideMenu.vue (as abas que ainda não existem na Roku só recebem foco).

@@ -23,19 +23,33 @@ namespace mediaDetails
         return parts
     end function
 
-    function movieView(info as object) as object
+    ' savedTime/progressPct = do "Continuar assistindo": passou de 15 s, o filme mostra a barra, "Continuar assistindo"
+    ' e "Assistir do início" (hasMovieProgress do MediaDetailsModal.vue).
+    function movieView(info as object, savedTime = 0 as double, progressPct = 0 as double) as object
         duration = utils.textOr(info.duration, "")
         if duration = "" then duration = "Longa-metragem"
+        buttons = [{ id: "details-play-btn", label: "Assistir agora" }]
+        progress = invalid
+        if savedTime > 15 then
+            buttons = [{ id: "details-play-btn", label: "Continuar assistindo" }, { id: "details-restart-btn", label: "Assistir do início" }]
+            pct = progressPct
+            if pct > 100 then pct = 100
+            progress = { pct: pct, text: "Em andamento · Retomar de " + utils.formatTime(savedTime) }
+        end if
+        buttons.push({ id: "details-fav-btn", label: "Favoritos" })
+        buttons.push({ id: "details-back-btn", label: "Voltar" })
         return {
             badge: "FILME",
             title: utils.textOr(info.name, ""),
             meta: mediaDetails.metaLine(info, duration),
-            buttons: [{ id: "details-play-btn", label: "Assistir agora" }, { id: "details-fav-btn", label: "Favoritos" }, { id: "details-back-btn", label: "Voltar" }]
+            progress: progress,
+            buttons: buttons
         }
     end function
 
-    ' data = resposta do get_series_info (temporadas). Sem histórico ainda: o botão é o primeiro episódio.
-    function seriesView(info as object, data as dynamic) as object
+    ' data = resposta do get_series_info (temporadas). resume = episódio do "Continuar assistindo" desta série
+    ' (playerState.seriesResume) → "Continuar T2:E3"; sem ele, o primeiro episódio.
+    function seriesView(info as object, data as dynamic, resume = invalid as dynamic) as object
         seasonList = seriesPlaylist.seasonsOf(data)
         middle = ""
         if seasonList.count() = 1 then middle = "1 temporada"
@@ -47,6 +61,8 @@ namespace mediaDetails
             episodes = seriesPlaylist.episodesOf(data, seasonList[0].key)
             if episodes.count() > 0 then firstEpisode = utils.textOr(episodes[0].episode_num, "1")
         end if
+        playLabel = "Assistir T" + firstNumber + ":E" + firstEpisode
+        if utils.isObject(resume) then playLabel = "Continuar T" + resume.seasonNumber.toStr() + ":E" + resume.episodeNum
         tabs = []
         for each season in seasonList
             tabs.push({ key: season.key, number: season.number, id: "season-tab-" + season.key, label: "Temporada " + season.number.toStr() })
@@ -56,7 +72,7 @@ namespace mediaDetails
             title: utils.textOr(info.name, ""),
             meta: mediaDetails.metaLine(info, middle),
             seasons: tabs,
-            buttons: [{ id: "series-play-btn", label: "Assistir T" + firstNumber + ":E" + firstEpisode }, { id: "series-fav-btn", label: "Favoritos" }, { id: "series-back-btn", label: "Voltar" }]
+            buttons: [{ id: "series-play-btn", label: playLabel }, { id: "series-fav-btn", label: "Favoritos" }, { id: "series-back-btn", label: "Voltar" }]
         }
     end function
 
@@ -91,6 +107,7 @@ namespace mediaDetails
     function onSelect(id as string, state as object) as object
         if id = "details-back-btn" or id = "series-back-btn" then return { action: "back" }
         if id = "details-play-btn" or id = "series-play-btn" then return { action: "play" }
+        if id = "details-restart-btn" then return { action: "restart" }
         if id = "details-fav-btn" or id = "series-fav-btn" then return { action: "favorite" }
         if Left(id, 11) = "season-tab-" then return { action: "season", season: Mid(id, 12), episodeIndex: 0 }
         if Left(id, 13) = "episode-card-" then return { action: "episode", episodeIndex: Int(Val(Mid(id, 14))) }

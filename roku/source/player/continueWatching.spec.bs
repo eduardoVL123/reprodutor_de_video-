@@ -1,0 +1,108 @@
+' "Continuar assistindo": casos de tests/seriesPlaylist.test.js (playHistoryItem), do destaque e da fileira de
+' src/views/Dashboard.vue e dos botões de retomar de src/components/MediaDetailsModal.vue.
+namespace tests
+
+    ' SERIES_DATA de tests/seriesPlaylist.test.js (temporada 3 vazia, temporada 1 como objeto).
+    function historySeriesData() as object
+        return ParseJson("{""info"":{""name"":""Maré""},""episodes"":{""2"":[{""id"":201,""season"":2,""episode_num"":1,""title"":""Volta"",""container_extension"":""mkv""}],""1"":{""a"":{""id"":101,""season"":1,""episode_num"":1,""title"":""Começo""},""b"":{""id"":102,""season"":1,""episode_num"":2,""title"":""""}},""3"":[]}}")
+    end function
+
+    @suite("continueWatching")
+    class ContinueWatchingTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("playHistoryItem")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("episódio: toca a série inteira a partir dele (o próximo segue sozinho)")
+        function _()
+            state = playerState.forHistory({ stream_id: 102, name: "Maré - T1:E2", section: "series", seriesId: "9" }, tests.historySeriesData())
+            streamIds = []
+            for each it in state.items
+                streamIds.push(it.stream_id)
+            end for
+            m.assertEqual(streamIds, [101, 102, 201])
+            m.assertEqual(state.index, 1)
+            m.assertEqual(state.mode, "series")
+            m.assertTrue(state.items[0].name.startsWith("Maré - T1:E1"))
+        end function
+
+        @it("filme, canal ou série sem dados: toca só o item, como antes")
+        function _()
+            movie = playerState.forHistory({ stream_id: 5, name: "Filme", section: "vod" }, invalid)
+            m.assertEqual(movie.items.count(), 1)
+            m.assertEqual(movie.mode, "vod")
+            missing = playerState.forHistory({ stream_id: 999, section: "series", seriesId: "9", name: "X" }, tests.historySeriesData())
+            m.assertEqual(missing.items.count(), 1)
+            m.assertEqual(missing.items[0].stream_id, 999)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Início")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o destaque é o filme ou episódio mais recente; canal só se não houver outro")
+        function _()
+            channel = { stream_id: 1, section: "live" }
+            movie = { stream_id: 2, section: "vod" }
+            m.assertEqual(home.recentHistoryItem([channel, movie]), movie)
+            m.assertEqual(home.recentHistoryItem([channel]), channel)
+            m.assertInvalid(home.recentHistoryItem([]))
+        end function
+
+        @it("destaque do Continuar assistindo: selo, tempo onde parou, sinopse de retomar e o botão Continuar")
+        function _()
+            hero = home.heroTexts({ section: "vod", name: "Rambo", currentTime: 900 }, {}, true)
+            m.assertEqual(hero.badge, "Continuar assistindo")
+            m.assertEqual(hero.duration, "15:00")
+            m.assertEqual(hero.synopsis, "Retome a reprodução de onde você parou.")
+            m.assertEqual(hero.playText, "Continuar assistindo")
+            series = home.heroTexts({ section: "series", name: "S - T1:E2 - X", currentTime: 900 }, {}, true)
+            m.assertEqual(series.playText, "Continuar")
+            m.assertEqual(series.duration, "Série")
+            live = home.heroTexts({ section: "live", name: "Canal" }, {}, true)
+            m.assertEqual(live.synopsis, "Volte ao canal que você estava assistindo.")
+        end function
+
+        @it("cartão: Faltam N min arredondado para cima; sem duração, nada")
+        function _()
+            m.assertEqual(home.remainingText({ currentTime: 900, duration: 5400 }), "Faltam 75 min")
+            m.assertEqual(home.remainingText({ currentTime: 5370, duration: 5400 }), "Faltam 1 min")
+            m.assertEqual(home.remainingText({ currentTime: 0, duration: 0 }), "")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("detalhes")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("filme com progresso: barra, Continuar assistindo e Assistir do início")
+        function _()
+            view = mediaDetails.movieView(tests.movieInfoMock(), 900, 17)
+            m.assertEqual(view.buttons[0], { id: "details-play-btn", label: "Continuar assistindo" })
+            m.assertEqual(view.buttons[1], { id: "details-restart-btn", label: "Assistir do início" })
+            m.assertEqual(Int(view.progress.pct), 17)
+            m.assertEqual(view.progress.text, "Em andamento · Retomar de 15:00")
+            m.assertEqual(mediaDetails.onSelect("details-restart-btn", {}).action, "restart")
+            m.assertInvalid(mediaDetails.movieView(tests.movieInfoMock(), 10, 1).progress)
+        end function
+
+        @it("série com episódio no histórico: Continuar T1:E2; Assistir do início tira o filme do histórico")
+        function _()
+            data = tests.historySeriesData()
+            history = [{ stream_id: 102, section: "series", seriesId: "9", name: "Maré - T1:E2" }]
+            resume = playerState.seriesResume(history, data)
+            m.assertEqual(resume.seasonNumber, 1)
+            m.assertEqual(resume.episodeIndex, 1)
+            view = mediaDetails.seriesView({ name: "Maré" }, data, resume)
+            m.assertEqual(view.buttons[0].label, "Continuar T1:E2")
+            m.assertInvalid(playerState.seriesResume([], data))
+            store = storage.create("pulse-test")
+            store.clear()
+            kept = playerState.removeFromHistory(store, "player:watchHistory:t", [{ stream_id: 5, section: "vod", name: "F" }, history[0]], 5, "vod")
+            m.assertEqual(kept.count(), 1)
+            m.assertEqual(kept[0].stream_id, 102)
+        end function
+
+    end class
+
+end namespace

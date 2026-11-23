@@ -2,6 +2,7 @@ import "pkg:/source/utils/types.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/favorites/favorites.bs"
 import "pkg:/source/device/secrets.bs"
+import "pkg:/source/utils/seriesPlaylist.bs"
 ' Port das regras de src/stores/playerStore.js e playerItems.js (casos em playerState.spec.bs): o histórico do
 ' "Continuar assistindo" (também o bookmark da cert. 4.10) e a fila de reprodução com a janela da categoria e o
 ' zapping circular do ao vivo. O PlayerScreen guarda o estado; aqui só as regras.
@@ -133,6 +134,32 @@ namespace playerState
         return 0
     end function
 
+    ' removeFromHistory ("Assistir do início"): devolve o histórico sem o item e grava.
+    function removeFromHistory(store as object, key as string, history as object, streamId as dynamic, section = "" as string) as object
+        kept = []
+        for each it in history
+            if not (favorites.text(it.stream_id) = favorites.text(streamId) and (section = "" or it.section = section)) then kept.push(it)
+        end for
+        return playerState.persist(store, key, kept)
+    end function
+
+    ' seriesResume do MediaDetailsModal.vue: o episódio desta série mais recente no histórico.
+    ' { seasonKey, seasonNumber, episodeIndex, episodeNum } ou invalid.
+    function seriesResume(history as object, seriesData as dynamic) as dynamic
+        seasons = seriesPlaylist.seasonsOf(seriesData)
+        for each entry in history
+            if entry.section = "series" then
+                for each season in seasons
+                    episodes = seriesPlaylist.episodesOf(seriesData, season.key)
+                    for i = 0 to episodes.count() - 1
+                        if favorites.text(episodes[i].id) = favorites.text(entry.stream_id) then return { seasonKey: season.key, seasonNumber: season.number, episodeIndex: i, episodeNum: utils.textOr(episodes[i].episode_num, (i + 1).toStr()) }
+                    end for
+                end for
+            end if
+        end for
+        return invalid
+    end function
+
     ' ---------- Fila de reprodução ----------
     ' Estado: { mode, items, index, context } — context = { section, categoryId, windowStart, total } quando a fila é
     ' uma janela da categoria (zapping), invalid nas outras.
@@ -170,6 +197,29 @@ namespace playerState
         if index > queue.count() - 1 then index = queue.count() - 1
         if index < 0 then index = 0
         return { mode: section, items: queue, index: index, context: invalid }
+    end function
+
+    ' playHistoryItem: o episódio toca a série inteira a partir dele (o próximo segue sozinho); filme, canal ou série
+    ' sem dados (seriesData invalid ou sem o episódio) tocam só o item.
+    function forHistory(item as object, seriesData as dynamic) as dynamic
+        if item.section = "series" and utils.textOr(item.seriesId, "") <> "" and utils.isObject(seriesData) then
+            info = seriesData.info
+            if not utils.isObject(info) then info = {}
+            seriesName = utils.textOr(info.name, playerState.seriesNameFromEpisode(item.name))
+            if seriesName = "" then seriesName = "Série"
+            items = seriesPlaylist.buildPlaylist({ seriesData: seriesData, seriesName: seriesName, seriesId: item.seriesId, fallbackImage: utils.textOr(info.cover, utils.textOr(item.stream_icon, "")), categoryId: item.category_id, categoryIds: item.category_ids })
+            for i = 0 to items.count() - 1
+                if favorites.text(items[i].stream_id) = favorites.text(item.stream_id) then return playerState.forPlaylist(items, i)
+            end for
+        end if
+        return playerState.forItem(item)
+    end function
+
+    ' "Maré - T1:E2 - Título" → "Maré" (seriesNameFromEpisode do web).
+    function seriesNameFromEpisode(name as dynamic) as string
+        found = CreateObject("roRegex", "^(.+?)\s*-\s*T\d+:E\d+", "i").match(utils.textOr(name, ""))
+        if found.count() > 1 then return found[1].trim()
+        return utils.textOr(name, "").trim()
     end function
 
     ' playFromCustomQueue: os favoritos que tocam (série é um contêiner de episódios, não um vídeo).
