@@ -65,6 +65,12 @@ const seriesCategories = range(SERIES_CATS).map((i) => ({
 
 const cache = {}
 const lazy = (key, build) => (cache[key] ??= JSON.stringify(build()))
+// Com &category_id=X devolve só a categoria, como os painéis Xtream reais (o app Roku usa quando a lista não cabe).
+const byCategory = (key, build, url) => {
+  const categoryId = url.searchParams.get('category_id')
+  if (!categoryId) return lazy(key, build)
+  return (cache[`${key}:${categoryId}`] ??= JSON.stringify(JSON.parse(lazy(key, build)).filter((it) => String(it.category_id) === categoryId)))
+}
 
 const liveStreams = () =>
   range(LIVE_COUNT).map((i) => ({
@@ -310,9 +316,9 @@ https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlaze
       case 'get_live_categories': return send(res, 200, JSON.stringify(liveCategories))
       case 'get_vod_categories': return send(res, 200, JSON.stringify(vodCategories))
       case 'get_series_categories': return send(res, 200, JSON.stringify(seriesCategories))
-      case 'get_live_streams': return send(res, 200, lazy('live', liveStreams))
-      case 'get_vod_streams': return send(res, 200, lazy('vod', vodStreams))
-      case 'get_series': return send(res, 200, lazy('series', seriesStreams))
+      case 'get_live_streams': return send(res, 200, byCategory('live', liveStreams, url))
+      case 'get_vod_streams': return send(res, 200, byCategory('vod', vodStreams, url))
+      case 'get_series': return send(res, 200, byCategory('series', seriesStreams, url))
       case 'get_series_info': {
         const sId = url.searchParams.get('series_id')
         return send(res, 200, JSON.stringify(getSeriesInfo(sId)))
