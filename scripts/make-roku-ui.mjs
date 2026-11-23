@@ -588,6 +588,12 @@ export const OUTPUTS = [
   ['icon-pause-28.png', () => svgIcon(28, [{ points: [6, 4, 10, 4, 10, 20, 6, 20, 6, 4] }, { points: [14, 4, 18, 4, 18, 20, 14, 20, 14, 4] }], { fill: true })],
   ['icon-close-20.png', () => svgIcon(20, [{ points: [18, 6, 6, 18] }, { points: [6, 6, 18, 18] }])],
   ['icon-spinner-64.png', () => strokeIcon(64, [{ polylines: [arcPath(12, 12, 9, 0, 2 * Math.PI, 48)], stroke: 2.5, opacity: 0.25 }, { polylines: [arcPath(12, 12, 9, 0, -Math.PI / 2)], stroke: 2.5 }], WHITE)],
+  // Camada de erro do player: painel rounded-2xl #121215 com borda red-500/30, o detalhe (bg-black/60 sobre o painel,
+  // borda red-500/20, rounded), o círculo do ícone (red-500/15) e o triângulo de alerta (w-8, red-400).
+  ['player-error.9.png', () => ninePatch([{ inset: 0, radius: 16, color: over(RED_500, 0.3, DIALOG) }, { inset: 1, radius: 15, color: DIALOG }])],
+  ['player-error-detail.9.png', () => ninePatch([{ inset: 0, radius: 4, color: over(RED_500, 0.2, over([0, 0, 0], 0.6, DIALOG)) }, { inset: 1, radius: 3, color: over([0, 0, 0], 0.6, DIALOG) }])],
+  ['player-error-icon.png', () => toPng(64, 64, renderLayers(64, 64, [{ inset: 0, radius: 32, color: over(RED_500, 0.15, DIALOG) }]))],
+  ['icon-alert-32.png', () => svgIcon(32, [{ d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }, { points: [12, 9, 12, 13] }, { points: [12, 17, 12.01, 17] }])],
   ['parental-row.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.06, DIALOG) }, { inset: 1, radius: 11, color: over(WHITE, 0.03, DIALOG) }])],
   ['status-visible.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(WHITE, 0.15, PARENTAL_ROW) }, { inset: 1, radius: 7, color: PARENTAL_ROW }])],
   ['status-locked.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(AMBER_400, 0.6, PARENTAL_ROW) }, { inset: 1, radius: 7, color: over(AMBER_400, 0.1, PARENTAL_ROW) }])],

@@ -9,6 +9,7 @@ import "pkg:/source/parental/parental.bs"
 import "pkg:/source/xtream/streamUrl.bs"
 import "pkg:/source/player/playerState.bs"
 import "pkg:/source/player/playerView.bs"
+import "pkg:/source/player/playerEngine.bs"
 
 ' Medidas do VideoPlayerOverlay.vue em px (1920×1080). OSD px-24 py-14: título de 60 px (900) em x 96, y 56; Fechar
 ' de 48 em 1776,56; tempos em y 882 e a barra (1728×6) em y 918; botões redondos de 56 em y 958 a cada 72 (o
@@ -19,7 +20,6 @@ const BAR_W = 1728
 const CIRCLE_Y = 958
 const META = "0xD4D4D8FF"
 const ACCENT_SOFT = "0xCCFF33FF"
-const PLAYBACK_ERROR = "Não foi possível reproduzir esta mídia no momento. Verifique sua conexão ou tente outro item."
 
 sub init()
     m.store = storage.create()
@@ -48,6 +48,11 @@ sub init()
     m.countdown.duration = 1
     m.countdown.repeat = true
     m.countdown.observeField("fire", "onCountdown")
+    ' Watchdog do motor (useVideoEngine): um tique por segundo.
+    m.watchdog = m.top.createChild("Timer")
+    m.watchdog.duration = 1
+    m.watchdog.repeat = true
+    m.watchdog.observeField("fire", "onWatchdog")
     m.focusables = {}
     m.focusId = "osd-play-pause"
     m.lastControl = "osd-play-pause"
@@ -114,24 +119,61 @@ sub playCurrent()
     m.loadingStage = "Conectando à transmissão..."
     m.lastSave = 0#
     m.errorText = ""
+    m.errorDetail = ""
+    m.recovering = false
+    m.watchdog.control = "stop"
     m.playingItem = playerState.current(m.state)
     if m.playingItem = invalid then return
     stream = invalid
     if m.ctx <> invalid then stream = xtream.buildStreamUrl({ apiBase: m.ctx.apiBase, credentials: m.ctx.credentials, section: currentSection(), item: m.playingItem })
     if stream = invalid then
-        showError(PLAYBACK_ERROR)
+        ' O motor nem chegou a pedir o vídeo: não é "sem sinal".
+        showError(playerEngine.PLAYBACK_ERROR, "")
         return
     end if
-    content = CreateObject("roSGNode", "ContentNode")
-    content.url = stream.primaryUrl
-    content.streamFormat = playerView.streamFormat(stream.containerExtension)
-    content.live = isLive()
-    content.title = utils.textOr(m.playingItem.name, "")
-    m.video.content = content
-    m.video.control = "play"
+    m.engine = playerEngine.create(stream)
+    loadUrl(stream.primaryUrl, 0)
+    m.watchdog.control = "start"
     showOsd()
     renderLoading()
     renderOsd()
+end sub
+
+' Abre `url` no nó Video a partir de `position` (a reconexão volta ao ponto onde parou; playStart da Roku).
+sub loadUrl(url as string, position as double)
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = url
+    extension = CreateObject("roRegex", "\.([a-zA-Z0-9]{2,4})(\?.*)?$", "").match(url)
+    format = m.engine.stream.containerExtension
+    if extension.count() > 1 then format = extension[1]
+    content.streamFormat = playerView.streamFormat(format)
+    content.live = isLive()
+    content.title = utils.textOr(m.playingItem.name, "")
+    if position > 0 then content.playStart = position
+    m.video.content = content
+    m.video.control = "play"
+end sub
+
+' O que o motor decidiu: alternativo, reconectar ou desistir.
+sub applyEngine(action as object)
+    if action.action = "fallback" or action.action = "reload" then
+        m.loadingStage = action.stage
+        m.recovering = action.action = "reload"
+        if action.action = "fallback" then m.loadingProgress = 0
+        m.buffering = true
+        loadUrl(action.url, action.position)
+        renderLoading()
+    else if action.action = "fail" then
+        showError(action.message, action.detail)
+    end if
+end sub
+
+sub onWatchdog()
+    if m.engine = invalid or m.errorText <> "" then return
+    data = -1
+    status = m.video.bufferingStatus
+    if status <> invalid and status.percentage <> invalid then data = status.percentage
+    applyEngine(playerEngine.tick(m.engine, m.video.position, m.paused, data))
 end sub
 
 ' Salva o progresso do item que está (ou estava) na tela.
@@ -143,6 +185,7 @@ end sub
 sub onVideoState()
     state = m.video.state
     if state = "playing" then
+        m.recovering = false
         m.hasFrame = true
         m.buffering = false
         m.paused = false
@@ -158,8 +201,8 @@ sub onVideoState()
     else if state = "finished" then
         onEnded()
     else if state = "error" then
-        ' Mapa de erros, formato alternativo e watchdog entram no passo 3.
-        showError(PLAYBACK_ERROR)
+        ' Mapa de erros da Roku (errorCode) e o formato alternativo antes do erro (playerEngine.onError).
+        if m.engine <> invalid then applyEngine(playerEngine.onError(m.engine, m.video.errorCode, utils.textOr(m.video.errorMsg, "")))
         return
     end if
     renderLoading()
@@ -284,6 +327,7 @@ sub closePlayer()
     saveProgress()
     cancelOffer()
     m.osdTimer.control = "stop"
+    m.watchdog.control = "stop"
     m.video.control = "stop"
     m.top.navigate = { action: "back" }
 end sub
@@ -408,7 +452,9 @@ sub renderLoading()
         shade.color = "0x00000066"
         spinner = ui.panelImage(m.bufferLayer, "icon-spinner-64.png", 928, 486, 64, 64)
         spinner.blendColor = ui.WHITE
-        label = ui.text(m.bufferLayer, "Carregando…", ui.font(500, 20), ui.WHITE, 0, 566, 1920, 28)
+        text = "Carregando…"
+        if m.recovering then text = "Reconectando ao servidor…"
+        label = ui.text(m.bufferLayer, text, ui.font(500, 20), ui.WHITE, 0, 566, 1920, 28)
         label.horizAlign = "center"
     end if
 end sub
@@ -563,22 +609,90 @@ sub addCardButton(id as string, label as string, x as float, primary as boolean)
     m.focusables[id] = { node: group, ring: ring, disabled: false }
 end sub
 
-' Erro (o passo 3 traz o formato alternativo, o mapa de erros e o Tentar novamente).
-sub showError(message as string)
+' Camada de erro (z-30): painel de 720 centrado com o ícone, "Falha na Reprodução", a mensagem, a causa técnica
+' (mascarada) e Tentar novamente / Fechar reprodutor; o foco começa em Tentar novamente.
+sub showError(message as string, detail as string)
     cancelOffer()
     m.osdTimer.control = "stop"
+    m.watchdog.control = "stop"
     m.errorText = message
+    m.errorDetail = detail
     m.video.control = "stop"
     m.errorLayer.removeChildrenIndex(m.errorLayer.getChildCount(), 0)
+    m.errorButtons = {}
+    m.focusId = "player-retry"
     cover = m.errorLayer.createChild("Rectangle")
     cover.width = 1920
     cover.height = 1080
     cover.color = "0x000000E6"
-    ui.text(m.errorLayer, "Falha na Reprodução", ui.font(700, 44), ui.WHITE, 0, 470, 1920, 56).horizAlign = "center"
-    detail = ui.text(m.errorLayer, message, ui.font(400, 24), ui.NEUTRAL_400, 560, 540, 800, 36)
-    detail.horizAlign = "center"
+    panel = ui.panel(m.errorLayer, "player-error", 600, 0, 720, 10)
+    content = m.errorLayer.createChild("Group")
+    ui.panelImage(content, "player-error-icon.png", 328, 41, 64, 64)
+    ui.panelImage(content, "icon-alert-32.png", 344, 57, 32, 32).blendColor = ui.ERROR
+    title = ui.text(content, "Falha na Reprodução", ui.font(700, 44), ui.WHITE, 41, 125, 638, 56)
+    title.horizAlign = "center"
+    body = ui.text(content, message, ui.font(400, 24), ui.MUTED, 41, 193, 638, 39)
+    body.horizAlign = "center"
+    y = 193 + ui.textHeight(body, 39) + 16
+    if detail <> "" then
+        detailBox = ui.panel(content, "player-error-detail", 41, y, 638, 10)
+        cause = ui.text(content, "Causa técnica: " + detail, ui.monoFont(20), "0xFCA5A5E6", 52, y + 11, 616, 28)
+        boxHeight = ui.textHeight(cause, 28) + 22
+        detailBox.height = boxHeight
+        y = y + boxHeight + 16
+    end if
+    y = y + 16
+    addErrorButton(content, "player-retry", "Tentar novamente", 142, y, true)
+    addErrorButton(content, "player-error-close", "Fechar reprodutor", 372, y, false)
+    height = y + 50 + 41
+    top = Int((1080 - height) / 2)
+    panel.translation = [600, top]
+    panel.height = height
+    content.translation = [600, top]
     renderLoading()
     renderOsd()
+    renderErrorFocus()
+end sub
+
+sub addErrorButton(parent as object, id as string, label as string, x as float, y as float, primary as boolean)
+    group = parent.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring", -5, -5, 216, 60)
+    image = "btn"
+    color = ui.WHITE
+    weight = 500
+    if primary then
+        image = "btn-primary"
+        color = ui.BLACK
+        weight = 600
+    end if
+    ui.panel(group, image, 0, 0, 206, 50)
+    text = ui.text(group, label, ui.font(weight, 20), color, 0, 11, 206, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [103, 25]
+    m.errorButtons[id] = { node: group, ring: ring }
+end sub
+
+sub renderErrorFocus()
+    if m.errorButtons = invalid then return
+    for each id in m.errorButtons
+        entry = m.errorButtons[id]
+        focused = id = m.focusId
+        entry.ring.visible = focused
+        if focused then
+            entry.node.scale = [1.02, 1.02]
+        else
+            entry.node.scale = [1, 1]
+        end if
+    end for
+end sub
+
+' Tentar novamente: recomeça o mesmo item do zero (retryPlayback do web).
+sub retryPlayback()
+    m.errorLayer.removeChildrenIndex(m.errorLayer.getChildCount(), 0)
+    m.errorButtons = invalid
+    m.focusId = "osd-play-pause"
+    playCurrent()
 end sub
 
 ' ---------- Foco e teclas ----------
@@ -615,7 +729,15 @@ end function
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if m.errorText <> "" then
-        if key = "back" or key = "OK" then closePlayer()
+        if key = "back" then closePlayer()
+        if key = "left" then m.focusId = "player-retry"
+        if key = "right" then m.focusId = "player-error-close"
+        if key = "OK" and m.focusId = "player-retry" then
+            retryPlayback()
+            return true
+        end if
+        if key = "OK" and m.focusId = "player-error-close" then closePlayer()
+        renderErrorFocus()
         return true
     end if
     ' Teclas de mídia do controle: funcionam com o menu visível ou não.
