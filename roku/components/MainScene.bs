@@ -8,6 +8,8 @@ import "pkg:/source/xtream/errors.bs"
 import "pkg:/source/xtream/m3uParser.bs"
 import "pkg:/source/net/maskSecrets.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/device/errorLog.bs"
+import "pkg:/source/account/account.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
@@ -56,6 +58,8 @@ sub onNavigate(event as object)
         pushScreen(screen)
     else if request.action = "back" then
         popScreen()
+    else if request.action = "diagnostics" then
+        showDiagnostics()
     end if
 end sub
 
@@ -105,6 +109,32 @@ end sub
 sub onExitButton(event as object)
     if nav.onExitButton(event.getData()) = "exit" then
         m.top.exitApp = true
+    else
+        closeDialog()
+    end if
+end sub
+
+' Diagnóstico (DiagnosticsDialog.vue): código do aparelho, plataforma e os últimos erros guardados só aqui.
+' Sem licença (D8) o código fica "—".
+sub showDiagnostics()
+    errors = errorLog.read(storage.create())
+    dialog = m.top.dialog
+    if dialog = invalid then
+        dialog = CreateObject("roSGNode", "StandardMessageDialog")
+        dialog.title = "Diagnóstico"
+        dialog.observeField("buttonSelected", "onDiagnosticsButton")
+        dialog.observeField("wasClosed", "onDialogClosed")
+    end if
+    dialog.message = account.diagnosticsLines(errors, "", "roku")
+    dialog.buttons = account.diagnosticsButtons(errors.count())
+    m.top.dialog = dialog
+end sub
+
+' Fechar (0) fecha; Limpar (1) apaga os erros e mostra o diálogo de novo, já vazio.
+sub onDiagnosticsButton(event as object)
+    if event.getData() = 1 then
+        errorLog.clear(storage.create())
+        showDiagnostics()
     else
         closeDialog()
     end if

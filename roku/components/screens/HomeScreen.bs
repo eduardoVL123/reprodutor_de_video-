@@ -444,12 +444,12 @@ sub refreshNav()
 end sub
 
 ' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
-' Início, Busca, TV ao vivo, Filmes e Séries trocam a aba. Assistir, canais e as outras abas entram com o player (D6) e
-' as telas de favoritos e conta.
+' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir e canais entram com o player (D6);
+' Favoritos e Trocar perfil, com os perfis (D7).
 function onSelect() as boolean
     if isMenuId(m.focusId) then
         menuTab = Mid(m.focusId, 5)
-        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" then openTab(menuTab)
+        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" or menuTab = "account" then openTab(menuTab)
         if menuTab = "home" then showHome("nav-home")
         return true
     end if
@@ -520,7 +520,7 @@ end sub
 ' ---------- Abas TV ao vivo, Filmes e Séries (CatalogTab) ----------
 
 ' Troca a aba (activeTab do Dashboard.vue): o conteúdo do Início some e a aba entra no lugar, com o menu por cima.
-' section = "live"|"vod"|"series" (CatalogTab) ou "search" (SearchTab).
+' section = "live"|"vod"|"series" (CatalogTab), "search" (SearchTab) ou "account" (AccountTab).
 sub openTab(section as string)
     if m.catalogTab <> invalid and m.tab <> section then closeTab()
     m.tab = section
@@ -528,13 +528,15 @@ sub openTab(section as string)
     if m.catalogTab = invalid then
         if section = "search" then
             m.catalogTab = CreateObject("roSGNode", "SearchTab")
+        else if section = "account" then
+            m.catalogTab = CreateObject("roSGNode", "AccountTab")
         else
             m.catalogTab = CreateObject("roSGNode", "CatalogTab")
         end if
         m.top.insertChild(m.catalogTab, m.top.getChildCount() - 1)
         m.catalogTab.observeField("exit", "onTabExit")
         m.catalogTab.observeField("navigate", "onTabNavigate")
-        if section <> "search" then m.catalogTab.section = section
+        if m.catalogTab.hasField("section") then m.catalogTab.section = section
     end if
     m.focusId = "tab"
     renderMenu()

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Aba Conta (port de src/components/AccountScreen.vue na TV), dentro do Início como as outras abas: perfil,
+     Favoritos, Minhas listas, Diagnóstico e Sair do app. Sem licença (D8) não há bloco de assinatura; na TV não há os
+     links que abririam um navegador. exit = "left" quando Esquerda sai da aba (o Início foca o menu). -->
+<component name="AccountTab" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="exit" type="string" alwaysNotify="true" />
+    </interface>
+</component>

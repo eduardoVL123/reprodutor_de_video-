@@ -1,0 +1,62 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
+' Regras de src/components/AccountScreen.vue (aba Conta da TV) e DiagnosticsDialog.vue, sem desenho.
+' Casos em account.spec.bs.
+namespace account
+
+    ' Erros mostrados no Diagnóstico (SHOWN do web: cabe na tela sem rolar).
+    const DIAG_SHOWN = 8
+
+    ' Inicial do avatar: (profile.name || 'P').charAt(0).toUpperCase() do web.
+    function avatarLetter(name as dynamic) as string
+        text = utils.textOr(name, "")
+        if text = "" then text = "P"
+        return UCase(Left(text, 1))
+    end function
+
+    ' avatarTextColor do profileStore.js: grafite sobre o limão (branco teria contraste 1,3:1), branco nas demais.
+    function avatarTextColor(color as dynamic) as string
+        if UCase(utils.textOr(color, "")) = "#B8F000" then return "0x0B0F0CFF"
+        return "0xFFFFFFFF"
+    end function
+
+    ' "#2563eb" → "0x2563EBFF" (cor do SceneGraph).
+    function rokuColor(hex as string) as string
+        return "0x" + UCase(Mid(hex, 2)) + "FF"
+    end function
+
+    ' "dd/mm hh:mm" no fuso do aparelho (fmt do DiagnosticsDialog.vue).
+    function stamp(ms as dynamic) as string
+        date = CreateObject("roDateTime")
+        date.fromSeconds(Int(ms / 1000))
+        date.toLocalTime()
+        return utils.pad2(date.getDayOfMonth()) + "/" + utils.pad2(date.getMonth()) + " " + utils.pad2(date.getHours()) + ":" + utils.pad2(date.getMinutes())
+    end function
+
+    ' Parágrafos do diálogo: aviso, código e plataforma, e os últimos erros (já limpos pelo errorLog).
+    function diagnosticsLines(errors as object, code as string, platform as string) as object
+        if code = "" then code = "—"
+        lines = ["Fotografe esta tela e envie ao suporte. Nada daqui sai do aparelho sozinho.", "Código do aparelho: " + code + "   Plataforma: " + platform]
+        if errors.count() = 0 then
+            lines.push("Nenhum erro registrado.")
+            return lines
+        end if
+        lines.push("Últimos erros")
+        for i = 0 to errors.count() - 1
+            if i >= account.DIAG_SHOWN then exit for
+            entry = errors[i]
+            where = utils.textOr(entry.where, "")
+            if where <> "" then where = " · " + where
+            lines.push(account.stamp(entry.at) + where + " — " + utils.textOr(entry.message, ""))
+        end for
+        if errors.count() > account.DIAG_SHOWN then lines.push("e mais " + (errors.count() - account.DIAG_SHOWN).toStr() + " anteriores")
+        return lines
+    end function
+
+    ' Fechar primeiro (o foco começa nele, como no web); Limpar só com erros.
+    function diagnosticsButtons(errorCount as integer) as object
+        if errorCount = 0 then return ["Fechar"]
+        return ["Fechar", "Limpar"]
+    end function
+
+end namespace

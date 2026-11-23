@@ -1,0 +1,150 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/account/account.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+
+' Medidas do AccountScreen.vue em px (1920×1080): coluna de 704 em x 664 (max-w-[56rem] centrado, px-24), linhas
+' (.acc-row) de 72 com 1 px de borda do cartão, ícone em 24 e texto em 70 dentro da linha.
+const COL_X = 664
+const COL_W = 704
+const ROW_X = 665
+const ROW_W = 702
+const ROW_H = 72
+const MUTED_ACC = "0x9BA49CFF"
+const EXIT_RED = "0xFF5A4EFF"
+
+sub init()
+    m.focusables = {}
+    ' shortcut: sem perfis (D7) mostra o primeiro perfil padrão do web; o D7 troca pelo perfil ativo.
+    m.profile = { name: "Principal", color: "#B8F000" }
+    store = storage.create()
+    m.listLabel = session.activeListLabel(session.hydrate(store), store.get(session.SAVED_LISTS_KEY))
+    render()
+    m.nav = spatial.create(navItems(), {}, [1920, 1080])
+    ' O OK no menu já entra na aba: começa no primeiro item (o mais perto do menu seria "Sair do app", e um segundo OK
+    ' fecharia o app).
+    m.focusId = "acc-profile"
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub render()
+    ui.text(m.top, "Conta", ui.font(800, 44), ui.WHITE, COL_X, 56, COL_W, 56)
+
+    ' Perfil
+    ui.panel(m.top, "acc-card", COL_X, 132, COL_W, 106)
+    avatar = ui.panel(m.top, "avatar-12", 689, 153, 64, 64)
+    avatar.blendColor = account.rokuColor(m.profile.color)
+    letter = ui.text(m.top, account.avatarLetter(m.profile.name), ui.font(900, 32), account.avatarTextColor(m.profile.color), 689, 165, 64, 40)
+    letter.horizAlign = "center"
+    ui.text(m.top, "Perfil", ui.font(400, 20), ui.NEUTRAL_400, 773, 153, 480, 28)
+    name = ui.text(m.top, m.profile.name, ui.font(800, 24), ui.WHITE, 773, 181, 480, 36)
+    name.wrap = false
+    addButton("acc-profile", "Trocar", 1253, 162, 90, 46)
+
+    heading("CONTEÚDO", 668, 262)
+    ui.panel(m.top, "acc-card", COL_X, 302, COL_W, 147)
+    addRow("acc-favorites", "icon-acc-heart", "Favoritos", 303, ui.WHITE, "")
+    divider = m.top.createChild("Rectangle")
+    divider.color = "0xFFFFFF12"
+    divider.translation = [681, 375]
+    divider.width = 670
+    divider.height = 1
+    addRow("acc-lists", "icon-acc-lists", "Minhas listas", 376, ui.WHITE, m.listLabel)
+
+    ui.panel(m.top, "acc-card", COL_X, 473, COL_W, 74)
+    addRow("acc-diagnostics", "icon-acc-info", "Diagnóstico", 474, ui.WHITE, "")
+
+    ' A Roku deixa o app se fechar (canExitApp do web).
+    ui.panel(m.top, "acc-card", COL_X, 571, COL_W, 74)
+    addRow("acc-exit", "icon-acc-exit", "Sair do app", 572, EXIT_RED, "")
+end sub
+
+' .acc-title: uppercase, tracking 0.08em, 20 px bold.
+sub heading(value as string, x as float, y as float)
+    fontNode = ui.font(700, 20)
+    ui.trackedText(m.top, value, fontNode, MUTED_ACC, x, y + (30 - ui.naturalLineHeight(fontNode)) / 2, 1.6)
+end sub
+
+' .tv-btn pequeno (!px-4 !py-2, 20 px).
+sub addButton(id as string, label as string, x as float, y as float, width as float, height as float)
+    group = m.top.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring", -5, -5, width + 10, height + 10)
+    ui.panel(group, "btn", 0, 0, width, height)
+    text = ui.text(group, label, ui.font(500, 20), ui.WHITE, 0, (height - 28) / 2, width, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [width / 2, height / 2]
+    m.focusables[id] = { rect: [x, y, width, height], node: group, ring: ring }
+end sub
+
+' .acc-row: ícone, texto e a dica à direita (max-w-[45%], com reticências).
+sub addRow(id as string, icon as string, label as string, y as float, color as string, hint as string)
+    group = m.top.createChild("Group")
+    group.translation = [ROW_X, y]
+    ring = ui.panel(group, "focus-ring-16", -5, -5, ROW_W + 10, ROW_H + 10)
+    iconNode = group.createChild("Poster")
+    iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+    iconNode.width = 28
+    iconNode.height = 28
+    iconNode.translation = [24, 22]
+    iconNode.blendColor = MUTED_ACC
+    if color = EXIT_RED then iconNode.blendColor = EXIT_RED
+    ui.inlineText(group, label, ui.font(600, 24), color, 70, 18, 36)
+    if hint <> "" then
+        hintWidth = (ROW_W - 48) * 0.45
+        hintLabel = ui.text(group, hint, ui.font(500, 20), MUTED_ACC, ROW_W - 24 - hintWidth, 21, hintWidth, 30)
+        hintLabel.wrap = false
+        hintLabel.horizAlign = "right"
+    end if
+    group.scaleRotateCenter = [ROW_W / 2, ROW_H / 2]
+    m.focusables[id] = { rect: [ROW_X, y, ROW_W, ROW_H], node: group, ring: ring }
+end sub
+
+function navItems() as object
+    items = []
+    for each id in m.focusables
+        items.push({ id: id, groups: ["account"], row: "", rect: m.focusables[id].rect, active: false, slide: false, scroller: false })
+    end for
+    return items
+end function
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    tabFocused = m.top.focusedChild <> invalid
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = tabFocused and id = m.focusId
+        entry.ring.visible = focused
+        if focused then
+            entry.node.scale = [1.02, 1.02]
+        else
+            entry.node.scale = [1, 1]
+        end if
+    end for
+end sub
+
+' OK: Diagnóstico abre o diálogo e Sair fecha o app (o MainScene cuida dos dois). Trocar perfil e Favoritos chegam
+' com os perfis (D7) e Minhas listas com o ListManager; até lá só recebem foco.
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "OK" then
+        if m.focusId = "acc-diagnostics" then m.top.navigate = { action: "diagnostics" }
+        if m.focusId = "acc-exit" then m.top.navigate = { action: "exit" }
+        return true
+    end if
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target = "" and key = "left" then
+        m.top.exit = "left"
+    else if target <> "" then
+        m.focusId = target
+        spatial.remember(m.nav, target)
+        renderFocus()
+    end if
+    return true
+end function

@@ -1,0 +1,86 @@
+' Regras de src/components/AccountScreen.vue e DiagnosticsDialog.vue (casos de tests/bottomNav.test.js e
+' tests/diagnosticsDialog.test.js) e o nome da lista de src/stores/authStore.js (listDisplayName).
+namespace tests
+
+    @suite("account")
+    class AccountTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("perfil")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("inicial em maiúscula; sem nome vira P")
+        function _()
+            m.assertEqual(account.avatarLetter("principal"), "P")
+            m.assertEqual(account.avatarLetter("família"), "F")
+            m.assertEqual(account.avatarLetter(""), "P")
+            m.assertEqual(account.avatarLetter(invalid), "P")
+        end function
+
+        @it("inicial grafite sobre o limão e branca nas outras cores")
+        function _()
+            m.assertEqual(account.avatarTextColor("#b8f000"), "0x0B0F0CFF")
+            m.assertEqual(account.avatarTextColor("#2563eb"), "0xFFFFFFFF")
+            m.assertEqual(account.rokuColor("#2563eb"), "0x2563EBFF")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("nome da lista em Minhas listas")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("rótulo automático vira Lista N; o escolhido pelo usuário fica")
+        function _()
+            m.assertEqual(session.listDisplayName({ label: "Lista M3U @ m3u.test" }, 0), "Lista 1")
+            m.assertEqual(session.listDisplayName({ label: "joao @ srv.test", username: "joao" }, 1), "Lista 2")
+            m.assertEqual(session.listDisplayName({ label: "" }, 2), "Lista 3")
+            m.assertEqual(session.listDisplayName({ label: "  Casa  ", username: "joao" }, 0), "Casa")
+        end function
+
+        @it("a lista ativa usa a posição dela nas salvas; fora delas conta como a primeira")
+        function _()
+            saved = [{ id: "a", label: "Casa" }, { id: "b", label: "joao @ srv.test", username: "joao" }]
+            m.assertEqual(session.activeListLabel({ id: "b", label: "joao @ srv.test", username: "joao" }, saved), "Lista 2")
+            m.assertEqual(session.activeListLabel({ id: "x", label: "Lista M3U @ m3u.test" }, saved), "Lista 1")
+            m.assertEqual(session.activeListLabel(invalid, saved), "")
+            m.assertEqual(session.activeListLabel({ id: "a", label: "Casa" }, invalid), "Casa")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Diagnóstico")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sem erros: código (— sem licença), plataforma e o aviso; só Fechar")
+        function _()
+            lines = account.diagnosticsLines([], "", "roku")
+            m.assertEqual(lines[0], "Fotografe esta tela e envie ao suporte. Nada daqui sai do aparelho sozinho.")
+            m.assertEqual(lines[1], "Código do aparelho: —   Plataforma: roku")
+            m.assertEqual(lines[lines.count() - 1], "Nenhum erro registrado.")
+            m.assertEqual(account.diagnosticsButtons(0), ["Fechar"])
+        end function
+
+        @it("mostra os 8 mais recentes com local e data, e quantos ficaram de fora; Limpar aparece")
+        function _()
+            errors = []
+            for i = 1 to 10
+                errors.push({ at: 1800014400000&, where: "", message: "erro " + i.toStr() })
+            end for
+            errors[0].where = "login"
+            lines = account.diagnosticsLines(errors, "QDU5NXY7", "roku")
+            m.assertEqual(lines[1], "Código do aparelho: QDU5NXY7   Plataforma: roku")
+            m.assertEqual(lines[2], "Últimos erros")
+            m.assertTrue(lines[3].instr("15/01 ") = 0, lines[3])
+            m.assertTrue(lines[3].instr(" · login — erro 1") > 0, lines[3])
+            m.assertTrue(lines[4].instr("· ") < 0 and lines[4].instr("— erro 2") > 0, lines[4])
+            m.assertEqual(lines.count(), 3 + 8 + 1)
+            m.assertEqual(lines[11], "e mais 2 anteriores")
+            m.assertEqual(account.diagnosticsButtons(10), ["Fechar", "Limpar"])
+        end function
+
+        @it("data no formato dd/mm hh:mm")
+        function _()
+            m.assertTrue(CreateObject("roRegex", "^15/01 \d\d:\d\d$", "").isMatch(account.stamp(1800014400000&)))
+        end function
+
+    end class
+
+end namespace

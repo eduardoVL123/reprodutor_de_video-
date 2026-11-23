@@ -24,6 +24,7 @@ const LIME = hex('#B8F000')
 const DEEP = hex('#0B0F0C') // tv-deep: fundo das telas
 const DIALOG = hex('#121215') // bg-[#121215]: painel do FTUE
 const CARD = hex('#141418') // tv-card
+const ACC_CARD = hex('#141A15') // .acc-card da Conta
 
 /** Distância com sinal até um retângulo de cantos arredondados (negativa dentro). */
 function roundedBoxDistance(px, py, x, y, w, h, r) {
@@ -504,6 +505,15 @@ export const OUTPUTS = [
   ['chip-soft.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.04 }])],
   ['chip-active.9.png', () => ninePatch([{ inset: 0, radius: 8, color: LIME }])],
   ['row-focus.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.08 }])],
+  // Conta (AccountScreen.vue): .acc-card (rounded 16, #141a15, borda white/8), anel das linhas (rounded 16) e os
+  // ícones das linhas (w-7, stroke 1.9), brancos para a tela tingir.
+  ['acc-card.9.png', () => ninePatch([{ inset: 0, radius: 16, color: over(WHITE, 0.08, ACC_CARD) }, { inset: 1, radius: 15, color: ACC_CARD }])],
+  ['avatar-12.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE }])],
+  ['focus-ring-16.9.png', () => ninePatch([{ inset: 0, radius: 21, color: WHITE }, { inset: 2, radius: 19, color: DEEP }])],
+  ['icon-acc-heart.png', () => svgIcon(28, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }], { stroke: 1.9 })],
+  ['icon-acc-lists.png', () => svgIcon(28, [{ d: 'M8 6h13M8 12h13M8 18h13' }, { circle: [4, 6, 1] }, { circle: [4, 12, 1] }, { circle: [4, 18, 1] }], { stroke: 1.9 })],
+  ['icon-acc-info.png', () => svgIcon(28, [{ circle: [12, 12, 9] }, { d: 'M12 11v5M12 7.5v.01' }], { stroke: 1.9 })],
+  ['icon-acc-exit.png', () => svgIcon(28, [{ d: 'M15 4h4a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-4M10 17l5-5-5-5M15 12H3' }], { stroke: 1.9 })],
 
   ['nav-active.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE, alpha: 0.15 }])],
   // Anel de foco em volta de algo rounded-xl (cartões e itens do menu): ring 2 branco + offset 3 grafite.

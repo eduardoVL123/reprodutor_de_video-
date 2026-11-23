@@ -105,6 +105,30 @@ namespace session
         return restored
     end function
 
+    ' listDisplayName do authStore.js: rótulo automático ("Lista M3U @ host", "usuário @ host") vira "Lista N".
+    function listDisplayName(listItem as object, index as integer) as string
+        label = utils.textOr(listItem.label, "").trim()
+        username = utils.textOr(listItem.username, "")
+        automatic = label = "" or Left(label, 12) = "Lista M3U @ " or (username <> "" and Left(label, Len(username) + 3) = username + " @ ")
+        if automatic then return "Lista " + (index + 1).toStr()
+        return label
+    end function
+
+    ' activeListLabel do authStore.js: nome da lista aberta, pela posição dela nas salvas.
+    function activeListLabel(current as dynamic, savedLists as dynamic) as string
+        if not utils.isObject(current) then return ""
+        index = 0
+        if GetInterface(savedLists, "ifArray") <> invalid then
+            for i = 0 to savedLists.count() - 1
+                if utils.isObject(savedLists[i]) and utils.textOr(savedLists[i].id, "") = utils.textOr(current.id, "") then
+                    index = i
+                    exit for
+                end if
+            end for
+        end if
+        return session.listDisplayName(current, index)
+    end function
+
     ' Coloca/atualiza a lista nas listas salvas (mesmo id, ou mesmo servidor e usuário).
     sub saveList(store as object, listItem as object)
         lists = store.get(session.SAVED_LISTS_KEY)
