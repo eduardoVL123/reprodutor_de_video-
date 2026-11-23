@@ -1,0 +1,263 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/device/secrets.bs"
+' Port das regras de src/stores/playerStore.js e playerItems.js (casos em playerState.spec.bs): o histórico do
+' "Continuar assistindo" (também o bookmark da cert. 4.10) e a fila de reprodução com a janela da categoria e o
+' zapping circular do ao vivo. O PlayerScreen guarda o estado; aqui só as regras.
+namespace playerState
+
+    const HISTORY_PREFIX = "player:watchHistory"
+    const WATCH_HISTORY_MAX = 16 ' filmes e episódios no "Continuar assistindo"
+    const LIVE_HISTORY_MAX = 4 ' canais: limite próprio, para o zapping não expulsar filmes e séries
+    const WINDOW_SIZE = 100 ' itens da categoria na memória para o zapping
+    const QUEUE_MAX = 200
+    const MIN_PROGRESS_SECS = 15
+    const DONE_RATIO = 0.95
+
+    ' ---------- Histórico ----------
+
+    function historyKey(profileId as dynamic, listId as dynamic) as string
+        key = playerState.HISTORY_PREFIX + ":" + utils.textOr(profileId, "default")
+        list = utils.textOr(listId, "")
+        if list <> "" then key = key + ":" + list
+        return key
+    end function
+
+    ' toHistoryEntry: item plano + progresso; invalid se o item é inválido.
+    function historyEntry(item as dynamic, nowMs = 0# as double) as dynamic
+        plain = favorites.plainItem(item)
+        if plain = invalid then return invalid
+        plain.currentTime = playerState.number(item.currentTime)
+        plain.duration = playerState.number(item.duration)
+        plain.progressPct = playerState.number(item.progressPct)
+        plain.updatedAt = playerState.number(item.updatedAt)
+        if plain.updatedAt = 0 then plain.updatedAt = nowMs
+        return plain
+    end function
+
+    function number(value as dynamic) as double
+        if utils.isNumber(value) then return value
+        if utils.isString(value) then return Val(value)
+        return 0
+    end function
+
+    ' capHistory: no máximo 4 canais e 16 filmes/episódios, na ordem recebida.
+    function capHistory(list as object) as object
+        live = 0
+        other = 0
+        kept = []
+        for each it in list
+            if it.section = "live" then
+                live = live + 1
+                if live <= playerState.LIVE_HISTORY_MAX then kept.push(it)
+            else
+                other = other + 1
+                if other <= playerState.WATCH_HISTORY_MAX then kept.push(it)
+            end if
+        end for
+        return kept
+    end function
+
+    ' Histórico salvo, sem as entradas corrompidas e com o link da M3U decifrado.
+    function loadHistory(store as object, key as string) as object
+        result = []
+        saved = store.get(key)
+        if GetInterface(saved, "ifArray") = invalid then return result
+        for each raw in saved
+            if utils.isObject(raw) and raw.directUrlEnc <> invalid then
+                url = secrets.decrypt(raw.directUrlEnc)
+                if url = invalid then url = ""
+                raw.directUrl = url
+            end if
+            entry = playerState.historyEntry(raw)
+            if entry <> invalid then result.push(entry)
+        end for
+        return playerState.capHistory(result)
+    end function
+
+    function sameSeries(a as object, b as object) as boolean
+        return utils.textOr(a.seriesId, "") <> "" and a.seriesId = b.seriesId and a.section = b.section
+    end function
+
+    ' addToHistory: no topo, sem repetir o item nem a série (o episódio mais recente substitui o anterior).
+    function addToHistory(history as object, entry as object) as object
+        list = [entry]
+        for each it in history
+            if not favorites.same(it, entry) and not playerState.sameSeries(it, entry) then list.push(it)
+        end for
+        return playerState.capHistory(list)
+    end function
+
+    ' saveProgress do web: devolve o histórico novo e grava; o mesmo objeto quando não há o que gravar.
+    function saveProgress(store as object, key as string, history as object, item as dynamic, curTime as dynamic, durTime as dynamic, nowMs as double) as object
+        plain = favorites.plainItem(item)
+        if plain = invalid then return history
+        cur = playerState.number(curTime)
+        dur = playerState.number(durTime)
+        if cur < 0 then cur = 0
+        if dur < 0 then dur = 0
+
+        if plain.section = "live" then
+            ' Ao vivo não tem progresso: já no topo, não há o que gravar.
+            if history.count() > 0 and favorites.same(history[0], plain) then return history
+            plain.append({ currentTime: 0, duration: 0, progressPct: 0, updatedAt: nowMs })
+            return playerState.persist(store, key, playerState.addToHistory(history, plain))
+        end if
+
+        if dur <= 0 or cur < playerState.MIN_PROGRESS_SECS then return history
+        if cur / dur >= playerState.DONE_RATIO then
+            ' Assistiu quase tudo: sai do "Continuar assistindo".
+            kept = []
+            for each it in history
+                if not favorites.same(it, plain) then kept.push(it)
+            end for
+            if kept.count() = history.count() then return history
+            return playerState.persist(store, key, kept)
+        end if
+        pct = Cint(cur / dur * 100)
+        if pct > 100 then pct = 100
+        plain.append({ currentTime: Int(cur), duration: Int(dur), progressPct: pct, updatedAt: nowMs })
+        return playerState.persist(store, key, playerState.addToHistory(history, plain))
+    end function
+
+    function persist(store as object, key as string, history as object) as object
+        favorites.save(store, key, history)
+        return history
+    end function
+
+    function getSavedTime(history as object, streamId as dynamic, section = "" as string) as double
+        for each it in history
+            if favorites.text(it.stream_id) = favorites.text(streamId) and (section = "" or it.section = section) then return it.currentTime
+        end for
+        return 0
+    end function
+
+    ' ---------- Fila de reprodução ----------
+    ' Estado: { mode, items, index, context } — context = { section, categoryId, windowStart, total } quando a fila é
+    ' uma janela da categoria (zapping), invalid nas outras.
+
+    function current(state as object) as dynamic
+        if state.index < 0 or state.index >= state.items.count() then return invalid
+        return state.items[state.index]
+    end function
+
+    ' playItem: um item só (histórico, favorito, destaque).
+    function forItem(item as object) as dynamic
+        section = utils.textOr(item.section, "vod")
+        plain = favorites.plainItem(item, section)
+        if plain = invalid then return invalid
+        return { mode: section, items: [plain], index: 0, context: invalid }
+    end function
+
+    ' playPlaylist: a fila fica em volta do escolhido (o episódio 350 de 400 é o 350, com o resto depois dele).
+    function forPlaylist(items as object, startIndex as integer, section = "series" as string) as dynamic
+        plainList = []
+        for each it in items
+            plain = favorites.plainItem(it, utils.textOr(it.section, section))
+            if plain <> invalid then plainList.push(plain)
+        end for
+        if plainList.count() = 0 then return invalid
+        from = startIndex
+        if from > plainList.count() - playerState.QUEUE_MAX then from = plainList.count() - playerState.QUEUE_MAX
+        if from < 0 then from = 0
+        queue = []
+        for i = from to from + playerState.QUEUE_MAX - 1
+            if i >= plainList.count() then exit for
+            queue.push(plainList[i])
+        end for
+        index = startIndex - from
+        if index > queue.count() - 1 then index = queue.count() - 1
+        if index < 0 then index = 0
+        return { mode: section, items: queue, index: index, context: invalid }
+    end function
+
+    ' playFromCustomQueue: os favoritos que tocam (série é um contêiner de episódios, não um vídeo).
+    function forFavorites(list as object, startItem as dynamic) as dynamic
+        playable = []
+        for each it in list
+            if it.section <> "series" and playable.count() < playerState.QUEUE_MAX then playable.push(it)
+        end for
+        if playable.count() = 0 then return invalid
+        index = 0
+        if utils.isObject(startItem) then
+            for i = 0 to playable.count() - 1
+                if favorites.same(playable[i], favorites.plainItem(startItem)) then index = i
+            end for
+        end if
+        return { mode: "queue", items: playable, index: index, context: invalid }
+    end function
+
+    function loadWindow(dir as string, section as string, categoryId as string, centerIndex as integer, total as integer, hidden as object) as object
+        size = playerState.WINDOW_SIZE
+        start = centerIndex - Int(size / 2)
+        if start > total - size then start = total - size
+        if start < 0 then start = 0
+        items = []
+        for each raw in catalog.getItems(dir, section, categoryId, start, size, hidden)
+            plain = favorites.plainItem(raw, section)
+            if plain <> invalid then items.push(plain)
+        end for
+        return { start: start, items: items }
+    end function
+
+    ' playFromCatalog: a janela da categoria em volta do item; se a posição não confere com o item, fica sem
+    ' "próximo" (CH+ não toca um canal qualquer contado de uma posição errada).
+    function forCatalog(dir as string, section as string, categoryId as string, item as object, indexInCategory as integer, total as integer, hidden as object) as dynamic
+        plain = favorites.plainItem(item, section)
+        if plain = invalid then return invalid
+        if total < 1 then total = 1
+        index = indexInCategory
+        if index < 0 then index = 0
+        w = playerState.loadWindow(dir, section, categoryId, index, total, hidden)
+        localIndex = index - w.start
+        if localIndex >= 0 and localIndex < w.items.count() and favorites.same(w.items[localIndex], plain) then
+            return { mode: section, items: w.items, index: localIndex, context: { section: section, categoryId: categoryId, windowStart: w.start, total: total } }
+        end if
+        return { mode: section, items: [plain], index: 0, context: invalid }
+    end function
+
+    ' step(±1): avança ou volta; desliza a janela da categoria e dá a volta no ao vivo. false se não há para onde ir.
+    function stepBy(state as object, delta as integer, dir as string, hidden as object) as boolean
+        if state.items.count() = 0 then return false
+        ctx = state.context
+        if ctx = invalid then
+            target = state.index + delta
+            if target < 0 or target >= state.items.count() then return false
+            state.index = target
+            return true
+        end if
+        absolute = ctx.windowStart + state.index + delta
+        if absolute < 0 or absolute >= ctx.total then
+            if state.mode <> "live" or ctx.total < 2 then return false
+            absolute = (absolute + ctx.total) mod ctx.total
+        end if
+        localIndex = absolute - ctx.windowStart
+        if localIndex >= 0 and localIndex < state.items.count() then
+            state.index = localIndex
+            return true
+        end if
+        w = playerState.loadWindow(dir, ctx.section, ctx.categoryId, absolute, ctx.total, hidden)
+        target = absolute - w.start
+        if target < 0 or target >= w.items.count() then return false
+        state.items = w.items
+        state.context = { section: ctx.section, categoryId: ctx.categoryId, windowStart: w.start, total: ctx.total }
+        state.index = target
+        return true
+    end function
+
+    function hasNext(state as object) as boolean
+        ctx = state.context
+        if ctx = invalid then return state.index + 1 < state.items.count()
+        if state.mode = "live" then return ctx.total > 1
+        return ctx.windowStart + state.index + 1 < ctx.total
+    end function
+
+    function hasPrev(state as object) as boolean
+        ctx = state.context
+        if ctx = invalid then return state.index > 0
+        if state.mode = "live" then return ctx.total > 1
+        return ctx.windowStart + state.index > 0
+    end function
+
+end namespace
