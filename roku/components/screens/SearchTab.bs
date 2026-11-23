@@ -51,7 +51,7 @@ sub init()
         m.ctx = catalog.contextFor(current)
         m.sections = searchScreen.sectionsFor(utils.textOr(current.type, ""))
     end if
-    m.recent = searchScreen.parseRecent(storage.create().get(searchScreen.recentKey(invalid)))
+    m.recent = searchScreen.parseRecent(storage.create().get(searchScreen.recentKey(activeProfileId())))
 
     m.timer = m.top.createChild("Timer")
     m.timer.duration = searchScreen.DEBOUNCE_MS / 1000
@@ -174,7 +174,7 @@ end function
 
 sub rememberSearch()
     m.recent = searchScreen.rememberSearch(m.recent, m.query)
-    storage.create().set(searchScreen.recentKey(invalid), m.recent)
+    storage.create().set(searchScreen.recentKey(activeProfileId()), m.recent)
 end sub
 
 ' ---------- Desenho: campo e teclado (fixos) ----------
@@ -670,3 +670,9 @@ sub onKeyboardClosed()
     m.top.getScene().dialog = invalid
     m.top.setFocus(true)
 end sub
+
+' Buscas recentes por perfil (search:recent:<perfil>).
+function activeProfileId() as dynamic
+    if m.global.profile = invalid then return invalid
+    return m.global.profile.id
+end function

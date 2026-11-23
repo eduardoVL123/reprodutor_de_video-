@@ -1,0 +1,103 @@
+' Casos de tests/profileStore.test.js e tests/profileGate.test.js (regras; o desenho fica no simulador).
+namespace tests
+
+    @suite("profiles")
+    class ProfilesTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            m.store = storage.create("pulse-test")
+            m.store.clear()
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("perfis padrão e cores da marca")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("não promete restrição infantil que o app não aplica")
+        function _()
+            for each p in profiles.defaults()
+                name = LCase(p.name)
+                m.assertTrue(name <> "kids" and name <> "infantil", name)
+            end for
+        end function
+
+        @it("o Principal e a primeira cor da paleta são o verde-limão")
+        function _()
+            m.assertEqual(profiles.colors()[0], "#B8F000")
+            m.assertEqual(profiles.defaults()[0], { id: "p1", name: "Principal", color: "#B8F000" })
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("escolha de perfil ao abrir o app")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("pergunta quem está assistindo quando há mais de um perfil; grava os padrões na 1ª vez")
+        function _()
+            state = profiles.hydrate(m.store)
+            m.assertTrue(state.gateOpen)
+            m.assertEqual(state.activeId, "p1")
+            m.assertEqual(m.store.get(profiles.PROFILES_KEY).count(), 3)
+        end function
+
+        @it("com um único perfil, entra direto nele sem perguntar")
+        function _()
+            m.store.set(profiles.PROFILES_KEY, [{ id: "unico", name: "Casa", color: "#2563eb" }])
+            state = profiles.hydrate(m.store)
+            m.assertFalse(state.gateOpen)
+            m.assertEqual(state.activeId, "unico")
+        end function
+
+        @it("lembra o último perfil escolhido; o que sumiu volta para o primeiro")
+        function _()
+            profiles.hydrate(m.store)
+            m.assertTrue(profiles.select(m.store, "p2"))
+            m.assertEqual(profiles.hydrate(m.store).activeId, "p2")
+            m.assertFalse(profiles.select(m.store, "nao-existe"))
+            m.store.set(profiles.ACTIVE_KEY, "apagado")
+            m.assertEqual(profiles.hydrate(m.store).activeId, "p1")
+        end function
+
+        @it("lista salva corrompida volta para os perfis padrão")
+        function _()
+            m.store.set(profiles.PROFILES_KEY, ["lixo", { name: "sem id" }])
+            state = profiles.hydrate(m.store)
+            m.assertEqual(state.list.count(), 3)
+            m.assertEqual(profiles.active(state.list, "x").name, "Principal")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("novo perfil")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("cria com o nome sem espaços e a cor escolhida, e grava")
+        function _()
+            list = profiles.hydrate(m.store).list
+            created = profiles.add(m.store, list, "  Quarto ", "#8b5cf6")
+            m.assertEqual(created.name, "Quarto")
+            m.assertEqual(created.color, "#8b5cf6")
+            m.assertNotEqual(created.id, "")
+            saved = m.store.get(profiles.PROFILES_KEY)
+            m.assertEqual(saved.count(), 4)
+            m.assertEqual(saved[3].name, "Quarto")
+        end function
+
+        @it("a cor sugerida segue a paleta pela quantidade de perfis")
+        function _()
+            list = profiles.hydrate(m.store).list
+            m.assertEqual(profiles.suggestedColor(list), "#f59e0b")
+        end function
+
+        @it("no máximo 5 perfis")
+        function _()
+            list = profiles.hydrate(m.store).list
+            m.assertTrue(profiles.canAdd(list))
+            list.push(profiles.add(m.store, list, "Quatro", "#8b5cf6"))
+            list.push(profiles.add(m.store, list, "Cinco", "#ec4899"))
+            m.assertFalse(profiles.canAdd(list))
+            m.assertInvalid(profiles.add(m.store, list, "Seis", "#ec4899"))
+            m.assertEqual(m.store.get(profiles.PROFILES_KEY).count(), 5)
+        end function
+
+    end class
+
+end namespace

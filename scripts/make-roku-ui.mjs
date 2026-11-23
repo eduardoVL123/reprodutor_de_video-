@@ -55,6 +55,8 @@ function renderLayers(width, height, layers) {
             const py = y + (sy + 0.5) / SAMPLES
             let inside = inBox(px, py, layer.inset, layer.radius) !== Boolean(layer.outside)
             if (inside && layer.hole) inside = !inBox(px, py, layer.hole.inset, layer.hole.radius)
+            // Borda tracejada (border-dashed): [período, traço] ao longo do lado mais perto.
+            if (inside && layer.dash) inside = (Math.min(py, height - py) < Math.min(px, width - px) ? px : py) % layer.dash[0] < layer.dash[1]
             if (inside && (layer.maxX === undefined || px <= layer.maxX)) hits++
           }
         }
@@ -523,6 +525,16 @@ export const OUTPUTS = [
   ['icon-close.png', () => svgIcon(16, [{ points: [18, 6, 6, 18] }, { points: [6, 6, 18, 18] }])],
   ['icon-trash.png', () => svgIcon(16, [{ points: [3, 6, 5, 6, 21, 6] }, { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' }], { stroke: 1.75 })],
   ['icon-logout.png', () => svgIcon(16, [{ d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4' }, { points: [16, 17, 21, 12, 16, 7] }, { points: [21, 12, 9, 12] }])],
+  // Escolha de perfil (ProfileGate.vue): borda branca do avatar focado (border-2, rounded-xl) e o cartão "Adicionar
+  // Perfil" (152×152, bg-white/[0.03], border-2 dashed white/20; branca com foco) e o + (w-12, stroke 1.75).
+  ['avatar-ring-12.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE, hole: { inset: 2, radius: 10 } }])],
+  ['add-profile.png', () => toPng(152, 152, renderLayers(152, 152, [{ inset: 0, radius: 12, color: WHITE, alpha: 0.03 }, { inset: 0, radius: 12, color: WHITE, alpha: 0.2, hole: { inset: 2, radius: 10 }, dash: [12, 6] }]))],
+  ['add-profile-focus.png', () => toPng(152, 152, renderLayers(152, 152, [{ inset: 0, radius: 12, color: WHITE, alpha: 0.03 }, { inset: 0, radius: 12, color: WHITE, hole: { inset: 2, radius: 10 }, dash: [12, 6] }]))],
+  // Cores do novo perfil (w-8 rounded-full): bolinha branca para tingir, a borda branca da escolhida e o anel de foco.
+  ['circle.png', () => toPng(32, 32, renderLayers(32, 32, [{ inset: 0, radius: 16, color: WHITE }]))],
+  ['circle-ring.png', () => toPng(32, 32, renderLayers(32, 32, [{ inset: 0, radius: 16, color: WHITE, hole: { inset: 2, radius: 14 } }]))],
+  ['circle-focus.png', () => toPng(42, 42, renderLayers(42, 42, [{ inset: 0, radius: 21, color: WHITE, hole: { inset: 2, radius: 19 } }]))],
+  ['icon-plus.png', () => svgIcon(48, [{ points: [12, 5, 12, 19] }, { points: [5, 12, 19, 12] }], { stroke: 1.75 })],
   ['avatar-12.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE }])],
   ['focus-ring-16.9.png', () => ninePatch([{ inset: 0, radius: 21, color: WHITE }, { inset: 2, radius: 19, color: DEEP }])],
   ['icon-acc-heart.png', () => svgIcon(28, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }], { stroke: 1.9 })],

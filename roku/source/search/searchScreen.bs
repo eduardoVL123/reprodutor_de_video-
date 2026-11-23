@@ -115,7 +115,7 @@ namespace searchScreen
         return list
     end function
 
-    ' Uma lista por perfil; sem perfis (D7) fica a "default", como no web sem perfil ativo.
+    ' Uma lista por perfil; sem perfil ativo fica a "default", como no web.
     function recentKey(profileId as dynamic) as string
         return "search:recent:" + utils.textOr(profileId, "default")
     end function

@@ -1,0 +1,286 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/account/account.bs"
+
+' Medidas do ProfileGate.vue em px (1920×1080): título de 45 px em y 380; cartões com avatar de 152 em y 496, nome em
+' y 664 e gap-8, centralizados. Novo Perfil: painel de 512 em x 704, y 353 (p-8), campo em y 478, cores em y 584 a
+' cada 44 px e os botões em y 648.
+const AVATAR = 152
+const ROW_Y = 496
+const GAP = 32
+const DIALOG_X = 737
+
+sub init()
+    m.store = storage.create()
+    m.state = profiles.hydrate(m.store)
+    m.addOpen = false
+    m.newName = ""
+    m.newColor = ""
+    m.nav = spatial.create([], {}, [1920, 1080])
+    m.focusId = "profile-card-" + m.state.list[0].id
+    m.root = m.top.createChild("Group")
+    render()
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub render()
+    m.root.removeChildrenIndex(m.root.getChildCount(), 0)
+    m.focusables = {}
+    bg = m.root.createChild("Rectangle")
+    bg.width = 1920
+    bg.height = 1080
+    bg.color = ui.DEEP
+    title = ui.text(m.root, "Escolha o perfil", ui.font(600, 45), ui.WHITE, 0, 380, 1920, 67)
+    title.horizAlign = "center"
+
+    ' Largura de cada botão: o avatar ou o nome, o que for maior (o "Adicionar Perfil" passa dos 152).
+    cards = []
+    for each p in m.state.list
+        cards.push({ id: "profile-card-" + p.id, profile: p, label: p.name })
+    end for
+    if profiles.canAdd(m.state.list) then cards.push({ id: "btn-add-profile-card", profile: invalid, label: "Adicionar Perfil" })
+    total = -GAP
+    for each card in cards
+        probe = ui.inlineText(m.root, card.label, ui.font(500, 24), ui.NEUTRAL_400, 0, 0, 36)
+        card.width = probe.boundingRect().width
+        if card.width < AVATAR then card.width = AVATAR
+        m.root.removeChild(probe)
+        total = total + card.width + GAP
+    end for
+    x = (1920 - total) / 2
+    for each card in cards
+        addCard(card, x)
+        x = x + card.width + GAP
+    end for
+
+    if m.addOpen then renderAdd()
+    refreshNav()
+    renderFocus()
+end sub
+
+sub addCard(card as object, x as float)
+    group = m.root.createChild("Group")
+    group.translation = [x, ROW_Y]
+    ring = ui.squareRing(group, 0, 0, card.width, 204)
+    avatarX = (card.width - AVATAR) / 2
+    entry = { rect: [x, ROW_Y, card.width, 204], groups: ["profile-gate"], row: "", node: group, ring: ring }
+    if card.profile <> invalid then
+        avatar = ui.panel(group, "avatar-12", avatarX, 0, AVATAR, AVATAR)
+        avatar.blendColor = account.rokuColor(card.profile.color)
+        letter = ui.text(group, account.avatarLetter(card.profile.name), ui.font(900, 48), account.avatarTextColor(card.profile.color), avatarX, 52, AVATAR, 48)
+        letter.horizAlign = "center"
+        entry.border = ui.panel(group, "avatar-ring-12", avatarX, 0, AVATAR, AVATAR)
+    else
+        entry.box = ui.panelImage(group, "add-profile.png", avatarX, 0, AVATAR, AVATAR)
+        entry.icon = group.createChild("Poster")
+        entry.icon.uri = "pkg:/images/ui/icon-plus.png"
+        entry.icon.width = 48
+        entry.icon.height = 48
+        entry.icon.translation = [avatarX + 52, 52]
+    end if
+    entry.label = ui.text(group, card.label, ui.font(500, 24), ui.NEUTRAL_400, 0, 168, card.width, 36)
+    entry.label.horizAlign = "center"
+    group.scaleRotateCenter = [card.width / 2, 102]
+    m.focusables[card.id] = entry
+end sub
+
+' ---------- Novo Perfil ----------
+
+sub renderAdd()
+    shade = m.root.createChild("Rectangle")
+    shade.width = 1920
+    shade.height = 1080
+    shade.color = "0x000000D9"
+    ui.panel(m.root, "dialog", 704, 353, 512, 374)
+    ui.text(m.root, "Novo Perfil", ui.font(700, 32), ui.WHITE, DIALOG_X, 386, 446, 44)
+    ui.text(m.root, "Nome do Perfil", ui.font(400, 20), ui.NEUTRAL_400, DIALOG_X, 446, 446, 28)
+    bg = ui.panel(m.root, "input", DIALOG_X, 478, 446, 54)
+    ring = ui.panel(m.root, "input-focus", DIALOG_X - 4, 474, 454, 62)
+    shown = m.newName
+    color = ui.WHITE
+    if shown = "" then
+        shown = "Ex: Quarto, Família"
+        color = ui.NEUTRAL_500
+    end if
+    ui.text(m.root, shown, ui.font(400, 20), color, DIALOG_X + 21, 491, 404, 28).wrap = false
+    m.focusables["input-profile-name"] = { rect: [DIALOG_X, 478, 446, 54], groups: ["profile-add"], row: "", ring: ring, bg: bg }
+
+    ui.text(m.root, "Cor do Perfil", ui.font(400, 20), ui.NEUTRAL_400, DIALOG_X, 548, 446, 28)
+    palette = profiles.colors()
+    for i = 0 to palette.count() - 1
+        x = DIALOG_X + i * 44
+        group = m.root.createChild("Group")
+        group.translation = [x, 584]
+        dot = ui.panelImage(group, "circle.png", 0, 0, 32, 32)
+        dot.blendColor = account.rokuColor(palette[i])
+        if palette[i] = m.newColor then
+            ui.panelImage(group, "circle-ring.png", 0, 0, 32, 32)
+            group.scaleRotateCenter = [16, 16]
+            group.scale = [1.1, 1.1]
+        end if
+        focusRing = ui.panelImage(m.root, "circle-focus.png", x - 5, 579, 42, 42)
+        m.focusables["profile-color-" + i.toStr()] = { rect: [x, 584, 32, 32], groups: ["profile-add"], row: "profile-colors", ring: focusRing, color: palette[i] }
+    end for
+
+    addButton("btn-cancel-new-profile", "Cancelar", 902, 120, "btn", ui.NEUTRAL_400, 500)
+    ' Sem nome o Criar não faz nada (:disabled do web, que não muda o desenho).
+    addButton("btn-save-new-profile", "Criar Perfil", 1038, 145, "btn-primary", ui.BLACK, 600)
+end sub
+
+function addButton(id as string, label as string, x as float, width as float, image as string, color as string, weight as integer) as object
+    group = m.root.createChild("Group")
+    group.translation = [x, 648]
+    ring = ui.panel(group, "focus-ring", -5, -5, width + 10, 56)
+    ui.panel(group, image, 0, 0, width, 46)
+    text = ui.text(group, label, ui.font(weight, 20), color, 0, 9, width, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [width / 2, 23]
+    m.focusables[id] = { rect: [x, 648, width, 46], groups: ["profile-add"], row: "profile-add-actions", node: group, ring: ring }
+    return group
+end function
+
+sub openAdd()
+    m.newName = ""
+    m.newColor = profiles.suggestedColor(m.state.list)
+    m.addOpen = true
+    m.focusId = "input-profile-name"
+    render()
+end sub
+
+sub closeAdd()
+    m.addOpen = false
+    m.focusId = "btn-add-profile-card"
+    render()
+end sub
+
+sub createProfile()
+    if m.newName.trim() = "" then return
+    created = profiles.add(m.store, m.state.list, m.newName, m.newColor)
+    m.addOpen = false
+    if created = invalid then
+        render()
+        return
+    end if
+    m.state.list.push(created)
+    choose(created.id)
+end sub
+
+' Grava o perfil ativo, avisa as telas (m.global.profile) e volta.
+sub choose(id as string)
+    profiles.select(m.store, id)
+    m.global.profile = profiles.active(m.state.list, id)
+    m.top.navigate = { action: "back" }
+end sub
+
+' ---------- Foco e teclas ----------
+
+sub refreshNav()
+    items = []
+    for each id in m.focusables
+        entry = m.focusables[id]
+        ' Com o formulário aberto só ele recebe foco (pushFocusScope do web).
+        if not m.addOpen or entry.groups[0] = "profile-add" then items.push({ id: id, groups: entry.groups, row: entry.row, rect: entry.rect, active: false, slide: false, scroller: false })
+    end for
+    m.nav.items = items
+end sub
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    screenFocused = m.top.isInFocusChain()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = screenFocused and id = m.focusId
+        entry.ring.visible = focused
+        if entry.bg <> invalid then entry.bg.visible = not focused
+        if entry.node <> invalid then
+            if focused then
+                entry.node.scale = [1.02, 1.02]
+            else
+                entry.node.scale = [1, 1]
+            end if
+        end if
+        ' group-focus: borda branca no avatar e o nome em branco.
+        if entry.label <> invalid then
+            entry.label.color = ui.NEUTRAL_400
+            if focused then entry.label.color = ui.WHITE
+        end if
+        if entry.border <> invalid then entry.border.visible = focused
+        if entry.box <> invalid then
+            entry.box.uri = "pkg:/images/ui/add-profile.png"
+            entry.icon.blendColor = ui.NEUTRAL_400
+            if focused then
+                entry.box.uri = "pkg:/images/ui/add-profile-focus.png"
+                entry.icon.blendColor = ui.WHITE
+            end if
+        end if
+    end for
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" then
+        if not m.addOpen then return false ' o MainScene fecha a tela
+        closeAdd()
+        return true
+    end if
+    if key = "OK" then
+        onSelect()
+        return true
+    end if
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then
+        m.focusId = target
+        spatial.remember(m.nav, target)
+        renderFocus()
+    end if
+    return true
+end function
+
+sub onSelect()
+    id = m.focusId
+    if id = "btn-add-profile-card" then
+        openAdd()
+    else if Left(id, 13) = "profile-card-" then
+        choose(Mid(id, 14))
+    else if id = "input-profile-name" then
+        openKeyboard()
+    else if Left(id, 14) = "profile-color-" then
+        m.newColor = m.focusables[id].color
+        render()
+    else if id = "btn-cancel-new-profile" then
+        closeAdd()
+    else if id = "btn-save-new-profile" then
+        createProfile()
+    end if
+end sub
+
+sub openKeyboard()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Nome do Perfil"
+    dialog.text = m.newName
+    dialog.buttons = ["OK", "Cancelar"]
+    dialog.observeField("buttonSelected", "onKeyboardButton")
+    dialog.observeField("wasClosed", "onKeyboardClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardButton(event as object)
+    dialog = m.top.getScene().dialog
+    if event.getData() = 0 and dialog <> invalid then
+        m.newName = dialog.text
+        render()
+    end if
+    if dialog <> invalid then dialog.close = true
+end sub
+
+sub onKeyboardClosed()
+    m.top.getScene().dialog = invalid
+    m.top.setFocus(true)
+end sub

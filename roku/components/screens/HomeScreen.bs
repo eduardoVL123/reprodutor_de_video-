@@ -5,6 +5,8 @@ import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/catalog/catalog.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/account/account.bs"
+import "pkg:/source/profiles/profiles.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
@@ -23,6 +25,7 @@ sub init()
     m.tab = "home"
     m.catalogTab = invalid
     m.top.observeField("focusedChild", "onFocusChanged")
+    m.global.observeField("profile", "onProfileChanged")
     m.rails = []
     m.heroItem = invalid
     m.heroInfo = invalid
@@ -205,7 +208,7 @@ sub renderRails()
         moreWidth = more.boundingRect().width
         more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
         rail.seeAllWidth = moreWidth + 34
-        rail.seeAllRing = squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
+        rail.seeAllRing = ui.squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
         if rail.offset = invalid then rail.offset = 0
 
         cardWidth = 168
@@ -371,7 +374,7 @@ sub renderMenu()
         if item.id = "profile" then
             buildAvatar(group)
             if open then
-                ui.text(group, "Principal", ui.font(500, 20), ui.WHITE, 60, 0, itemWidth - 72, 28).wrap = false
+                ui.text(group, currentProfile().name, ui.font(500, 20), ui.WHITE, 60, 0, itemWidth - 72, 28).wrap = false
                 ui.text(group, "Trocar perfil", ui.font(400, 20), ui.NEUTRAL_400, 60, 28, itemWidth - 72, 28).wrap = false
             end if
         else
@@ -386,32 +389,32 @@ sub renderMenu()
     end for
 end sub
 
-' Avatar do perfil (w-8 rounded-lg, cor do perfil e a inicial em font-black). Por enquanto o perfil Principal (D7).
+' Avatar do perfil ativo (w-8 rounded-lg, cor do perfil e a inicial em font-black).
 sub buildAvatar(group as object)
+    profile = currentProfile()
     avatar = ui.panel(group, "avatar", 12, 12, 32, 32)
-    avatar.blendColor = ui.ACCENT
+    avatar.blendColor = account.rokuColor(profile.color)
     ui.panel(group, "avatar-border", 12, 12, 32, 32)
-    letter = ui.text(group, "P", ui.font(900, 20), ui.TEXT_ON_ACCENT, 12, 14, 32, 28)
+    letter = ui.text(group, account.avatarLetter(profile.name), ui.font(900, 20), account.avatarTextColor(profile.color), 12, 14, 32, 28)
     letter.horizAlign = "center"
 end sub
 
-' ---------- Foco ----------
-
-' Anel do .tv-focusable (ring-2 branco, ring-offset 3 px) para botão sem cantos arredondados (o "Ver todos").
-function squareRing(parent as object, x as float, y as float, width as float, height as float) as object
-    ring = parent.createChild("Group")
-    ring.translation = [x - 5, y - 5]
-    sides = [[0, 0, width + 10, 2], [0, height + 8, width + 10, 2], [0, 0, 2, height + 10], [width + 8, 0, 2, height + 10]]
-    for each side in sides
-        bar = ring.createChild("Rectangle")
-        bar.color = ui.WHITE
-        bar.translation = [side[0], side[1]]
-        bar.width = side[2]
-        bar.height = side[3]
-    end for
-    ring.visible = false
-    return ring
+function currentProfile() as object
+    if m.global.profile <> invalid then return m.global.profile
+    return profiles.defaults()[0]
 end function
+
+' Perfil escolhido (onProfileSelected do web): o menu mostra o novo e, no Início, o foco vai para o Assistir.
+sub onProfileChanged()
+    if m.tab = "home" then
+        m.focusId = "hero-play"
+        spatial.remember(m.nav, m.focusId)
+    end if
+    renderMenu()
+    renderFocus()
+end sub
+
+' ---------- Foco ----------
 
 function isMenuId(id as string) as boolean
     return Left(id, 4) = "nav-" or id = "btn-switch-profile"
@@ -443,8 +446,12 @@ end sub
 
 ' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
 ' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir e canais entram com o player (D6);
-' Favoritos e Trocar perfil, com os perfis (D7).
+' Trocar perfil abre a escolha de perfil; Favoritos chega com a aba Favoritos.
 function onSelect() as boolean
+    if m.focusId = "btn-switch-profile" then
+        m.top.navigate = { action: "push", screen: "ProfileScreen" }
+        return true
+    end if
     if isMenuId(m.focusId) then
         menuTab = Mid(m.focusId, 5)
         if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" or menuTab = "account" then openTab(menuTab)

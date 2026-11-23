@@ -4,6 +4,7 @@ import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/account/account.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/profiles/profiles.bs"
 
 ' Medidas do AccountScreen.vue em px (1920×1080): coluna de 704 em x 664 (max-w-[56rem] centrado, px-24), linhas
 ' (.acc-row) de 72 com 1 px de borda do cartão, ícone em 24 e texto em 70 dentro da linha.
@@ -17,8 +18,7 @@ const EXIT_RED = "0xFF5A4EFF"
 
 sub init()
     m.focusables = {}
-    ' shortcut: sem perfis (D7) mostra o primeiro perfil padrão do web; o D7 troca pelo perfil ativo.
-    m.profile = { name: "Principal", color: "#B8F000" }
+    m.profile = currentProfile()
     store = storage.create()
     m.listLabel = session.activeListLabel(session.hydrate(store), store.get(session.SAVED_LISTS_KEY))
     render()
@@ -27,6 +27,21 @@ sub init()
     ' fecharia o app).
     m.focusId = "acc-profile"
     m.top.observeField("focusedChild", "onFocusChanged")
+    m.global.observeField("profile", "onProfileChanged")
+end sub
+
+function currentProfile() as object
+    if m.global.profile <> invalid then return m.global.profile
+    return profiles.defaults()[0]
+end function
+
+' Voltando da escolha de perfil: o cartão mostra o perfil novo.
+sub onProfileChanged()
+    m.profile = currentProfile()
+    m.top.removeChildrenIndex(m.top.getChildCount(), 0)
+    m.focusables = {}
+    render()
+    renderFocus()
 end sub
 
 sub render()
@@ -128,14 +143,15 @@ sub renderFocus()
     end for
 end sub
 
-' OK: Diagnóstico abre o diálogo, Sair fecha o app e Minhas listas abre o gerenciador (o MainScene cuida dos três).
-' Trocar perfil e Favoritos chegam com os perfis (D7); até lá só recebem foco.
+' OK: Trocar abre a escolha de perfil, Minhas listas o gerenciador, Diagnóstico o diálogo e Sair fecha o app (o
+' MainScene cuida de todos). Favoritos chega com a aba Favoritos; até lá só recebe foco.
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if key = "OK" then
         if m.focusId = "acc-diagnostics" then m.top.navigate = { action: "diagnostics" }
         if m.focusId = "acc-exit" then m.top.navigate = { action: "exit" }
         if m.focusId = "acc-lists" then m.top.navigate = { action: "push", screen: "ListManagerScreen" }
+        if m.focusId = "acc-profile" then m.top.navigate = { action: "push", screen: "ProfileScreen" }
         return true
     end if
     if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false

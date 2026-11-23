@@ -132,4 +132,20 @@ namespace ui
         return poster
     end function
 
+    ' Anel do .tv-focusable (ring-2 branco, ring-offset 3 px) para botão sem cantos arredondados ("Ver todos", perfis).
+    function squareRing(parent as object, x as float, y as float, width as float, height as float) as object
+        ring = parent.createChild("Group")
+        ring.translation = [x - 5, y - 5]
+        sides = [[0, 0, width + 10, 2], [0, height + 8, width + 10, 2], [0, 0, 2, height + 10], [width + 8, 0, 2, height + 10]]
+        for each side in sides
+            bar = ring.createChild("Rectangle")
+            bar.color = ui.WHITE
+            bar.translation = [side[0], side[1]]
+            bar.width = side[2]
+            bar.height = side[3]
+        end for
+        ring.visible = false
+        return ring
+    end function
+
 end namespace

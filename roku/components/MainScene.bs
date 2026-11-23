@@ -10,14 +10,29 @@ import "pkg:/source/net/maskSecrets.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/device/errorLog.bs"
 import "pkg:/source/account/account.bs"
+import "pkg:/source/profiles/profiles.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
     ' Seções do catálogo sendo baixadas agora (catalog.loadShared): o Início e as abas não baixam a mesma duas vezes.
     m.global.addFields({ catalogLoad_live: "", catalogLoad_vod: "", catalogLoad_series: "" })
+    ' Perfil ativo ({ id, name, color }): o menu, a Conta e a Busca leem daqui e o ProfileScreen troca.
+    state = profiles.hydrate(storage.create())
+    m.global.addFields({ profile: profiles.active(state.list, state.activeId) })
+    m.profileAsked = false
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
     pushScreen(CreateObject("roSGNode", initialScreen()))
+    askProfile()
+end sub
+
+' "Quem está assistindo?" uma vez por abertura do app, quando o Início aparece e há mais de um perfil (o
+' isProfileGateOpen do web começa aberto e o Voltar fecha sem perguntar de novo).
+sub askProfile()
+    current = topScreen()
+    if m.profileAsked or current = invalid or current.subtype() <> "HomeScreen" then return
+    m.profileAsked = true
+    if profiles.hydrate(storage.create()).gateOpen then pushScreen(CreateObject("roSGNode", "ProfileScreen"))
 end sub
 
 ' Como a guarda do router do web: sem o aceite dos termos só o FTUE; sem sessão salva, o login; senão a home.
@@ -51,6 +66,7 @@ sub onNavigate(event as object)
         m.top.exitApp = true
     else if request.action = "replace" then
         replaceScreen(CreateObject("roSGNode", request.screen))
+        askProfile()
     else if request.action = "push" then
         screen = CreateObject("roSGNode", request.screen)
         ' Dados da tela nova (ex.: o item dos detalhes), como as props do web.
@@ -60,6 +76,7 @@ sub onNavigate(event as object)
         popScreen()
     else if request.action = "reset" then
         resetTo(request.screen)
+        askProfile()
     else if request.action = "diagnostics" then
         showDiagnostics()
     end if
