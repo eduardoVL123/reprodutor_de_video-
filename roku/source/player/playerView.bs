@@ -49,6 +49,15 @@ namespace playerView
         return target
     end function
 
+    ' Primeira linha visível de uma lista que só desenha `visible` linhas: a escolhida (index) fica sempre à vista.
+    function listTop(index as integer, top as integer, visible as integer, count as integer) as integer
+        if index < top then top = index
+        if index > top + visible - 1 then top = index - visible + 1
+        if top > count - visible then top = count - visible
+        if top < 0 then top = 0
+        return top
+    end function
+
     ' streamFormat do nó Video para a extensão do stream (o .ts cru é o risco R6: tenta como "ts").
     function streamFormat(extension as string) as string
         ext = LCase(extension)

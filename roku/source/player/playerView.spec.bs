@@ -26,6 +26,26 @@ namespace tests
         end function
 
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("gaveta da fila")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("rola só o necessário para a linha escolhida ficar à vista")
+        function _()
+            m.assertEqual(playerView.listTop(0, 0, 5, 200), 0)
+            m.assertEqual(playerView.listTop(4, 0, 5, 200), 0)
+            m.assertEqual(playerView.listTop(7, 0, 5, 200), 3)
+            m.assertEqual(playerView.listTop(2, 3, 5, 200), 2)
+        end function
+
+        @it("abre com o item tocando à vista e não passa do fim; fila curta fica no topo")
+        function _()
+            m.assertEqual(playerView.listTop(199, 0, 5, 200), 195)
+            m.assertEqual(playerView.listTop(150, 0, 5, 200), 146)
+            m.assertEqual(playerView.listTop(1, 0, 5, 3), 0)
+            m.assertEqual(playerView.listTop(0, 0, 5, 0), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         @describe("reprodução")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

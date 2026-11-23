@@ -596,6 +596,8 @@ export const OUTPUTS = [
   ['icon-alert-32.png', () => svgIcon(32, [{ d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }, { points: [12, 9, 12, 13] }, { points: [12, 17, 12.01, 17] }])],
   // Botão "Áudio e legendas" do player (w-4): quadro de legenda com duas linhas de texto.
   ['icon-subtitles.png', () => svgIcon(16, [{ d: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z' }, { points: [6, 12, 10, 12] }, { points: [13, 12, 18, 12] }, { points: [6, 15, 14, 15] }])],
+  // Botão "Fila"/"Episódios" do player (w-4): três linhas com os pontos à esquerda.
+  ['icon-queue.png', () => svgIcon(16, [{ d: 'M8 6h13M8 12h13M8 18h13' }, { circle: [4, 6, 1] }, { circle: [4, 12, 1] }, { circle: [4, 18, 1] }])],
   ['parental-row.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.06, DIALOG) }, { inset: 1, radius: 11, color: over(WHITE, 0.03, DIALOG) }])],
   ['status-visible.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(WHITE, 0.15, PARENTAL_ROW) }, { inset: 1, radius: 7, color: PARENTAL_ROW }])],
   ['status-locked.9.png', () => ninePatch([{ inset: 0, radius: 8, color: over(AMBER_400, 0.6, PARENTAL_ROW) }, { inset: 1, radius: 7, color: over(AMBER_400, 0.1, PARENTAL_ROW) }])],
