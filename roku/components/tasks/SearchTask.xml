@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Busca da SearchTab (searchCatalog do web): uma Task enquanto a busca está aberta, para o cache de nomes valer de uma
+     letra para a outra. Responde query = { seq, text, sections: [prontas] } com result = { seq, ok, results, counts };
+     query = { stop: true } encerra. As seções são baixadas pela SearchTab (CatalogTask), para a busca não esperar.
+     ctx = { dir, ... }; hidden = categorias fora da vista (controle parental). -->
+<component name="SearchTask" extends="Task">
+    <interface>
+        <field id="ctx" type="assocarray" />
+        <field id="hidden" type="assocarray" />
+        <field id="query" type="assocarray" alwaysNotify="true" />
+        <field id="result" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

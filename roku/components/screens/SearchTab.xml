@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Aba Busca (port de src/components/SearchScreen.vue, RFC-013), dentro do Início como as abas do catálogo: teclado na
+     tela, buscas recentes, sugestões e resultados a partir da 3ª letra em Filmes, Séries e TV ao vivo.
+     exit = "left" quando Esquerda sai da aba (o Início foca o menu); stop = true antes de remover a aba. -->
+<component name="SearchTab" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="exit" type="string" alwaysNotify="true" />
+        <field id="stop" type="boolean" onChange="stopTask" />
+    </interface>
+</component>

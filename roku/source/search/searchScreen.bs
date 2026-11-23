@@ -1,0 +1,134 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/catalog/catalogSearch.bs"
+' Regras de src/components/SearchScreen.vue (busca de TV, RFC-013), sem desenho: teclado, filtros, buscas recentes.
+' Casos em searchScreen.spec.bs.
+namespace searchScreen
+
+    const DEBOUNCE_MS = 300
+    const MAX_QUERY_LENGTH = 60
+    ' Limita os cartões desenhados em TVs mais fracas.
+    const RESULTS_PER_SECTION = 40
+    const RECENT_MAX = 8
+    const RESULT_COLUMNS = 4
+    const SUGGESTIONS_MAX = 8
+
+    function keyboardRows() as object
+        return [
+            ["a", "b", "c", "d", "e", "f"],
+            ["g", "h", "i", "j", "k", "l"],
+            ["m", "n", "o", "p", "q", "r"],
+            ["s", "t", "u", "v", "w", "x"],
+            ["y", "z", "1", "2", "3", "4"],
+            ["5", "6", "7", "8", "9", "0"]
+        ]
+    end function
+
+    function typeText(query as string, value as string) as string
+        return Left(query + value, searchScreen.MAX_QUERY_LENGTH)
+    end function
+
+    ' Espaço só depois de uma letra (nunca no começo nem dois seguidos).
+    function typeSpace(query as string) as string
+        if query = "" or Right(query, 1) = " " then return query
+        return searchScreen.typeText(query, " ")
+    end function
+
+    function backspace(query as string) as string
+        if query = "" then return query
+        return Left(query, Len(query) - 1)
+    end function
+
+    function hasMinQuery(query as string) as boolean
+        return Len(catalog.normalizeText(query)) >= catalogSearch.MIN_QUERY_LENGTH
+    end function
+
+    ' Listas M3U só têm canais e filmes; pedir "series" baixaria a playlist inteira de novo.
+    function sectionsFor(sessionType as string) as object
+        if sessionType = "m3u" then return ["vod", "live"]
+        return catalogSearch.allSections()
+    end function
+
+    function sectionName(section as string) as string
+        names = { vod: "Filmes", series: "Séries", live: "TV ao vivo" }
+        return utils.textOr(names[section], "")
+    end function
+
+    ' Selo no canto do cartão; o de canal já traz "AO VIVO" no próprio desenho.
+    function sectionBadge(section as string) as string
+        if section = "vod" then return "FILME"
+        if section = "series" then return "SÉRIE"
+        return ""
+    end function
+
+    ' Filtros só dos tipos com resultado; nenhum quando há um tipo só.
+    function filterList(sectionList as object, counts as object) as object
+        withResults = []
+        for each section in sectionList
+            if counts[section] <> invalid and counts[section] > 0 then withResults.push(section)
+        end for
+        if withResults.count() < 2 then return []
+        list = [{ id: "all", label: "Tudo" }]
+        for each section in withResults
+            list.push({ id: section, label: searchScreen.sectionName(section) })
+        end for
+        return list
+    end function
+
+    ' Filtro escolhido que deixou de ter resultado (nova busca) volta para "Tudo".
+    function effectiveFilter(list as object, active as string) as string
+        for each entry in list
+            if entry.id = active then return active
+        end for
+        return "all"
+    end function
+
+    function visibleResults(results as object, filterId as string) as object
+        if filterId = "all" then return results
+        kept = []
+        for each r in results
+            if r.section = filterId then kept.push(r)
+        end for
+        return kept
+    end function
+
+    ' "Atualizando catálogo de Filmes, Séries…": as seções que estão baixando (states = { seção: "loading"|"ready"|"error" }).
+    function loadingNotice(sectionList as object, states as object) as string
+        names = []
+        for each section in sectionList
+            if states[section] = "loading" then names.push(searchScreen.sectionName(section))
+        end for
+        if names.count() = 0 then return ""
+        return "Atualizando catálogo de " + names.join(", ") + "…"
+    end function
+
+    ' Busca recente vai para o topo, sem repetir (comparando sem acento e maiúsculas), até RECENT_MAX.
+    function rememberSearch(recent as object, query as string) as object
+        term = query.trim()
+        key = catalog.normalizeText(term)
+        if Len(key) < catalogSearch.MIN_QUERY_LENGTH then return recent
+        list = [term]
+        for each old in recent
+            if list.count() >= searchScreen.RECENT_MAX then exit for
+            if catalog.normalizeText(old) <> key then list.push(old)
+        end for
+        return list
+    end function
+
+    ' Uma lista por perfil; sem perfis (D7) fica a "default", como no web sem perfil ativo.
+    function recentKey(profileId as dynamic) as string
+        return "search:recent:" + utils.textOr(profileId, "default")
+    end function
+
+    ' Lista salva no aparelho (pode vir corrompida): só textos, até RECENT_MAX.
+    function parseRecent(saved as dynamic) as object
+        list = []
+        if type(saved) <> "roArray" then return list
+        for each term in saved
+            if list.count() >= searchScreen.RECENT_MAX then exit for
+            if utils.isString(term) and term <> "" then list.push(term)
+        end for
+        return list
+    end function
+
+end namespace

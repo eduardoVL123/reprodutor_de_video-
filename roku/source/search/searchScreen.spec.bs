@@ -1,0 +1,108 @@
+' Regras de src/components/SearchScreen.vue (teclado, filtros, buscas recentes).
+namespace tests
+
+    @suite("searchScreen")
+    class SearchScreenTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("teclado na tela")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("letras somam até 60 caracteres; Apagar tira a última")
+        function _()
+            m.assertEqual(searchScreen.typeText("fil", "m"), "film")
+            m.assertEqual(Len(searchScreen.typeText(String(60, "a"), "b")), 60)
+            m.assertEqual(searchScreen.backspace("film"), "fil")
+            m.assertEqual(searchScreen.backspace(""), "")
+        end function
+
+        @it("espaço só depois de uma letra: nunca no começo nem dois seguidos")
+        function _()
+            m.assertEqual(searchScreen.typeSpace(""), "")
+            m.assertEqual(searchScreen.typeSpace("the"), "the ")
+            m.assertEqual(searchScreen.typeSpace("the "), "the ")
+        end function
+
+        @it("sugestões e resultados a partir da 3ª letra, sem contar acento nem espaço")
+        function _()
+            m.assertFalse(searchScreen.hasMinQuery("fi"))
+            m.assertFalse(searchScreen.hasMinQuery("  fi "))
+            m.assertTrue(searchScreen.hasMinQuery("fil"))
+            m.assertTrue(searchScreen.hasMinQuery("Ação"))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("seções, filtros e aviso de carga")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("lista M3U busca só em Filmes e TV ao vivo")
+        function _()
+            m.assertEqual(searchScreen.sectionsFor("m3u"), ["vod", "live"])
+            m.assertEqual(searchScreen.sectionsFor("xtream"), ["vod", "series", "live"])
+        end function
+
+        @it("filtros só dos tipos com resultado; com um tipo só, nenhum")
+        function _()
+            sections = ["vod", "series", "live"]
+            m.assertEqual(searchScreen.filterList(sections, { vod: 3, series: 0, live: 0 }), [])
+            m.assertEqual(searchScreen.filterList(sections, { vod: 3, series: 0, live: 2 }), [{ id: "all", label: "Tudo" }, { id: "vod", label: "Filmes" }, { id: "live", label: "TV ao vivo" }])
+        end function
+
+        @it("filtro que deixou de ter resultado volta para Tudo; Tudo mostra tudo")
+        function _()
+            list = [{ id: "all", label: "Tudo" }, { id: "vod", label: "Filmes" }, { id: "live", label: "TV ao vivo" }]
+            m.assertEqual(searchScreen.effectiveFilter(list, "live"), "live")
+            m.assertEqual(searchScreen.effectiveFilter(list, "series"), "all")
+            m.assertEqual(searchScreen.effectiveFilter([], "vod"), "all")
+            results = [{ section: "vod", pos: 1 }, { section: "live", pos: 2 }, { section: "vod", pos: 3 }]
+            m.assertEqual(searchScreen.visibleResults(results, "all").count(), 3)
+            m.assertEqual(searchScreen.visibleResults(results, "vod"), [{ section: "vod", pos: 1 }, { section: "vod", pos: 3 }])
+        end function
+
+        @it("aviso lista só as seções que ainda estão baixando")
+        function _()
+            sections = ["vod", "series", "live"]
+            m.assertEqual(searchScreen.loadingNotice(sections, { vod: "ready", series: "loading", live: "loading" }), "Atualizando catálogo de Séries, TV ao vivo…")
+            m.assertEqual(searchScreen.loadingNotice(sections, { vod: "ready", series: "error", live: "ready" }), "")
+        end function
+
+        @it("selo do cartão: FILME e SÉRIE; canal não ganha selo")
+        function _()
+            m.assertEqual(searchScreen.sectionBadge("vod"), "FILME")
+            m.assertEqual(searchScreen.sectionBadge("series"), "SÉRIE")
+            m.assertEqual(searchScreen.sectionBadge("live"), "")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("buscas recentes")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("a nova vai para o topo, sem repetir a mesma com outro acento ou maiúscula")
+        function _()
+            m.assertEqual(searchScreen.rememberSearch(["Ação", "drama"], "  acao "), ["acao", "drama"])
+            m.assertEqual(searchScreen.rememberSearch(["drama"], "fi"), ["drama"])
+        end function
+
+        @it("guarda no máximo 8")
+        function _()
+            recent = []
+            for i = 1 to 8
+                recent.push("termo " + i.toStr())
+            end for
+            list = searchScreen.rememberSearch(recent, "novo")
+            m.assertEqual(list.count(), 8)
+            m.assertEqual(list[0], "novo")
+            m.assertEqual(list[7], "termo 7")
+        end function
+
+        @it("uma lista por perfil; salva corrompida vira lista vazia")
+        function _()
+            m.assertEqual(searchScreen.recentKey(invalid), "search:recent:default")
+            m.assertEqual(searchScreen.recentKey("p2"), "search:recent:p2")
+            m.assertEqual(searchScreen.parseRecent("lixo"), [])
+            m.assertEqual(searchScreen.parseRecent(["ok", 5, "", "outro"]), ["ok", "outro"])
+        end function
+
+    end class
+
+end namespace

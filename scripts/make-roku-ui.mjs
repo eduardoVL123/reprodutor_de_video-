@@ -497,6 +497,14 @@ export const OUTPUTS = [
   ['icon-restart.png', () => svgIcon(16, [{ points: [1, 4, 1, 10, 7, 10] }, { d: 'M3.51 15a9 9 0 1 0 2.13-9.36L1 10' }])],
   ['icon-broadcast.png', () => svgIcon(20,[{ d: 'M4.93 19.07A10 10 0 0 1 19.07 4.93' }, { d: 'M7.76 16.24a6 6 0 0 1 8.48-8.48' }, { circle: [12, 12, 2] }])],
   // Item do menu: ativo bg-white/15, rounded-xl (12).
+  // Busca (SearchScreen.vue): ícones de Espaço, Apagar e buscas recentes; filtro (rounded-lg) e sugestão focada.
+  ['icon-space.png', () => svgIcon(24, [{ points: [3, 10, 3, 15, 21, 15, 21, 10] }], { stroke: 1.75 })],
+  ['icon-backspace.png', () => svgIcon(24, [{ d: 'M21 4H8l-7 8 7 8h13a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2z' }, { points: [18, 9, 12, 15] }, { points: [12, 9, 18, 15] }], { stroke: 1.75 })],
+  ['icon-clock.png', () => svgIcon(20, [{ circle: [12, 12, 10] }, { points: [12, 6, 12, 12, 16, 14] }], { stroke: 1.75 })],
+  ['chip-soft.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.04 }])],
+  ['chip-active.9.png', () => ninePatch([{ inset: 0, radius: 8, color: LIME }])],
+  ['row-focus.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.08 }])],
+
   ['nav-active.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE, alpha: 0.15 }])],
   // Anel de foco em volta de algo rounded-xl (cartões e itens do menu): ring 2 branco + offset 3 grafite.
   ['focus-ring-12.9.png', () => ninePatch([{ inset: 0, radius: 17, color: WHITE }, { inset: 2, radius: 15, color: DEEP }])],

@@ -444,12 +444,12 @@ sub refreshNav()
 end sub
 
 ' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
-' Início, TV ao vivo, Filmes e Séries trocam a aba. Assistir, canais e as outras abas entram com o player (D6) e as
-' telas de busca, favoritos e conta.
+' Início, Busca, TV ao vivo, Filmes e Séries trocam a aba. Assistir, canais e as outras abas entram com o player (D6) e
+' as telas de favoritos e conta.
 function onSelect() as boolean
     if isMenuId(m.focusId) then
         menuTab = Mid(m.focusId, 5)
-        if menuTab = "live" or menuTab = "vod" or menuTab = "series" then openTab(menuTab)
+        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" then openTab(menuTab)
         if menuTab = "home" then showHome("nav-home")
         return true
     end if
@@ -520,16 +520,21 @@ end sub
 ' ---------- Abas TV ao vivo, Filmes e Séries (CatalogTab) ----------
 
 ' Troca a aba (activeTab do Dashboard.vue): o conteúdo do Início some e a aba entra no lugar, com o menu por cima.
+' section = "live"|"vod"|"series" (CatalogTab) ou "search" (SearchTab).
 sub openTab(section as string)
     if m.catalogTab <> invalid and m.tab <> section then closeTab()
     m.tab = section
     m.content.visible = false
     if m.catalogTab = invalid then
-        m.catalogTab = CreateObject("roSGNode", "CatalogTab")
+        if section = "search" then
+            m.catalogTab = CreateObject("roSGNode", "SearchTab")
+        else
+            m.catalogTab = CreateObject("roSGNode", "CatalogTab")
+        end if
         m.top.insertChild(m.catalogTab, m.top.getChildCount() - 1)
         m.catalogTab.observeField("exit", "onTabExit")
         m.catalogTab.observeField("navigate", "onTabNavigate")
-        m.catalogTab.section = section
+        if section <> "search" then m.catalogTab.section = section
     end if
     m.focusId = "tab"
     renderMenu()
@@ -538,6 +543,8 @@ end sub
 
 sub closeTab()
     if m.catalogTab = invalid then return
+    ' A busca encerra a Task que segura o cache de nomes.
+    if m.catalogTab.hasField("stop") then m.catalogTab.stop = true
     m.top.removeChild(m.catalogTab)
     m.catalogTab = invalid
 end sub
