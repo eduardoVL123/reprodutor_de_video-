@@ -1,0 +1,66 @@
+' Casos da grade virtualizada: gridTarget de src/utils/spatialNavigation.js e a conta de src/components/GridView.vue
+' (valores da aba Filmes a 1920×1080: 5 colunas de 24rem com gap 1.25rem numa janela de 1624×893).
+namespace tests
+
+    function moviesGrid() as object
+        return { columns: 5, rowHeight: 384, gap: 20, pad: 16, width: 1624, height: 893 }
+    end function
+
+    @suite("grid")
+    class GridTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("gridTarget — setas dentro da grade")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("anda na linha sem passar das pontas (-1 delega para a navegação geométrica)")
+        function _()
+            m.assertEqual(grid.target(5, 12, 0, "right"), 1)
+            m.assertEqual(grid.target(5, 12, 4, "right"), -1)
+            m.assertEqual(grid.target(5, 12, 11, "right"), -1)
+            m.assertEqual(grid.target(5, 12, 6, "left"), 5)
+            m.assertEqual(grid.target(5, 12, 5, "left"), -1)
+        end function
+
+        @it("sobe e desce por coluna; a linha seguinte incompleta leva ao último item")
+        function _()
+            m.assertEqual(grid.target(5, 12, 3, "up"), -1)
+            m.assertEqual(grid.target(5, 12, 8, "up"), 3)
+            m.assertEqual(grid.target(5, 12, 3, "down"), 8)
+            m.assertEqual(grid.target(5, 12, 8, "down"), 11)
+            m.assertEqual(grid.target(5, 12, 6, "down"), 11)
+            m.assertEqual(grid.target(5, 12, 11, "down"), -1)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("GridView — rolagem, janela de linhas e posição de cada item")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("rola só o necessário para o item focado caber com o respiro de 1rem")
+        function _()
+            g = tests.moviesGrid()
+            m.assertEqual(grid.scrollToIndex(g, 0, 0), 0)
+            m.assertEqual(grid.scrollToIndex(g, 0, 10), 331)
+            m.assertEqual(grid.scrollToIndex(g, 331, 0), 0)
+            m.assertEqual(grid.scrollToIndex(g, 331, 7), 331)
+        end function
+
+        @it("desenha só as linhas visíveis mais uma")
+        function _()
+            g = tests.moviesGrid()
+            m.assertEqual(grid.visibleRows(g, 20, 331), { first: 0, last: 3 })
+            m.assertEqual(grid.visibleRows(g, 100, 1000), { first: 2, last: 5 })
+            m.assertEqual(grid.visibleRows(g, 100, 999999), { first: 16, last: 19 })
+        end function
+
+        @it("posição e tamanho do item como o slotStyle (largura dividida entre as colunas)")
+        function _()
+            g = tests.moviesGrid()
+            m.assertEqual(grid.slotRect(g, 0), [16, 16, 302, 384])
+            m.assertEqual(grid.slotRect(g, 6), [338, 420, 302, 384])
+            m.assertEqual(grid.contentHeight(g, 12), 1224)
+        end function
+
+    end class
+
+end namespace
