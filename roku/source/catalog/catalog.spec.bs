@@ -177,12 +177,71 @@ namespace tests
             m.assertTrue(compact < full * 0.6, compact.toStr() + " de " + full.toStr())
         end function
 
-        @it("sem espaço para tudo, guarda os primeiros itens que couberem em vez de deixar a seção vazia")
+        @it("lista Xtream que não cabe no disco passa a vir do servidor, sem cortar nada")
+        function _()
+            streams = tests.numberedStreams(1200)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "2", category_name: "B" }, { category_id: "1", category_name: "A" }], streams, 10)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertTrue(catalog.isRemote(meta))
+            m.assertEqual(meta.count, 1200)
+            m.assertEqual(meta.order, ["2", "1"])
+            list = catalog.publishList(tests.CATALOG_DIR, "vod")
+            m.assertEqual(list[0].count, 1200)
+            m.assertEqual(list[1].count, 600)
+            m.assertEqual(catalog.visibleCount(tests.CATALOG_DIR, "vod", ["2"]), 600)
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 0)
+        end function
+
+        @it("pelo servidor: a página baixa só as categorias que toca, na ordem, sem as fora da vista, e guarda em tmp:")
+        function _()
+            catalog.deleteTree("tmp:/pulse-remote")
+            streams = tests.numberedStreams(6)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            base = "http://srv.test/player_api.php?username=u&password=p&action=get_vod_streams&category_id="
+            t = tests.fakeTransport([
+                { prefix: base + "1", response: tests.jsonResponse([{ stream_id: 1, name: "Um", category_id: "1" }, { stream_id: 3, name: "Três", category_id: "1" }, { stream_id: 5, name: "Cinco", category_id: "1" }]) },
+                { prefix: base + "2", response: tests.jsonResponse([{ stream_id: 2, name: "Dois", category_id: "2" }, { stream_id: 4, name: "Quatro", category_id: "2" }, { stream_id: 6, name: "Seis", category_id: "2" }]) }
+            ])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: "http://srv.test", credentials: { username: "u", password: "p" } }
+            m.assertEqual(tests.ids(catalog.remoteItems(t, ctx, "vod", catalog.ALL_CATEGORIES, 2, 3, [], meta)), [5, 2, 4])
+            m.assertEqual(t.calls.count(), 2)
+            m.assertEqual(tests.ids(catalog.remoteItems(t, ctx, "vod", "2", 1, 10, [], meta)), [4, 6])
+            m.assertEqual(t.calls.count(), 2)
+            m.assertEqual(tests.ids(catalog.remoteItems(t, ctx, "vod", catalog.ALL_CATEGORIES, 0, 10, ["1"], meta)), [2, 4, 6])
+            m.assertEqual(catalog.remoteItems(t, ctx, "vod", "1", 0, 10, ["1"], meta).count(), 0)
+            item = catalog.remoteItems(t, ctx, "vod", "1", 0, 1, [], meta)[0]
+            m.assertEqual(item.section, "vod")
+            m.assertEqual(item.container_extension, "mp4")
+            catalog.deleteTree("tmp:/pulse-remote")
+        end function
+
+        @it("pelo servidor com espaço para a busca: o índice leve cobre a lista toda")
+        function _()
+            streams = tests.numberedStreams(1200)
+            ' Capas longas como as das listas reais: o item completo pesa bem mais que o leve.
+            for each it in streams
+                it.stream_icon = "http://img" + it.stream_id.toStr() + ".exemplo.com/" + String(150, "x") + ".jpg"
+            end for
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
+            oneChunk = Len(ReadAsciiFile(tests.CATALOG_DIR + "/vod/chunk-0.json"))
+            ' Cabe a busca leve inteira, mas não os itens completos.
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, oneChunk * 2)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertTrue(catalog.isRemote(meta))
+            m.assertEqual(meta.searchCount, 1200)
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod")[1199], "item 1200")
+            found = catalog.getItemsAt(tests.CATALOG_DIR, "vod", [1199])[0]
+            m.assertEqual(found.stream_id, 1200)
+            m.assertEqual(found.name, "Item 1200")
+        end function
+
+        @it("M3U sem espaço para tudo (sem servidor por categoria): guarda os primeiros itens que couberem")
         function _()
             streams = tests.numberedStreams(1200)
             catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
             oneChunk = Len(ReadAsciiFile(tests.CATALOG_DIR + "/vod/chunk-0.json"))
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, oneChunk + 600 * catalog.INDEX_BYTES_PER_ITEM)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, oneChunk + 600 * catalog.INDEX_BYTES_PER_ITEM, false)
             meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
             m.assertNotInvalid(meta)
             m.assertTrue(meta.truncated)
@@ -192,7 +251,7 @@ namespace tests
             m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 500)
             m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 500)
             ' Nem um chunk cabe: a seção fica vazia mas com o resumo (não baixa de novo em laço).
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, 10)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, 10, false)
             m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 0)
         end function
 

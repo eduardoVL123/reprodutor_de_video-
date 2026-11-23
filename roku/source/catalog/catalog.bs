@@ -2,6 +2,9 @@ import "pkg:/source/utils/types.bs"
 import "pkg:/source/xtream/errors.bs"
 import "pkg:/source/xtream/api.bs"
 import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
 ' Port de src/services/catalogDb.js, da carga de src/stores/catalogStore.js e de src/utils/normalizeText.js (casos em
 ' tests/catalogDb.test.js, tests/parental.test.js, tests/catalogStore.m3u.test.js e catalog.spec.bs).
 ' Mesmo formato do web, em arquivos no lugar do IndexedDB (um diretório por seção):
@@ -227,9 +230,10 @@ namespace catalog
 
     ' Grava a seção em pedaços, com o índice por categoria e o de busca. Substitui o que havia.
     ' Nunca enche o disco: antes de cada chunk confere o espaço livre (deixando DISK_RESERVE_BYTES e o que os índices
-    ' vão ocupar); se não couber, ou se a gravação falhar, a seção fica com os itens que couberam (meta.truncated) em vez
-    ' de vazia. budget = limite de bytes para os testes (-1: o espaço livre do volume).
-    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double)
+    ' vão ocupar). Se a seção não couber inteira, passa a vir do servidor por categoria (saveRemote): a lista aparece
+    ' toda, carregada por partes. Sem servidor para isso (M3U, remoteOk = false), ficam os itens que couberam
+    ' (meta.truncated). budget = limite de bytes para os testes (-1: o espaço livre do volume).
+    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, remoteOk = true as boolean)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
         ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
@@ -308,8 +312,196 @@ namespace catalog
                 names.push(catalog.normalizeText(streams[p].name))
             end for
         end while
-        if written < total then print "[catalog] Seção "; section; " grande demais para o disco: guardados "; written; " de "; total; " itens."
+        if written < total then
+            if remoteOk then
+                catalog.saveRemote(dir, section, categories, streams, budget)
+                return
+            end if
+            print "[catalog] Seção "; section; " grande demais para o disco: guardados "; written; " de "; total; " itens."
+        end if
     end sub
+
+    ' ---------- Seção pelo servidor (não coube no disco) ----------
+    ' Fica no disco: a contagem e a ordem das categorias e, no que couber, uma versão leve dos itens (id, nome e
+    ' categoria) para a busca. A tela pede páginas como sempre: getItems busca no servidor só a categoria da página
+    ' (get_*_streams&category_id) e guarda as últimas em tmp:.
+
+    sub saveRemote(dir as string, section as string, categories as object, streams as object, budget as double)
+        path = catalog.sectionDir(dir, section)
+        catalog.deleteTree(path)
+        CreateDirectory(path)
+        counts = {}
+        counts.setModeCaseSensitive()
+        for each raw in streams
+            for each cat in catalog.categoriesOf(raw)
+                if counts.doesExist(cat) then
+                    counts[cat] = counts[cat] + 1
+                else
+                    counts[cat] = 1
+                end if
+            end for
+        end for
+        ' A ordem de "Todos": a da lista de categorias, depois as que só aparecem nos itens.
+        order = []
+        seen = {}
+        seen.setModeCaseSensitive()
+        for each c in categories
+            id = utils.textOr(c.category_id, "")
+            if utils.isNumber(c.category_id) and c.category_id = 0 then id = "0"
+            if counts.doesExist(id) and not seen.doesExist(id) then
+                seen[id] = true
+                order.push(id)
+            end if
+        end for
+        for each id in counts
+            if not seen.doesExist(id) and id <> "none" then order.push(id)
+        end for
+
+        total = streams.count()
+        free = budget
+        if free < 0 then free = catalog.freeBytes(dir)
+        used = 0#
+        written = 0
+        chunks = 0
+        names = []
+        index = {}
+        index.setModeCaseSensitive()
+        chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
+        for n = 0 to chunkCount - 1
+            base = n * catalog.CHUNK_SIZE
+            last = base + catalog.CHUNK_SIZE - 1
+            if last > total - 1 then last = total - 1
+            items = []
+            for p = base to last
+                full = catalog.normalizeItem(streams[p], section)
+                lite = {}
+                if utils.isObject(full) then
+                    lite = { stream_id: full.stream_id, name: full.name, category_id: full.category_id }
+                    if full.category_ids <> invalid then lite.category_ids = full.category_ids
+                end if
+                items.push(lite)
+            end for
+            text = FormatJson(catalog.packChunk(items))
+            need = Len(text) + (last + 1) * catalog.INDEX_BYTES_PER_ITEM
+            if budget < 0 and free <> invalid then need = need + catalog.DISK_RESERVE_BYTES
+            if free <> invalid and used + need > free then exit for
+            if not WriteAsciiFile(path + "/chunk-" + n.toStr() + ".json", text) then
+                DeleteFile(path + "/chunk-" + n.toStr() + ".json")
+                exit for
+            end if
+            used = used + Len(text)
+            for p = base to last
+                for each cat in catalog.categoriesOf(streams[p])
+                    if not index.doesExist(cat) then index[cat] = []
+                    index[cat].push(p)
+                end for
+                names.push(catalog.normalizeText(items[p - base].name))
+            end for
+            written = last + 1
+            chunks = n + 1
+        end for
+        meta = { version: catalog.CATALOG_VERSION, remote: true, count: total, total: total, truncated: false, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index)) and WriteAsciiFile(path + "/search.json", FormatJson(names))
+        if ok then ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        if not ok then
+            ' Nem a busca leve coube: a seção continua pelo servidor, só sem busca.
+            for n = 0 to chunks - 1
+                DeleteFile(path + "/chunk-" + n.toStr() + ".json")
+            end for
+            meta.chunkCount = 0
+            meta.searchCount = 0
+            WriteAsciiFile(path + "/categories.json", FormatJson(categories))
+            WriteAsciiFile(path + "/index.json", "{}")
+            WriteAsciiFile(path + "/search.json", "[]")
+            WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        end if
+        print "[catalog] Seção "; section; " não coube no disco: vem do servidor por categoria ("; total; " itens; busca em "; meta.searchCount; ")."
+    end sub
+
+    ' A seção vem do servidor (não coube no disco)?
+    function isRemote(meta as dynamic) as boolean
+        if not utils.isObject(meta) or GetInterface(meta.remote, "ifBoolean") = invalid then return false
+        return meta.remote
+    end function
+
+    ' ctx da lista ativa se for a dona desta pasta (o getItems pelo servidor precisa do endereço e das credenciais).
+    function remoteContext(dir as string) as dynamic
+        current = session.hydrate(storage.create())
+        if current = invalid then return invalid
+        ctx = catalog.contextFor(current)
+        if ctx.dir <> dir then return invalid
+        return ctx
+    end function
+
+    ' Itens [start, start+count) de uma seção pelo servidor: "Todos" percorre as categorias na ordem (sem as fora da
+    ' vista) pelas contagens e só baixa as categorias que a página toca.
+    function remoteItems(transport as object, ctx as dynamic, section as string, categoryId as string, start as integer, count as integer, hidden as object, meta as object) as object
+        result = []
+        if ctx = invalid or count <= 0 then return result
+        hiddenSet = {}
+        hiddenSet.setModeCaseSensitive()
+        for each id in hidden
+            hiddenSet[utils.textOr(id, "")] = true
+        end for
+        walk = []
+        if categoryId = catalog.ALL_CATEGORIES then
+            for each id in meta.order
+                if not hiddenSet.doesExist(id) then walk.push(id)
+            end for
+        else if not hiddenSet.doesExist(categoryId) then
+            walk.push(categoryId)
+        end if
+        skip = start
+        for each cat in walk
+            n = meta.counts[cat]
+            if n = invalid then n = 0
+            if skip >= n then
+                skip = skip - n
+            else
+                items = catalog.fetchCategory(transport, ctx, section, cat)
+                for i = skip to items.count() - 1
+                    if result.count() >= count then exit for
+                    result.push(items[i])
+                end for
+                skip = 0
+                if result.count() >= count then exit for
+            end if
+        end for
+        return result
+    end function
+
+    ' Uma categoria do servidor, normalizada como o catálogo grava; as últimas ficam em tmp: (some ao fechar o app).
+    function fetchCategory(transport as object, ctx as object, section as string, categoryId as string) as object
+        cacheDir = "tmp:/pulse-remote"
+        CreateDirectory(cacheDir)
+        file = cacheDir + "/" + xtream.hashText(ctx.dir + "|" + section + "|" + categoryId) + ".json"
+        cached = catalog.readJsonFile(file)
+        if utils.isObject(cached) then return catalog.unpackChunk(cached, section)
+        names = catalog.actions(section)
+        response = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: names.streams, params: { category_id: categoryId }, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
+        if response.error <> invalid or GetInterface(response.data, "ifArray") = invalid then return []
+        list = response.data
+        if section = "series" then list = catalog.remapSeries(list)
+        ' Servidor que ignora o category_id devolve a lista toda: fica só o que é desta categoria.
+        items = []
+        for each raw in list
+            for each cat in catalog.categoriesOf(raw)
+                if cat = categoryId then
+                    items.push(catalog.normalizeItem(raw, section))
+                    exit for
+                end if
+            end for
+        end for
+        ' shortcut: guarda no máximo 12 categorias (o tmp: é memória); passar disso limpa tudo e recomeça.
+        listing = CreateObject("roFileSystem").getDirectoryListing(cacheDir)
+        if listing <> invalid and listing.count() >= 12 then
+            for each name in listing
+                DeleteFile(cacheDir + "/" + name)
+            end for
+        end if
+        WriteAsciiFile(file, FormatJson(catalog.packChunk(items)))
+        return items
+    end function
 
     ' ---------- Leitura ----------
 
@@ -338,7 +530,9 @@ namespace catalog
         if meta = invalid then return []
         path = catalog.sectionDir(dir, section)
         names = catalog.readJsonFile(path + "/search.json")
-        if GetInterface(names, "ifArray") <> invalid and names.count() = meta.count then return names
+        expected = meta.count
+        if catalog.isRemote(meta) then expected = meta.searchCount
+        if GetInterface(names, "ifArray") <> invalid and names.count() = expected then return names
         names = []
         for n = 0 to meta.chunkCount - 1
             chunk = catalog.unpackChunk(catalog.readJsonFile(path + "/chunk-" + n.toStr() + ".json"), section)
@@ -373,6 +567,16 @@ namespace catalog
     ' Quantos itens "Todos" mostra com o filtro (invalid = sem filtro: vale o total do catálogo).
     function visibleCount(dir as string, section as string, hidden as object) as dynamic
         meta = catalog.getMeta(dir, section)
+        if catalog.isRemote(meta) then
+            if hidden.count() = 0 then return invalid
+            n = meta.count
+            for each id in hidden
+                hiddenCount = meta.counts[utils.textOr(id, "")]
+                if hiddenCount <> invalid then n = n - hiddenCount
+            end for
+            if n < 0 then n = 0
+            return n
+        end if
         blocked = catalog.blockedPositions(dir, section, hidden)
         if meta = invalid or blocked = invalid then return invalid
         return meta.count - blocked.count()
@@ -380,6 +584,11 @@ namespace catalog
 
     ' Itens visíveis por categoria com o filtro (invalid = sem filtro: valem as contagens do catálogo).
     function visibleCategoryCounts(dir as string, section as string, hidden as object) as dynamic
+        meta = catalog.getMeta(dir, section)
+        if catalog.isRemote(meta) then
+            if hidden.count() = 0 then return invalid
+            return meta.counts
+        end if
         blocked = catalog.blockedPositions(dir, section, hidden)
         if blocked = invalid then return invalid
         index = catalog.getIndex(dir, section)
@@ -399,6 +608,7 @@ namespace catalog
     function getItems(dir as string, section as string, categoryId as string, start as integer, count as integer, hidden as object) as object
         meta = catalog.getMeta(dir, section)
         if meta = invalid or count <= 0 then return []
+        if catalog.isRemote(meta) then return catalog.remoteItems(net.urlTransport(), catalog.remoteContext(dir), section, categoryId, start, count, hidden, meta)
         blocked = catalog.blockedPositions(dir, section, hidden)
         if categoryId = catalog.ALL_CATEGORIES then
             candidates = invalid ' todas as posições, em ordem
@@ -509,8 +719,9 @@ namespace catalog
         if fetched.error <> invalid then return fetched.error
         read = xtream.readM3u(fetched.text)
         if read.error <> invalid then return read.error
-        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams)
-        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams)
+        ' M3U não tem servidor por categoria: se não couber, ficam os itens que couberam.
+        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, false)
+        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, false)
         catalog.saveSection(ctx.dir, "series", [], [])
         return invalid
     end function
