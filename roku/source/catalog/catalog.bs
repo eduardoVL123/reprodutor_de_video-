@@ -372,6 +372,29 @@ namespace catalog
 
     ' Carrega do cache se houver; senão baixa da API (ou da playlist M3U) e grava.
     ' ctx = { dir, apiBase, credentials, type }. { ok, error, errorDetail, list }
+    ' loadSection sem baixar a mesma seção duas vezes ao mesmo tempo (o Início e a aba abrem juntos): como a promessa
+    ' em andamento do catalogStore, quem chega depois espera a primeira terminar e lê o que ela gravou.
+    ' Marcador por seção em m.global.catalogLoads (criado pela MainScene); sem ele, carrega direto.
+    function loadShared(transport as object, ctx as object, section as string, force as boolean) as object
+        if m.global = invalid or not m.global.hasField("catalogLoads") then return catalog.loadSection(transport, ctx, section, force)
+        waited = false
+        while m.global.catalogLoads[section] = true
+            waited = true
+            sleep(200)
+        end while
+        busy = {}
+        busy.append(m.global.catalogLoads)
+        busy[section] = true
+        m.global.catalogLoads = busy
+        ' Quem esperou não força: a lista acabou de ser baixada pela outra carga.
+        result = catalog.loadSection(transport, ctx, section, force and not waited)
+        done = {}
+        done.append(m.global.catalogLoads)
+        done[section] = false
+        m.global.catalogLoads = done
+        return result
+    end function
+
     function loadSection(transport as object, ctx as object, section as string, force as boolean) as object
         meta = invalid
         if not force then meta = catalog.getMeta(ctx.dir, section)

@@ -13,5 +13,5 @@ sub runCatalog()
         m.top.result = { items: catalog.getItems(request.ctx.dir, request.section, request.categoryId, request.start, request.count, hidden) }
         return
     end if
-    m.top.result = catalog.loadSection(net.urlTransport(), request.ctx, request.section, request.force = true)
+    m.top.result = catalog.loadShared(net.urlTransport(), request.ctx, request.section, request.force = true)
 end sub

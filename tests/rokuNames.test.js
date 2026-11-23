@@ -63,6 +63,19 @@ describe('app Roku — nomes que o BrighterScript troca sem avisar', () => {
     expect([...new Set(clashes)]).toEqual([])
   })
 
+  // Já aconteceu: `const LEFT = 152` num componente trocou `Left(id, 5)` por `152(id, 5)` e o app caiu ao abrir a aba.
+  it('nenhuma const tem o nome de uma função nativa do BrightScript (Left, Mid, Len, Val...)', () => {
+    const builtins = ['left', 'right', 'mid', 'len', 'val', 'str', 'int', 'cint', 'fix', 'abs', 'sgn', 'instr', 'chr', 'asc', 'lcase', 'ucase', 'sleep', 'type', 'tab', 'pos']
+    const clashes = []
+    for (const file of bsFiles('roku')) {
+      for (const line of readFileSync(file, 'utf8').split(/\r?\n/)) {
+        const m = line.replace(/'.*$/, '').match(/^\s*const\s+(\w+)/i)
+        if (m && builtins.includes(m[1].toLowerCase())) clashes.push(`${file}: const ${m[1]}`)
+      }
+    }
+    expect(clashes).toEqual([])
+  })
+
   it('nenhuma função tem o nome de uma const do mesmo namespace', () => {
     const clashes = []
     for (const [ns, { consts, functions }] of collect()) {

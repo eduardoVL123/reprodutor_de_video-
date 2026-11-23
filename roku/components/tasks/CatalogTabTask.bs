@@ -1,0 +1,53 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/catalog/catalogTab.bs"
+import "pkg:/source/xtream/api.bs"
+
+sub init()
+    m.top.functionName = "runCatalogTab"
+end sub
+
+sub runCatalogTab()
+    ctx = m.top.ctx
+    section = m.top.section
+    request = m.top.request
+    hidden = m.top.hidden
+    if hidden = invalid then hidden = {}
+    sectionHidden = hidden[section]
+    if sectionHidden = invalid then sectionHidden = []
+
+    if request.mode = "page" then
+        items = catalog.getItems(ctx.dir, section, request.categoryId, request.start, request.count, sectionHidden)
+        m.top.result = { mode: "page", categoryId: request.categoryId, start: request.start, items: items }
+        return
+    end if
+
+    transport = net.urlTransport()
+    loaded = catalog.loadShared(transport, ctx, section, request.force = true)
+    if not loaded.ok then
+        m.top.result = { mode: "open", ok: false, error: loaded.error, categories: [], rows: [] }
+        return
+    end if
+    ' shortcut: categorias bloqueadas por PIN entram com o controle parental (D7); por enquanto nenhuma.
+    rows = []
+    for each cat in catalogTab.rowCategories(loaded.list, {})
+        items = catalog.getItems(ctx.dir, section, cat.category_id, 0, 15, sectionHidden)
+        if items.count() > 0 then rows.push({ category_id: cat.category_id, category_name: cat.category_name, items: items })
+    end for
+    heroItem = invalid
+    if section <> "live" and rows.count() > 0 then heroItem = rows[0].items[0]
+    m.top.result = { mode: "open", ok: true, error: "", categories: loaded.list, rows: rows, heroItem: heroItem }
+    if heroItem = invalid then return
+
+    ' Detalhes do destaque (loadFeaturedInfo): série pelo get_series_info, filme pelo get_vod_info.
+    info = xtream.normalizeVodInfo(invalid, heroItem)
+    if utils.textOr(heroItem.directUrl, "") = "" then
+        if section = "series" then
+            response = xtream.fetchSeriesInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, seriesId: heroItem.stream_id })
+            if response.error = invalid and response.data.info <> invalid then info = xtream.normalizeVodInfo({ info: response.data.info }, heroItem)
+        else
+            info = xtream.fetchVodInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, vodId: heroItem.stream_id, item: heroItem })
+        end if
+    end if
+    m.top.result = { mode: "hero", info: info }
+end sub

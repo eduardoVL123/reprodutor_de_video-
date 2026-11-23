@@ -471,7 +471,29 @@ export const OUTPUTS = [
   // Detalhes (MediaDetailsModal.vue): Voltar e "Assistir do início", w-4 stroke 2.
   // .tv-badge (selo E1 do episódio): rounded (4), bg-black/60, border white/25.
   ['badge.9.png', () => ninePatch([{ inset: 0, radius: 4, color: WHITE, alpha: 0.25, hole: { inset: 1, radius: 3 } }, { inset: 1, radius: 3, color: [0, 0, 0], alpha: 0.6 }])],
-  ['icon-back.png',() => svgIcon(16, [{ points: [19, 12, 5, 12] }, { points: [12, 19, 5, 12, 12, 5] }])],
+  // ---- Abas do catálogo (src/components/CatalogBrowser.vue e GridItem.vue) ----
+  // Categoria: rounded-full; inativa bg-white/[0.08] + border white/10; ativa bg-tv-accent. Anel de foco em volta.
+  ['pill.9.png', () => ninePatch([{ inset: 0, radius: 17, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 16 } }, { inset: 1, radius: 16, color: WHITE, alpha: 0.08 }])],
+  ['pill-active.9.png', () => ninePatch([{ inset: 0, radius: 16, color: LIME }])],
+  ['focus-ring-pill.9.png', () => ninePatch([{ inset: 0, radius: 22, color: WHITE }, { inset: 2, radius: 20, color: DEEP }])],
+  // Controle parental / Atualizar lista: rounded-lg bg-white/[0.06] border white/10.
+  ['btn-soft.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.06 }])],
+  // Mais informações / favoritos do destaque da aba: rounded-lg bg-white/10 border white/10.
+  ['btn-hero.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.1 }])],
+  // Selos: ● AO VIVO (bg #ef4444) e NOVO (bg-tv-accent), rounded (4).
+  ['badge-red.9.png', () => ninePatch([{ inset: 0, radius: 4, color: hex('#EF4444') }])],
+  ['badge-lime.9.png', () => ninePatch([{ inset: 0, radius: 4, color: LIME }])],
+  // Faixa do nome no pôster: bg-gradient-to-t from-black/95 via-black/60 (o da grade usa via-black/70).
+  ['title-shade.png', () => gradient(56, [[0, [0, 0, 0], 0], [0.5, [0, 0, 0], 0.6], [1, [0, 0, 0], 0.95]], { vertical: true })],
+  ['title-shade-grid.png', () => gradient(69, [[0, [0, 0, 0], 0], [0.5, [0, 0, 0], 0.7], [1, [0, 0, 0], 0.95]], { vertical: true })],
+  // Destaque da aba: bg-gradient-to-r from-deep via-deep/85 to-transparent e to-t from-deep via-deep/30.
+  ['hero-fade-r.png', () => gradient(256, [[0, DEEP, 1], [0.5, DEEP, 0.85], [1, DEEP, 0]])],
+  ['hero-fade-t.png', () => gradient(256, [[0, DEEP, 0], [0.5, DEEP, 0.3], [1, DEEP, 1]], { vertical: true })],
+  // Fim da faixa de categorias: some em degradê (mask-image) sobre o cabeçalho bg-[#0b0f0c]/90.
+  ['strip-fade.png', () => gradient(64, [[0, DEEP, 0], [1, DEEP, 0.9]])],
+  ['icon-lock.png', () => svgIcon(16, [{ rect: [5, 11, 14, 10, 2] }, { d: 'M8 11V7a4 4 0 0 1 8 0v4' }])],
+  ['icon-refresh.png', () => svgIcon(16, [{ points: [23, 4, 23, 10, 17, 10] }, { d: 'M20.49 15a9 9 0 1 1-2.12-9.36L23 10' }])],
+  ['icon-back.png', () => svgIcon(16, [{ points: [19, 12, 5, 12] }, { points: [12, 19, 5, 12, 12, 5] }])],
   ['icon-restart.png', () => svgIcon(16, [{ points: [1, 4, 1, 10, 7, 10] }, { d: 'M3.51 15a9 9 0 1 0 2.13-9.36L1 10' }])],
   ['icon-broadcast.png', () => svgIcon(20,[{ d: 'M4.93 19.07A10 10 0 0 1 19.07 4.93' }, { d: 'M7.76 16.24a6 6 0 0 1 8.48-8.48' }, { circle: [12, 12, 2] }])],
   // Item do menu: ativo bg-white/15, rounded-xl (12).

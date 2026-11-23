@@ -53,6 +53,15 @@ namespace tests
             m.assertEqual(catalogTab.gridLayout("live").rowHeight, 160)
         end function
 
+        @it("fileira rola só o necessário para o cartão focado aparecer inteiro (scroll-px-3)")
+        function _()
+            ' Fileira de 1624 px com 15 cartões de 176 + 16 (conteúdo 12 + 15×192 − 16 + 12 = 2888).
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 7 * 192, 176, 1624, 2888, 12), 0)
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 8 * 192, 176, 1624, 2888, 12), 112)
+            m.assertEqual(catalogTab.nearestScroll(112, 12, 176, 1624, 2888, 12), 0)
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 14 * 192, 176, 1624, 2888, 12), 1264)
+        end function
+
         @it("destaque da aba: selo, nota, duração padrão e a sinopse de convite")
         function _()
             texts = catalogTab.heroTexts("vod", { name: "Filme" }, { name: "Filme X", rating: "0", year: "", duration: "", genre: "", plot: "Sem sinopse disponível." })

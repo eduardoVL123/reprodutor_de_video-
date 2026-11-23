@@ -14,7 +14,7 @@ sub runHome()
     heroItem = invalid
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
     for each section in ["vod", "series", "live"]
-        loaded = catalog.loadSection(transport, ctx, section, false)
+        loaded = catalog.loadShared(transport, ctx, section, false)
         items = []
         if loaded.ok then
             sectionHidden = hidden[section]

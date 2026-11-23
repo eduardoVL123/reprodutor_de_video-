@@ -20,6 +20,9 @@ const RATING_COLOR = "0x4ADE80FF"
 
 sub init()
     m.focusId = "hero-play"
+    m.tab = "home"
+    m.catalogTab = invalid
+    m.top.observeField("focusedChild", "onFocusChanged")
     m.rails = []
     m.heroItem = invalid
     m.heroInfo = invalid
@@ -352,7 +355,7 @@ sub renderMenu()
     for i = 0 to items.count() - 1
         item = items[i]
         y = tops[i]
-        active = item.id = "home"
+        active = item.id = m.tab
         focused = open and home.menuNavId(item.id) = m.focusId
         group = m.menu.createChild("Group")
         group.translation = [padX, y]
@@ -422,7 +425,7 @@ sub refreshNav()
     tops = [136, 200, 264, 328, 392, 456, 904, 968]
     entries = home.menuItems()
     for i = 0 to entries.count() - 1
-        menu.push({ id: home.menuNavId(entries[i].id), top: tops[i], active: entries[i].id = "home" })
+        menu.push({ id: home.menuNavId(entries[i].id), top: tops[i], active: entries[i].id = m.tab })
     end for
     open = isMenuId(m.focusId)
     menuX = 12
@@ -440,9 +443,16 @@ sub refreshNav()
     m.nav.groupRects = layout.groupRects
 end sub
 
-' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue). Assistir,
-' canais, "Ver todos" e as abas do menu entram com o player (D6) e as telas de catálogo.
+' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
+' Início, TV ao vivo, Filmes e Séries trocam a aba. Assistir, canais e as outras abas entram com o player (D6) e as
+' telas de busca, favoritos e conta.
 function onSelect() as boolean
+    if isMenuId(m.focusId) then
+        menuTab = Mid(m.focusId, 5)
+        if menuTab = "live" or menuTab = "vod" or menuTab = "series" then openTab(menuTab)
+        if menuTab = "home" then showHome("nav-home")
+        return true
+    end if
     item = invalid
     if m.focusId = "hero-info" then item = m.heroItem
     for each rail in m.rails
@@ -507,8 +517,76 @@ sub renderFocus()
     m.content.translation = [0, -m.scroll]
 end sub
 
+' ---------- Abas TV ao vivo, Filmes e Séries (CatalogTab) ----------
+
+' Troca a aba (activeTab do Dashboard.vue): o conteúdo do Início some e a aba entra no lugar, com o menu por cima.
+sub openTab(section as string)
+    if m.catalogTab <> invalid and m.tab <> section then closeTab()
+    m.tab = section
+    m.content.visible = false
+    if m.catalogTab = invalid then
+        m.catalogTab = CreateObject("roSGNode", "CatalogTab")
+        m.top.insertChild(m.catalogTab, m.top.getChildCount() - 1)
+        m.catalogTab.observeField("exit", "onTabExit")
+        m.catalogTab.observeField("navigate", "onTabNavigate")
+        m.catalogTab.section = section
+    end if
+    m.focusId = "tab"
+    renderMenu()
+    m.catalogTab.setFocus(true)
+end sub
+
+sub closeTab()
+    if m.catalogTab = invalid then return
+    m.top.removeChild(m.catalogTab)
+    m.catalogTab = invalid
+end sub
+
+' Voltar numa aba que não é o Início volta ao Início com o foco no menu (tabBackAction do web).
+sub showHome(focusId as string)
+    closeTab()
+    m.tab = "home"
+    m.content.visible = true
+    m.focusId = focusId
+    spatial.remember(m.nav, focusId)
+    renderMenu()
+    renderFocus()
+    m.top.setFocus(true)
+end sub
+
+' Esquerda na borda da aba: entra no menu no item lembrado ou no da aba ativa (rememberedIn do web).
+sub onTabExit()
+    target = m.nav.groupMemory["side-menu"]
+    if target = invalid then target = "nav-" + m.tab
+    m.focusId = target
+    renderMenu()
+    ' O pai focar não tira o foco da aba (no simulador): solta primeiro.
+    m.catalogTab.setFocus(false)
+    m.top.setFocus(true)
+end sub
+
+sub onTabNavigate(event as object)
+    m.top.navigate = event.getData()
+end sub
+
+' Voltando dos detalhes a MainScene foca o Início: devolve o foco para a aba se era lá que ele estava.
+sub onFocusChanged()
+    if m.focusId <> "tab" or m.catalogTab = invalid or m.top.focusedChild = invalid then return
+    if m.top.focusedChild.subtype() = "HomeScreen" then m.catalogTab.setFocus(true)
+end sub
+
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if key = "back" and m.tab <> "home" then
+        showHome("nav-home")
+        return true
+    end if
+    if key = "right" and m.tab <> "home" and isMenuId(m.focusId) then
+        m.focusId = "tab"
+        renderMenu()
+        m.catalogTab.setFocus(true)
+        return true
+    end if
     if key = "OK" then return onSelect()
     if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
     refreshNav()

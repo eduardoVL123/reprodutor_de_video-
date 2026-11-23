@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Abas TV ao vivo, Filmes e Séries (port de src/components/CatalogBrowser.vue, GridView.vue e GridItem.vue), dentro do
+     Início para o menu lateral continuar na tela como no web: cabeçalho com o título, as categorias e os botões; em
+     "Todos", o destaque (filmes/séries) e uma fileira por categoria; numa categoria, a grade com todos os itens.
+     section = "live"|"vod"|"series". exit = "left" quando Esquerda sai da aba (o Início foca o menu). -->
+<component name="CatalogTab" extends="Group">
+    <interface>
+        <field id="section" type="string" onChange="onSection" />
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="exit" type="string" alwaysNotify="true" />
+    </interface>
+</component>

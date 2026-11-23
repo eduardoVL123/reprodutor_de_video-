@@ -48,6 +48,17 @@ namespace catalogTab
         return { title: "Nenhum item encontrado nesta categoria.", detail: "" }
     end function
 
+    ' Rolagem lateral de fileira/barra (overflow-x com scroll-px-3): o item focado entra inteiro, rolando só o
+    ' necessário, sem passar do começo nem do fim. Posições no conteúdo da faixa.
+    function nearestScroll(scrollLeft as integer, itemLeft as integer, itemWidth as integer, viewport as integer, contentWidth as integer, padding as integer) as integer
+        goal = scrollLeft
+        if itemLeft - padding < scrollLeft then goal = itemLeft - padding
+        if itemLeft + itemWidth + padding > scrollLeft + viewport then goal = itemLeft + itemWidth + padding - viewport
+        if goal > contentWidth - viewport then goal = contentWidth - viewport
+        if goal < 0 then goal = 0
+        return goal
+    end function
+
     ' Textos do destaque da aba (featured* do CatalogBrowser.vue).
     function heroTexts(section as string, item as object, info as dynamic) as object
         details = {}
