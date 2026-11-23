@@ -109,6 +109,10 @@ sub onResult(event as object)
         m.heroInfo = data.info
         render()
     else if data.mode = "page" and data.categoryId = m.activeCategory then
+        ' Resposta chegou: a página pode ser pedida de novo. Vazia (leitura falhou) não redesenha, senão pediria em laço;
+        ' a próxima tecla tenta outra vez.
+        if m.pendingPage = data.start then m.pendingPage = -1
+        if data.items.count() = 0 then return
         ' Só a página nova e as vizinhas ficam na memória: rolar uma categoria de 50 mil não guarda tudo.
         low = data.start - 2 * data.items.count()
         high = data.start + 3 * data.items.count()
