@@ -203,6 +203,16 @@ namespace tests
             m.assertEqual(b.type, "m3u")
         end function
 
+        @it("grava a pasta da lista mesmo sem a pasta-mãe (cachefs vazio depois do reboot)")
+        function _()
+            parent = tests.CATALOG_DIR + "-parent"
+            catalog.deleteTree(parent)
+            dir = parent + "/lista"
+            catalog.saveSection(dir, "vod", [], tests.numberedStreams(3))
+            m.assertEqual(tests.ids(catalog.getItems(dir, "vod", catalog.ALL_CATEGORIES, 0, 10, [])), [1, 2, 3])
+            catalog.deleteTree(parent)
+        end function
+
         @it("Xtream: baixa categorias e itens, grava e não baixa de novo se já houver cache")
         function _()
             base = "http://srv.test"

@@ -126,6 +126,12 @@ namespace catalog
     sub saveSection(dir as string, section as string, categories as object, streams as object)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
+        ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
+        slash = Instr(Instr(1, dir, ":/") + 2, dir, "/")
+        while slash > 0
+            CreateDirectory(Left(dir, slash - 1))
+            slash = Instr(slash + 1, dir, "/")
+        end while
         CreateDirectory(dir)
         CreateDirectory(path)
         total = streams.count()
