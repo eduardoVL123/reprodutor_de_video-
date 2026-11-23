@@ -1,0 +1,47 @@
+import "pkg:/source/utils/types.bs"
+' Trick play da Roku (exigência de certificação, sem equivalente no web, que só pula 10 s): Avançar/Voltar do controle
+' entram num modo de velocidade com 3 níveis; cada toque na mesma direção sobe o nível (depois do 3º volta ao 1º), na
+' outra direção recomeça no 1º. O vídeo fica pausado e o destino anda a cada tique; Play/OK continua dali, Voltar
+' cancela. Replay instantâneo volta REPLAY_S (cert. 4.9: 10 a 25 s). Casos em trickPlay.spec.bs.
+namespace trickPlay
+
+    const REPLAY_S = 15
+    const TICK_S = 0.5 ' intervalo do Timer do PlayerScreen
+
+    ' Velocidades (vezes o tempo real) de cada nível.
+    function speeds() as object
+        return [10, 30, 60]
+    end function
+
+    ' Toque em Avançar (direction 1) ou Voltar (-1). trick invalid = começa do ponto atual.
+    function press(trick as dynamic, direction as integer, position as double) as object
+        if trick = invalid then return { direction: direction, level: 1, target: position, origin: position }
+        if trick.direction <> direction then return { direction: direction, level: 1, target: trick.target, origin: trick.origin }
+        level = trick.level + 1
+        if level > trickPlay.speeds().count() then level = 1
+        return { direction: direction, level: level, target: trick.target, origin: trick.origin }
+    end function
+
+    ' Um tique: o destino anda na velocidade do nível, sem passar do começo nem do fim.
+    sub advance(trick as object, duration as double)
+        speed = trickPlay.speeds()[trick.level - 1]
+        target = trick.target + trick.direction * speed * trickPlay.TICK_S
+        if target < 0 then target = 0
+        if target > duration then target = duration
+        trick.target = target
+    end sub
+
+    ' Rótulo da velocidade ("» 30×" ou "« 10×").
+    function label(trick as object) as string
+        arrow = "»"
+        if trick.direction < 0 then arrow = "«"
+        return arrow + " " + trickPlay.speeds()[trick.level - 1].toStr() + "×"
+    end function
+
+    function replayTarget(position as double) as double
+        target = position - trickPlay.REPLAY_S
+        if target < 0 then target = 0
+        return target
+    end function
+
+end namespace

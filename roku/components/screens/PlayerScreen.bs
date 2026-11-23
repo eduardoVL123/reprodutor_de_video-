@@ -10,6 +10,7 @@ import "pkg:/source/xtream/streamUrl.bs"
 import "pkg:/source/player/playerState.bs"
 import "pkg:/source/player/playerView.bs"
 import "pkg:/source/player/playerEngine.bs"
+import "pkg:/source/player/trickPlay.bs"
 
 ' Medidas do VideoPlayerOverlay.vue em px (1920×1080). OSD px-24 py-14: título de 60 px (900) em x 96, y 56; Fechar
 ' de 48 em 1776,56; tempos em y 882 e a barra (1728×6) em y 918; botões redondos de 56 em y 958 a cada 72 (o
@@ -53,6 +54,12 @@ sub init()
     m.watchdog.duration = 1
     m.watchdog.repeat = true
     m.watchdog.observeField("fire", "onWatchdog")
+    ' Trick play (exigência Roku): o destino anda a cada meio segundo enquanto o vídeo fica pausado.
+    m.trick = invalid
+    m.trickTimer = m.top.createChild("Timer")
+    m.trickTimer.duration = trickPlay.TICK_S
+    m.trickTimer.repeat = true
+    m.trickTimer.observeField("fire", "onTrickTick")
     m.focusables = {}
     m.focusId = "osd-play-pause"
     m.lastControl = "osd-play-pause"
@@ -107,6 +114,7 @@ end function
 ' startPlayback: o progresso fica no item que estava tocando (nunca no próximo) e o novo começa do zero.
 sub playCurrent()
     saveProgress()
+    endTrick()
     cancelOffer()
     m.nextDismissed = false
     m.hasFrame = false
@@ -325,6 +333,7 @@ end sub
 
 sub closePlayer()
     saveProgress()
+    endTrick()
     cancelOffer()
     m.osdTimer.control = "stop"
     m.watchdog.control = "stop"
@@ -344,6 +353,62 @@ sub toggleFavorite()
         favorites.add(m.store, key, list, item, section)
     end if
     renderOsd()
+end sub
+
+' ---------- Trick play e replay (certificação Roku 4.7 e 4.9) ----------
+
+sub startTrick(direction as integer)
+    if isLive() or m.duration <= 0 or m.errorText <> "" then return
+    if m.trick = invalid then m.video.control = "pause"
+    m.trick = trickPlay.press(m.trick, direction, m.position)
+    m.osdTimer.control = "stop"
+    m.trickTimer.control = "start"
+    showOsd()
+    if m.progress = invalid then renderOsd()
+    updateProgress()
+end sub
+
+sub onTrickTick()
+    if m.trick = invalid then return
+    trickPlay.advance(m.trick, m.duration)
+    updateProgress()
+end sub
+
+sub endTrick()
+    m.trickTimer.control = "stop"
+    m.trick = invalid
+end sub
+
+' Play/OK: continua do destino.
+sub commitTrick()
+    target = m.trick.target
+    endTrick()
+    m.video.seek = target
+    m.position = target
+    m.video.control = "resume"
+    m.paused = false
+    updateProgress()
+    renderOsd()
+    resetOsdTimer()
+end sub
+
+' Voltar: desiste e continua de onde estava.
+sub cancelTrick()
+    endTrick()
+    m.video.control = "resume"
+    m.paused = false
+    updateProgress()
+    renderOsd()
+    resetOsdTimer()
+end sub
+
+sub replay()
+    if isLive() or m.duration <= 0 then return
+    target = trickPlay.replayTarget(m.position)
+    m.video.seek = target
+    m.position = target
+    showOsd()
+    updateProgress()
 end sub
 
 ' ---------- Próximo episódio ----------
@@ -493,6 +558,8 @@ sub renderOsd()
         ui.panel(m.osd, "progress-track", PAD_X, 918, BAR_W, 6)
         m.progress.fill = ui.panel(m.osd, "progress-fill", PAD_X, 918, 6, 6)
         m.progress.knob = ui.panelImage(m.osd, "circle.png", PAD_X, 913, 16, 16)
+        m.progress.speed = ui.text(m.osd, "", ui.font(700, 20), ui.WHITE, PAD_X, 846, 200, 28)
+        m.progress.speed.horizAlign = "center"
         ring = ui.squareRing(m.osd, PAD_X, 913, BAR_W, 16)
         m.focusables["osd-progress"] = { ring: ring }
         updateProgress()
@@ -561,17 +628,25 @@ end sub
 
 sub updateProgress()
     if m.progress = invalid or m.duration <= 0 then return
-    pct = m.position / m.duration
+    ' No trick play a barra e o tempo mostram o destino, com a velocidade em cima do ponto.
+    shown = m.position
+    if m.trick <> invalid then shown = m.trick.target
+    pct = shown / m.duration
     if pct > 1 then pct = 1
     if pct < 0 then pct = 0
-    m.progress.elapsed.text = utils.formatTime(m.position)
-    remaining = m.duration - m.position
+    m.progress.elapsed.text = utils.formatTime(shown)
+    remaining = m.duration - shown
     if remaining < 0 then remaining = 0
     m.progress.remaining.text = "-" + utils.formatTime(remaining)
     fillWidth = Int(BAR_W * pct)
     m.progress.fill.visible = fillWidth >= 6
     m.progress.fill.width = fillWidth
     m.progress.knob.translation = [PAD_X + fillWidth - 8, 913]
+    m.progress.speed.visible = m.trick <> invalid
+    if m.trick <> invalid then
+        m.progress.speed.text = trickPlay.label(m.trick)
+        m.progress.speed.translation = [PAD_X + fillWidth - 100, 846]
+    end if
 end sub
 
 ' Cartão "Próximo na fila" com a contagem e os botões Reproduzir agora e Cancelar.
@@ -740,15 +815,25 @@ function onKeyEvent(key as string, press as boolean) as boolean
         renderErrorFocus()
         return true
     end if
-    ' Teclas de mídia do controle: funcionam com o menu visível ou não.
+    ' Teclas de mídia do controle: funcionam com o menu visível ou não. Avançar/Voltar entram no trick play
+    ' (velocidades da Roku; o web pula 10 s) e Replay volta alguns segundos.
+    if key = "fastforward" or key = "rewind" then
+        direction = 1
+        if key = "rewind" then direction = -1
+        startTrick(direction)
+        return true
+    end if
+    if m.trick <> invalid then
+        if key = "play" or key = "OK" then commitTrick()
+        if key = "back" then cancelTrick()
+        return true
+    end if
     if key = "play" then
         togglePlayPause()
         return true
     end if
-    if key = "rewind" or key = "fastforward" then
-        delta = playerView.SEEK_STEP_S
-        if key = "rewind" then delta = -delta
-        seekBy(delta)
+    if key = "replay" then
+        replay()
         return true
     end if
     if key = "back" then

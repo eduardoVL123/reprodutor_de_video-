@@ -1,0 +1,61 @@
+' Trick play e replay instantâneo (exigências da certificação Roku 4.7 e 4.9; o web não tem).
+namespace tests
+
+    @suite("trickPlay")
+    class TrickPlayTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("velocidades")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("três níveis na mesma direção; depois do terceiro volta ao primeiro")
+        function _()
+            trick = trickPlay.press(invalid, 1, 600)
+            m.assertEqual(trick.level, 1)
+            m.assertEqual(trickPlay.label(trick), "» 10×")
+            trick = trickPlay.press(trick, 1, 600)
+            trick = trickPlay.press(trick, 1, 600)
+            m.assertEqual(trickPlay.label(trick), "» 60×")
+            m.assertEqual(trickPlay.press(trick, 1, 600).level, 1)
+        end function
+
+        @it("trocar de direção recomeça no primeiro nível a partir do destino atual")
+        function _()
+            trick = trickPlay.press(trickPlay.press(invalid, 1, 600), 1, 600)
+            trickPlay.advance(trick, 5400)
+            back = trickPlay.press(trick, -1, 0)
+            m.assertEqual(back.level, 1)
+            m.assertEqual(Int(back.target), Int(trick.target))
+            m.assertEqual(trickPlay.label(back), "« 10×")
+            m.assertEqual(Int(back.origin), 600)
+        end function
+
+        @it("o destino anda na velocidade do nível e não passa do começo nem do fim")
+        function _()
+            trick = trickPlay.press(invalid, 1, 100)
+            trickPlay.advance(trick, 5400)
+            m.assertEqual(Int(trick.target), 105)
+            trick = trickPlay.press(invalid, -1, 10)
+            trick.level = 3
+            trickPlay.advance(trick, 5400)
+            m.assertEqual(Int(trick.target), 0)
+            trick = trickPlay.press(invalid, 1, 5390)
+            trick.level = 3
+            trickPlay.advance(trick, 5400)
+            m.assertEqual(Int(trick.target), 5400)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("replay instantâneo")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("volta entre 10 e 25 segundos, sem passar do começo")
+        function _()
+            m.assertTrue(trickPlay.REPLAY_S >= 10 and trickPlay.REPLAY_S <= 25)
+            m.assertEqual(Int(trickPlay.replayTarget(100)), 100 - trickPlay.REPLAY_S)
+            m.assertEqual(Int(trickPlay.replayTarget(5)), 0)
+        end function
+
+    end class
+
+end namespace
