@@ -21,6 +21,9 @@ namespace catalog
     const CATALOG_VERSION = 3
     ' Listas grandes (50.000+ itens) podem demorar bem mais que um login.
     const CATALOG_TIMEOUT_MS = 120000
+    ' Espera máxima pela carga de outra Task (duas requisições de CATALOG_TIMEOUT_MS mais a gravação).
+    const SHARED_WAIT_MS = 300000
+    const CLAIM_SETTLE_MS = 300
 
     ' ---------- Texto ----------
 
@@ -374,24 +377,37 @@ namespace catalog
     ' ctx = { dir, apiBase, credentials, type }. { ok, error, errorDetail, list }
     ' loadSection sem baixar a mesma seção duas vezes ao mesmo tempo (o Início e a aba abrem juntos): como a promessa
     ' em andamento do catalogStore, quem chega depois espera a primeira terminar e lê o que ela gravou.
-    ' Marcador por seção em m.global.catalogLoads (criado pela MainScene); sem ele, carrega direto.
-    function loadShared(transport as object, ctx as object, section as string, force as boolean) as object
-        if m.global = invalid or not m.global.hasField("catalogLoads") then return catalog.loadSection(transport, ctx, section, force)
+    ' Dono da seção no campo m.global["catalogLoad_" + seção] (criado pela MainScene; "" = livre); sem ele, carrega direto.
+    ' Dona que some (Task morta por falta de memória) perde a vez depois de maxWaitMs sem trocar de dono.
+    function loadShared(transport as object, ctx as object, section as string, force as boolean, maxWaitMs = catalog.SHARED_WAIT_MS as integer) as object
+        field = "catalogLoad_" + section
+        if m.global = invalid or not m.global.hasField(field) then return catalog.loadSection(transport, ctx, section, force)
+        token = CreateObject("roDeviceInfo").GetRandomUUID()
         waited = false
-        while m.global.catalogLoads[section] = true
+        seen = m.global.getField(field)
+        clock = CreateObject("roTimespan")
+        while true
+            current = m.global.getField(field)
+            if current <> seen then
+                seen = current
+                clock.mark()
+            end if
+            if current = "" or clock.totalMilliseconds() >= maxWaitMs then
+                ' Ler e gravar não é atômico entre threads: as duas gravam, a última vence, e só quem relê a própria
+                ' ficha baixa. As gravações passam pela render thread em fila, então a pausa basta para a outra chegar.
+                m.global.setField(field, token)
+                sleep(catalog.CLAIM_SETTLE_MS)
+                if m.global.getField(field) = token then exit while
+                seen = m.global.getField(field)
+                clock.mark()
+            end if
             waited = true
             sleep(200)
         end while
-        busy = {}
-        busy.append(m.global.catalogLoads)
-        busy[section] = true
-        m.global.catalogLoads = busy
         ' Quem esperou não força: a lista acabou de ser baixada pela outra carga.
         result = catalog.loadSection(transport, ctx, section, force and not waited)
-        done = {}
-        done.append(m.global.catalogLoads)
-        done[section] = false
-        m.global.catalogLoads = done
+        ' Só libera se ainda for a dona (quem tomou a vez por prazo libera a própria).
+        if m.global.getField(field) = token then m.global.setField(field, "")
         return result
     end function
 

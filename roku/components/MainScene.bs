@@ -12,7 +12,7 @@ import "pkg:/source/session/session.bs"
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
     ' Seções do catálogo sendo baixadas agora (catalog.loadShared): o Início e as abas não baixam a mesma duas vezes.
-    m.global.addFields({ catalogLoads: {} })
+    m.global.addFields({ catalogLoad_live: "", catalogLoad_vod: "", catalogLoad_series: "" })
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
     pushScreen(CreateObject("roSGNode", initialScreen()))

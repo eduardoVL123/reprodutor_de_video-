@@ -207,6 +207,22 @@ namespace tests
             m.assertEqual(t.calls.count(), 2)
         end function
 
+        @it("loadShared: dona que sumiu perde a vez pelo prazo; baixa uma vez e libera a seção")
+        function _()
+            if not m.global.hasField("catalogLoad_vod") then m.global.addFields({ catalogLoad_vod: "" })
+            m.global.setField("catalogLoad_vod", "task-morta")
+            base = "http://srv.test"
+            t = tests.fakeTransport([
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_categories", response: tests.jsonResponse([{ category_id: "1", category_name: "Ação" }]) },
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_streams", response: tests.jsonResponse(tests.numberedStreams(2)) }
+            ])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: base, credentials: { username: "u", password: "p" }, type: "xtream" }
+            result = catalog.loadShared(t, ctx, "vod", false, 400)
+            m.assertTrue(result.ok)
+            m.assertEqual(t.calls.count(), 2)
+            m.assertEqual(m.global.getField("catalogLoad_vod"), "")
+        end function
+
         @it("Xtream: painel que devolve false para lista vazia vira seção vazia, sem erro")
         function _()
             t = tests.fakeTransport([{ prefix: "http://srv.test", response: tests.jsonResponse(false) }])
