@@ -89,6 +89,8 @@ end sub
 
 sub onResult(event as object)
     data = event.getData()
+    ' A Task terminou (o "open" com destaque ainda manda o "hero"): sai da lista para não acumular página após página.
+    if not (data.mode = "open" and data.heroItem <> invalid) then releaseTask(event.getRoSGNode())
     if data.mode = "open" then
         if not data.ok then
             m.state = "error"
@@ -107,12 +109,29 @@ sub onResult(event as object)
         m.heroInfo = data.info
         render()
     else if data.mode = "page" and data.categoryId = m.activeCategory then
+        ' Só a página nova e as vizinhas ficam na memória: rolar uma categoria de 50 mil não guarda tudo.
+        low = data.start - 2 * data.items.count()
+        high = data.start + 3 * data.items.count()
+        kept = {}
+        for each key in m.gridItems
+            if key.toInt() >= low and key.toInt() < high then kept[key] = m.gridItems[key]
+        end for
+        m.gridItems = kept
         for i = 0 to data.items.count() - 1
             m.gridItems[(data.start + i).toStr()] = data.items[i]
         end for
         renderContent()
         renderFocus()
     end if
+end sub
+
+sub releaseTask(task as object)
+    for i = 0 to m.tasks.count() - 1
+        if m.tasks[i].isSameNode(task) then
+            m.tasks.delete(i)
+            return
+        end if
+    end for
 end sub
 
 function activeCategoryIndex() as integer
