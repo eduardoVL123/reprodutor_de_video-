@@ -1,11 +1,14 @@
 // Abre o app Roku no navegador (simulador brs-engine com SceneGraph), sem aparelho.
 // Uso: npm run roku:preview → http://localhost:6502  (setas, Enter = OK, Backspace/Esc = Voltar)
 // Serve o pacote build/roku/pulse-roku.zip com os cabeçalhos COOP/COEP que o simulador exige (SharedArrayBuffer).
+// Servidores IPTV reais não mandam CORS: um service worker (/sw.js) desvia toda requisição para fora pelo proxy local
+// de desenvolvimento (scripts/dev-cors-proxy.mjs), inclusive a do vídeo. Só no simulador; o app na TV não muda.
 import { createServer } from 'node:http'
 import { readFileSync, existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { PROXY_PATH, proxyHandler } from './dev-cors-proxy.mjs'
 
 const require = createRequire(import.meta.url)
 const engineDir = dirname(require.resolve('brs-engine/package.json'))
@@ -31,6 +34,17 @@ const PAGE = `<!doctype html>
   // Teclas do controle a partir do script (usado pelos roteiros de teste): pulseKey('down')
   window.pulseKey = (key) => brs.sendKeyPress(key, 120)
   window.addEventListener('load', async () => {
+    // O service worker precisa controlar a página antes de o motor criar os workers (eles herdam o controle).
+    if ('serviceWorker' in navigator) {
+      await navigator.serviceWorker.register('sw.js')
+      await navigator.serviceWorker.ready
+      if (!navigator.serviceWorker.controller && !sessionStorage.getItem('pulse-sw-reload')) {
+        sessionStorage.setItem('pulse-sw-reload', '1')
+        location.reload()
+        return
+      }
+      sessionStorage.removeItem('pulse-sw-reload')
+    }
     const extensions = new Map([[brs.SupportedExtension.SceneGraph, './brs-sg.js']])
     await brs.initialize({ extensions, displayMode: '1080p', locale: 'pt_BR' }, { debugToConsole: true })
     brs.redraw(false, 1920, 1080, 1)
@@ -46,6 +60,20 @@ const PAGE = `<!doctype html>
 </body>
 </html>`
 
+// Requisição para outro endereço → proxy local (mesma origem: passa pelo COEP e não precisa de CORS do servidor).
+const SERVICE_WORKER = `
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()))
+self.addEventListener('fetch', (event) => {
+  const url = new URL(event.request.url)
+  if (url.origin === self.location.origin || !/^https?:$/.test(url.protocol) || event.request.method !== 'GET') return
+  const headers = {}
+  const range = event.request.headers.get('range')
+  if (range) headers.Range = range
+  event.respondWith(fetch('${PROXY_PATH}?url=' + encodeURIComponent(event.request.url), { headers }))
+})
+`
+
 const FILES = {
   '/lib/brs.api.js': [join(engineDir, 'lib/brs.api.js'), 'text/javascript'],
   '/lib/brs.worker.js': [join(engineDir, 'lib/brs.worker.js'), 'text/javascript'],
@@ -59,6 +87,11 @@ export function startPreview(port = PREVIEW_PORT) {
   const server = createServer((req, res) => {
     const path = new URL(req.url, 'http://localhost').pathname
     const headers = { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp', 'Cache-Control': 'no-store' }
+    if (path === PROXY_PATH) return proxyHandler(req, res)
+    if (path === '/sw.js') {
+      res.writeHead(200, { ...headers, 'Content-Type': 'text/javascript; charset=utf-8' })
+      return res.end(SERVICE_WORKER)
+    }
     if (path === '/' || path === '/index.html') {
       res.writeHead(200, { ...headers, 'Content-Type': 'text/html; charset=utf-8' })
       return res.end(PAGE)
