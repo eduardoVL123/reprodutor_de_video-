@@ -1,0 +1,241 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/favorites/favorites.bs"
+
+' Medidas da aba Favoritos do Dashboard.vue em px (1920×1080): conteúdo de x 176 a 1824 (pl-16 pr-24 ao lado do menu)
+' e y 56 (py-14); título de 44 px, Reproduzir Tudo (224×50) e Limpar Lista (151×50) em y 75; grade de 4 cartões de
+' 397×242 a cada 417 × 262 a partir de y 176. No cartão (p-2.5): capa de 375×152, selo em 10/10, nome grande em y 108
+' dentro da capa, nome e tipo em y 173 e 201.
+const CONTENT_X = 176
+const GRID_TOP = 176
+const CARD_W = 397
+const CARD_H = 242
+const STEP_X = 417
+const STEP_Y = 262
+const VIEW_H = 1080
+const PAD_BOTTOM = 56
+
+sub init()
+    m.store = storage.create()
+    m.focusables = {}
+    m.scroll = 0
+    m.content = m.top.createChild("Group")
+    load()
+    m.top.observeField("focusedChild", "onFocusChanged")
+    m.global.observeField("profile", "onProfileChanged")
+end sub
+
+sub load()
+    m.key = favorites.activeKey(m.store)
+    m.items = favorites.load(m.store, m.key)
+    m.focusId = "fav-play-all"
+    if m.items.count() = 0 then m.focusId = ""
+    m.scroll = 0
+    render()
+end sub
+
+' Outro perfil escolhido com a aba aberta: mostra os favoritos dele.
+sub onProfileChanged()
+    load()
+end sub
+
+sub render()
+    m.content.removeChildrenIndex(m.content.getChildCount(), 0)
+    m.focusables = {}
+    title = ui.text(m.content, "Favoritos", ui.font(700, 44), ui.WHITE, CONTENT_X, 56, 600, 56)
+    title.wrap = false
+    ui.text(m.content, "Seus títulos favoritos, em um só lugar.", ui.font(400, 20), ui.NEUTRAL_400, CONTENT_X, 116, 600, 28)
+
+    if m.items.count() = 0 then
+        renderEmpty()
+    else
+        addPlayAll()
+        addClear()
+        for i = 0 to m.items.count() - 1
+            addCard(i)
+        end for
+    end if
+    m.nav = spatial.create(navItems(), {}, [1920, 1080])
+    renderFocus()
+end sub
+
+' Estado vazio, centrado no conteúdo (x 1000): coração de 40, título e dica.
+sub renderEmpty()
+    icon = m.content.createChild("Poster")
+    icon.uri = "pkg:/images/ui/icon-heart.png"
+    icon.width = 40
+    icon.height = 40
+    icon.translation = [980, 538]
+    icon.blendColor = ui.NEUTRAL_500
+    heading = ui.text(m.content, "Nenhum favorito ainda", ui.font(500, 24), "0xE5E5E5FF", CONTENT_X, 594, 1648, 36)
+    heading.horizAlign = "center"
+    hint = ui.text(m.content, "Adicione filmes, séries e canais para assistir quando quiser.", ui.font(400, 20), ui.NEUTRAL_500, CONTENT_X, 634, 1648, 28)
+    hint.horizAlign = "center"
+end sub
+
+' .tv-btn-primary com o triângulo de play preto (w-4) e "Reproduzir Tudo".
+sub addPlayAll()
+    group = m.content.createChild("Group")
+    group.translation = [1433, 75]
+    ring = ui.panel(group, "focus-ring", -5, -5, 234, 60)
+    ui.panel(group, "btn-primary", 0, 0, 224, 50)
+    icon = group.createChild("Poster")
+    icon.uri = "pkg:/images/ui/icon-play.png"
+    icon.width = 16
+    icon.height = 16
+    icon.translation = [25, 17]
+    icon.blendColor = ui.BLACK
+    ui.inlineText(group, "Reproduzir Tudo", ui.font(600, 20), ui.BLACK, 49, 11, 28)
+    group.scaleRotateCenter = [112, 25]
+    m.focusables["fav-play-all"] = { rect: [1433, 75, 224, 50], node: group, ring: ring }
+end sub
+
+sub addClear()
+    group = m.content.createChild("Group")
+    group.translation = [1673, 75]
+    ring = ui.panel(group, "focus-ring", -5, -5, 161, 60)
+    ui.panel(group, "btn", 0, 0, 151, 50)
+    label = ui.text(group, "Limpar Lista", ui.font(500, 20), ui.NEUTRAL_400, 0, 11, 151, 28)
+    label.horizAlign = "center"
+    group.scaleRotateCenter = [75, 25]
+    m.focusables["fav-clear"] = { rect: [1673, 75, 151, 50], node: group, ring: ring, label: label }
+end sub
+
+sub addCard(index as integer)
+    item = m.items[index]
+    x = CONTENT_X + (index mod 4) * STEP_X
+    y = GRID_TOP + Int(index / 4) * STEP_Y
+    group = m.content.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, CARD_W + 10, CARD_H + 10)
+    ui.panel(group, "fav-card", 0, 0, CARD_W, CARD_H)
+    ui.panel(group, "fav-art", 11, 11, 375, 152)
+    if item.stream_icon <> "" then
+        art = group.createChild("Poster")
+        art.translation = [11, 11]
+        art.width = 375
+        art.height = 152
+        art.loadDisplayMode = "scaleToZoom"
+        art.uri = item.stream_icon
+    end if
+    ui.panelImage(group, "card-shade.png", 11, 11, 375, 152)
+    ui.panel(group, "fav-art-mask", 11, 11, 375, 152)
+
+    ' Selo: limão no canal, vidro escuro com borda nos outros (px-2, 20 px bold, tracking 1 px).
+    live = item.section = "live"
+    badgeText = "FILME"
+    if live then badgeText = "AO VIVO"
+    if item.section = "series" then badgeText = "SÉRIE"
+    badge = ui.panel(group, "badge", 21, 21, 10, 34)
+    color = ui.WHITE
+    if live then
+        badge.uri = "pkg:/images/ui/badge-lime.9.png"
+        color = ui.TEXT_ON_ACCENT
+    end if
+    letters = ui.trackedText(group, badgeText, ui.font(700, 20), color, 29, 24, 1)
+    badge.width = letters.boundingRect().width + 16
+
+    big = ui.text(group, UCase(item.name), ui.font(900, 24), ui.WHITE, 21, 119, 355, 36)
+    big.wrap = false
+    name = ui.text(group, item.name, ui.font(500, 20), ui.WHITE, 15, 173, 359, 28)
+    name.wrap = false
+    ui.text(group, typeLabel(item.section), ui.font(400, 20), ui.NEUTRAL_500, 15, 201, 359, 28)
+    group.scaleRotateCenter = [CARD_W / 2, CARD_H / 2]
+    m.focusables["fav-card-" + index.toStr()] = { rect: [x, y, CARD_W, CARD_H], node: group, ring: ring, index: index }
+end sub
+
+' FAVORITE_LABELS do Dashboard.vue.
+function typeLabel(section as string) as string
+    if section = "live" then return "Canal de TV"
+    if section = "series" then return "Série salva"
+    return "Filme salvo"
+end function
+
+function navItems() as object
+    items = []
+    for each id in m.focusables
+        items.push({ id: id, groups: ["favorites-view"], row: "", rect: m.focusables[id].rect, active: false, slide: false, scroller: false })
+    end for
+    return items
+end function
+
+' Voltando dos detalhes a série pode ter saído dos favoritos: relê e mantém o foco se o cartão ainda existe.
+sub onFocusChanged()
+    if m.top.focusedChild <> invalid then
+        fresh = favorites.load(m.store, m.key)
+        if FormatJson(fresh) <> FormatJson(m.items) then
+            m.items = fresh
+            if m.focusables[m.focusId] <> invalid and m.focusables[m.focusId].index <> invalid and m.focusables[m.focusId].index >= fresh.count() then m.focusId = ""
+            if m.focusId = "" and fresh.count() > 0 then m.focusId = "fav-play-all"
+            render()
+            return
+        end if
+    end if
+    renderFocus()
+end sub
+
+sub renderFocus()
+    tabFocused = m.top.focusedChild <> invalid
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = tabFocused and id = m.focusId
+        entry.ring.visible = focused
+        if focused then
+            entry.node.scale = [1.02, 1.02]
+        else
+            entry.node.scale = [1, 1]
+        end if
+        ' hover:text-white do Limpar Lista vale para o foco também (o anel já marca, a cor acompanha).
+        if entry.label <> invalid then
+            entry.label.color = ui.NEUTRAL_400
+            if focused then entry.label.color = ui.WHITE
+        end if
+    end for
+    ' Rolagem (overflow-y-auto): o cartão focado inteiro na tela, com a margem de baixo; os botões voltam ao topo.
+    entry = m.focusables[m.focusId]
+    if entry <> invalid then
+        bottom = entry.rect[1] + entry.rect[3] + PAD_BOTTOM
+        if entry.rect[1] - m.scroll < GRID_TOP then m.scroll = entry.rect[1] - GRID_TOP
+        if bottom - m.scroll > VIEW_H then m.scroll = bottom - VIEW_H
+        if entry.index = invalid or entry.index < 4 then m.scroll = 0
+    end if
+    m.content.translation = [0, -m.scroll]
+end sub
+
+' OK: série abre os detalhes (openFavorite do web); filme, canal e Reproduzir Tudo entram com o player (D6). Limpar
+' Lista apaga os favoritos deste perfil e lista, e o foco volta ao menu (não sobra nada focável na aba).
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "OK" then
+        onSelect()
+        return true
+    end if
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    target = ""
+    if m.focusId <> "" then target = spatial.navigate(m.nav, m.focusId, key)
+    if target = "" and key = "left" then
+        m.top.exit = "left"
+    else if target <> "" then
+        m.focusId = target
+        spatial.remember(m.nav, target)
+        renderFocus()
+    end if
+    return true
+end function
+
+sub onSelect()
+    if m.focusId = "fav-clear" then
+        favorites.clear(m.store, m.key)
+        m.items = []
+        m.focusId = ""
+        render()
+        m.top.exit = "left"
+        return
+    end if
+    entry = m.focusables[m.focusId]
+    if entry = invalid or entry.index = invalid then return
+    item = m.items[entry.index]
+    if item.section = "series" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: "series" } }
+end sub

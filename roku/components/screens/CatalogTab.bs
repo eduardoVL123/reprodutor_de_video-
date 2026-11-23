@@ -8,6 +8,7 @@ import "pkg:/source/catalog/grid.bs"
 import "pkg:/source/ui/gridItem.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/favorites/favorites.bs"
 
 ' Medidas do CatalogBrowser.vue em px (1920×1080): seção de x 152 a 1824 (pl-10/pr-24) e y 56 (py-14); cabeçalho
 ' de 75 px; conteúdo rolável de y 131 a 1024; fileiras com px-6 (x 176) e cartões 176×264 com gap-4.
@@ -98,7 +99,7 @@ sub onResult(event as object)
         else
             m.state = "ready"
             m.categories = data.categories
-            m.rows = data.rows
+            m.rows = withFavoritesRow(data.rows)
             m.heroItem = data.heroItem
             m.heroInfo = invalid
             if not isFocusIn("cat-") then m.focusId = "cat-" + activeCategoryIndex().toStr()
@@ -402,10 +403,50 @@ sub renderHero()
     x = 184
     x = heroButton("catalog-hero-play", "icon-play", "Assistir", x, true) + 12
     x = heroButton("catalog-hero-info", "icon-info", "Mais informações", x, false) + 12
-    heroButton("catalog-hero-mylist", "icon-heart-small", "", x, false)
+    ' isFeaturedBookmarked do CatalogBrowser.vue: coração cheio em limão.
+    if favorites.has(loadFavorites(), m.heroItem, m.section) then
+        heroButton("catalog-hero-mylist", "icon-heart-filled", "", x, false, ui.ACCENT)
+    else
+        heroButton("catalog-hero-mylist", "icon-heart-small", "", x, false)
+    end if
 end sub
 
-function heroButton(id as string, icon as string, text as string, x as float, primary as boolean) as float
+function loadFavorites() as object
+    store = storage.create()
+    return favorites.load(store, favorites.activeKey(store))
+end function
+
+' TV ao vivo: os canais favoritos numa fileira "Favoritos" no topo (loadCategoryRows do CatalogBrowser.vue).
+function withFavoritesRow(rows as object) as object
+    if m.section <> "live" then return rows
+    result = []
+    channels = []
+    for each item in loadFavorites()
+        if item.section = "live" then channels.push(item)
+    end for
+    if channels.count() > 0 then result.push({ category_id: "favorites", category_name: "Favoritos", items: channels })
+    for each row in rows
+        if row.category_id <> "favorites" then result.push(row)
+    end for
+    return result
+end function
+
+' handleToggleBookmark do CatalogBrowser.vue.
+sub toggleHeroFavorite()
+    if not utils.isObject(m.heroItem) then return
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    if favorites.has(list, m.heroItem, m.section) then
+        favorites.remove(store, key, list, favorites.plainItem(m.heroItem, m.section).stream_id, m.section)
+    else
+        favorites.add(store, key, list, m.heroItem, m.section)
+    end if
+    m.rows = withFavoritesRow(m.rows)
+    render()
+end sub
+
+function heroButton(id as string, icon as string, text as string, x as float, primary as boolean, iconColor = "" as string) as float
     top = CONTENT_TOP + 448 - 40 - 44
     group = m.scrollGroup.createChild("Group")
     group.translation = [x, top]
@@ -422,6 +463,7 @@ function heroButton(id as string, icon as string, text as string, x as float, pr
     iconNode.width = 16
     iconNode.height = 16
     iconNode.blendColor = color
+    if iconColor <> "" then iconNode.blendColor = iconColor
     width = 44
     if text = "" then
         iconNode.translation = [14, 14]
@@ -738,11 +780,15 @@ function onSelect() as boolean
         load(true)
         return true
     end if
+    if m.focusId = "catalog-hero-mylist" then
+        toggleHeroFavorite()
+        return true
+    end if
     item = invalid
     if m.focusId = "catalog-hero-info" or (m.focusId = "catalog-hero-play" and m.section = "series") then item = m.heroItem
     entry = m.focusables[m.focusId]
     if entry <> invalid and entry.item <> invalid then item = entry.item
-    ' Canais e "Assistir" de filme entram com o player (D6); Controle parental e favoritos com os perfis (D7).
+    ' Canais e "Assistir" de filme entram com o player (D6); Controle parental com os perfis (D7).
     if item <> invalid and m.section <> "live" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: m.section } }
     return true
 end function

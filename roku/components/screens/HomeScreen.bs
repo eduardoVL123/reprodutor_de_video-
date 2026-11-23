@@ -7,6 +7,7 @@ import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/account/account.bs"
 import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/favorites/favorites.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
@@ -131,12 +132,39 @@ sub renderHero()
     x = 174
     x = addHeroButton("hero-play", "icon-play", texts.playText, true, x) + 12
     x = addHeroButton("hero-info", "icon-info", "Mais informações", false, x) + 12
-    addHeroButton("hero-mylist", "icon-heart-small", "Favoritos", false, x)
+    ' isHeroBookmarked do Dashboard.vue: coração cheio em limão e "Nos favoritos".
+    if heroSaved() then
+        addHeroButton("hero-mylist", "icon-heart-filled", "Nos favoritos", false, x, ui.ACCENT)
+    else
+        addHeroButton("hero-mylist", "icon-heart-small", "Favoritos", false, x)
+    end if
     renderFocus()
 end sub
 
 ' Botão do destaque: primário branco (px-7, bold) ou de vidro (px-6, medium), h-[3.2rem], ícone w-4 e o texto.
-function addHeroButton(id as string, icon as string, text as string, primary as boolean, x as float) as float
+function heroSaved() as boolean
+    if not utils.isObject(m.heroItem) then return false
+    store = storage.create()
+    return favorites.has(favorites.load(store, favorites.activeKey(store)), m.heroItem, utils.textOr(m.heroItem.section, "vod"))
+end function
+
+' handleHeroBookmark do Dashboard.vue: tira se já está, senão guarda.
+sub toggleHeroFavorite()
+    if not utils.isObject(m.heroItem) then return
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    section = utils.textOr(m.heroItem.section, "vod")
+    if favorites.has(list, m.heroItem, section) then
+        favorites.remove(store, key, list, m.heroItem.stream_id, section)
+    else
+        favorites.add(store, key, list, m.heroItem, section)
+    end if
+    renderHero()
+    refreshNav()
+end sub
+
+function addHeroButton(id as string, icon as string, text as string, primary as boolean, x as float, iconColor = "" as string) as float
     group = m.hero.createChild("Group")
     group.translation = [x, 388]
     ring = group.createChild("Poster")
@@ -157,6 +185,7 @@ function addHeroButton(id as string, icon as string, text as string, primary as 
     iconNode.width = 16
     iconNode.height = 16
     iconNode.blendColor = color
+    if iconColor <> "" then iconNode.blendColor = iconColor
     label = group.createChild("Label")
     label.font = ui.font(weight, 20)
     label.color = color
@@ -446,15 +475,19 @@ end sub
 
 ' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
 ' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir e canais entram com o player (D6);
-' Trocar perfil abre a escolha de perfil; Favoritos chega com a aba Favoritos.
+'' Trocar perfil abre a escolha de perfil; o coração do destaque guarda ou tira dos Favoritos.
 function onSelect() as boolean
+    if m.focusId = "hero-mylist" then
+        toggleHeroFavorite()
+        return true
+    end if
     if m.focusId = "btn-switch-profile" then
         m.top.navigate = { action: "push", screen: "ProfileScreen" }
         return true
     end if
     if isMenuId(m.focusId) then
         menuTab = Mid(m.focusId, 5)
-        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" or menuTab = "account" then openTab(menuTab)
+        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" or menuTab = "account" or menuTab = "favorites" then openTab(menuTab)
         if menuTab = "home" then showHome("nav-home")
         return true
     end if
@@ -535,6 +568,8 @@ sub openTab(section as string)
             m.catalogTab = CreateObject("roSGNode", "SearchTab")
         else if section = "account" then
             m.catalogTab = CreateObject("roSGNode", "AccountTab")
+        else if section = "favorites" then
+            m.catalogTab = CreateObject("roSGNode", "FavoritesTab")
         else
             m.catalogTab = CreateObject("roSGNode", "CatalogTab")
         end if
@@ -580,7 +615,13 @@ sub onTabExit()
 end sub
 
 sub onTabNavigate(event as object)
-    m.top.navigate = event.getData()
+    data = event.getData()
+    ' "Favoritos" da Conta troca a aba (emit('navigate', 'favorites') do AccountScreen.vue).
+    if data.action = "tab" then
+        openTab(data.tab)
+        return
+    end if
+    m.top.navigate = data
 end sub
 
 ' Voltando dos detalhes a MainScene foca o Início: devolve o foco para a aba se era lá que ele estava.

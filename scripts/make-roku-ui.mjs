@@ -25,6 +25,7 @@ const DEEP = hex('#0B0F0C') // tv-deep: fundo das telas
 const DIALOG = hex('#121215') // bg-[#121215]: painel do FTUE
 const CARD = hex('#141418') // tv-card
 const ACC_CARD = hex('#141A15') // .acc-card da Conta
+const FAV_CARD = hex('#121215') // cartão da aba Favoritos
 
 /** Distância com sinal até um retângulo de cantos arredondados (negativa dentro). */
 function roundedBoxDistance(px, py, x, y, w, h, r) {
@@ -551,6 +552,11 @@ export const OUTPUTS = [
   ['card-mask.9.png', () => ninePatch([{ inset: 0, radius: 12, color: DEEP, outside: true }, { inset: 0, radius: 12, color: WHITE, alpha: 0.1, hole: { inset: 1, radius: 11 } }])],
   // bg-gradient-to-t from-black/85 via-black/20 to-transparent (de cima para baixo: transparente → 20 % → 85 %).
   ['card-shade.png', () => gradient(252, [[0, [0, 0, 0], 0], [0.5, [0, 0, 0], 0.2], [1, [0, 0, 0], 0.85]], { vertical: true })],
+  // Aba Favoritos (Dashboard.vue): cartão rounded-xl bg-[#121215] com borda white/[0.08]; a capa rounded-lg sobre
+  // bg-[#1a1a20], com os cantos tapados na cor do cartão.
+  ['fav-card.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.08, FAV_CARD) }, { inset: 1, radius: 11, color: FAV_CARD }])],
+  ['fav-art.9.png', () => ninePatch([{ inset: 0, radius: 8, color: hex('#1a1a20') }])],
+  ['fav-art-mask.9.png', () => ninePatch([{ inset: 0, radius: 8, color: FAV_CARD, outside: true }])],
   // Botões de vidro do destaque (.tv-btn-glass): white/12, borda white/14, rounded-lg.
   ['btn-glass.9.png', () => ninePatch([{ inset: 0, radius: 8, color: WHITE, alpha: 0.14, hole: { inset: 1, radius: 7 } }, { inset: 1, radius: 7, color: WHITE, alpha: 0.12 }])],
   // Círculo de vidro do "Ver todos" (w-12 rounded-full tv-glass).

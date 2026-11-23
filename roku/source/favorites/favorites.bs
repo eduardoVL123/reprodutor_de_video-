@@ -1,0 +1,151 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/device/secrets.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+' Port dos Favoritos ("Minha Fila") de src/stores/playerStore.js e playerItems.js (casos em favorites.spec.bs): itens
+' planos por perfil e por lista, sem repetir, no máximo 100, com o link da M3U cifrado no registro.
+namespace favorites
+
+    const KEY_PREFIX = "player:customQueue"
+    const MAX = 100
+    ' O registro tem 32 KB para o app todo (~200 bytes por favorito): a fila só cresce se sobrarem 4 KB livres para a
+    ' sessão, as listas e os perfis. shortcut: com muitos perfis cheios o limite real fica abaixo de 100; se pedirem
+    ' mais, mover os favoritos para um arquivo próprio.
+    const RESERVE_BYTES = 4096
+
+    ' Chave por perfil e por lista (scopedKey do web): ids de filmes se repetem entre listas.
+    function keyFor(profileId as dynamic, listId as dynamic) as string
+        key = favorites.KEY_PREFIX + ":" + utils.textOr(profileId, "default")
+        list = utils.textOr(listId, "")
+        if list <> "" then key = key + ":" + list
+        return key
+    end function
+
+    ' Chave do perfil ativo (m.global.profile) na lista ativa; chamada pelas telas.
+    function activeKey(store as object) as string
+        profileId = invalid
+        if m.global <> invalid and utils.isObject(m.global.profile) then profileId = m.global.profile.id
+        current = session.hydrate(store)
+        listId = invalid
+        if current <> invalid then listId = current.id
+        return favorites.keyFor(profileId, listId)
+    end function
+
+    ' toPlainItem do web; invalid sem id.
+    function plainItem(item as dynamic, section = "" as string) as dynamic
+        if not utils.isObject(item) then return invalid
+        streamId = item.stream_id
+        if streamId = invalid then streamId = item.id
+        if streamId = invalid then streamId = item.series_id
+        if streamId = invalid then return invalid
+        categoryIds = []
+        if GetInterface(item.category_ids, "ifArray") <> invalid then
+            for each id in item.category_ids
+                categoryIds.push(favorites.text(id))
+            end for
+        end if
+        icon = utils.textOr(item.stream_icon, utils.textOr(item.cover, ""))
+        if section = "" then section = utils.textOr(item.section, "")
+        return {
+            stream_id: streamId,
+            name: favorites.text(item.name),
+            stream_icon: icon,
+            container_extension: utils.textOr(item.container_extension, ""),
+            category_id: favorites.text(item.category_id),
+            category_ids: categoryIds,
+            section: section,
+            directUrl: utils.textOr(item.directUrl, ""),
+            seriesId: favorites.text(item.seriesId)
+        }
+    end function
+
+    ' String(x) do JS sem o "0 vira vazio" do textOr.
+    function text(value as dynamic) as string
+        if value = invalid then return ""
+        if utils.isString(value) then return value
+        if utils.isNumber(value) then
+            if GetInterface(value, "ifInt") <> invalid or GetInterface(value, "ifLongInt") <> invalid then return value.toStr()
+            return Str(value).trim()
+        end if
+        return ""
+    end function
+
+    function same(a as object, b as object) as boolean
+        return favorites.text(a.stream_id) = favorites.text(b.stream_id) and a.section = b.section
+    end function
+
+    ' Lista salva, sem os itens corrompidos e com o link da M3U decifrado.
+    function load(store as object, key as string) as object
+        list = []
+        saved = store.get(key)
+        if GetInterface(saved, "ifArray") = invalid then return list
+        for each raw in saved
+            if utils.isObject(raw) and raw.directUrlEnc <> invalid then
+                url = secrets.decrypt(raw.directUrlEnc)
+                if url = invalid then url = ""
+                raw.directUrl = url
+            end if
+            plain = favorites.plainItem(raw)
+            if plain <> invalid and list.count() < favorites.MAX then list.push(plain)
+        end for
+        return list
+    end function
+
+    function has(list as object, item as dynamic, section = "" as string) as boolean
+        if not utils.isObject(item) then return false
+        probe = favorites.plainItem(item, section)
+        if probe = invalid then return false
+        for each q in list
+            if favorites.same(q, probe) then return true
+        end for
+        return false
+    end function
+
+    ' enqueueItem: devolve a lista nova ou invalid (item inválido, repetido, fila cheia ou o registro não gravou).
+    function add(store as object, key as string, list as object, item as dynamic, section = "" as string) as dynamic
+        plain = favorites.plainItem(item, section)
+        if plain = invalid or plain.section = "" then return invalid
+        if favorites.has(list, plain) or list.count() >= favorites.MAX then return invalid
+        updated = []
+        updated.append(list)
+        updated.push(plain)
+        if not favorites.save(store, key, updated) then return invalid
+        return updated
+    end function
+
+    ' removeFromCustomQueue: section vazia tira o id em qualquer seção.
+    function remove(store as object, key as string, list as object, streamId as dynamic, section = "" as string) as object
+        updated = []
+        for each q in list
+            if not (favorites.text(q.stream_id) = favorites.text(streamId) and (section = "" or q.section = section)) then updated.push(q)
+        end for
+        if updated.count() <> list.count() then favorites.save(store, key, updated)
+        return updated
+    end function
+
+    function clear(store as object, key as string) as boolean
+        return store.remove(key)
+    end function
+
+    ' Grava com o directUrl cifrado (sealDirectUrl); sem cifra fica em texto, como a lista. false se, crescendo, o
+    ' registro ficaria com menos que a reserva.
+    function save(store as object, key as string, list as object) as boolean
+        sealed = []
+        for each q in list
+            item = {}
+            item.append(q)
+            if item.directUrl <> "" then
+                blob = secrets.encrypt(item.directUrl)
+                if blob <> invalid then
+                    item.directUrl = ""
+                    item.directUrlEnc = blob
+                end if
+            end if
+            sealed.push(item)
+        end for
+        growth = Len(FormatJson(sealed)) - Len(FormatJson(store.get(key)))
+        if growth > 0 and CreateObject("roRegistry").GetSpaceAvailable() - growth < favorites.RESERVE_BYTES then return false
+        return store.set(key, sealed)
+    end function
+
+end namespace

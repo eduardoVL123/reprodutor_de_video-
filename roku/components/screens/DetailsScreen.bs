@@ -6,6 +6,7 @@ import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/xtream/api.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/favorites/favorites.bs"
 
 ' Medidas do MediaDetailsModal.vue em px (1920×1080): px-24/py-14, título text-tv-hero, meta text-tv-sm com gap-3.5,
 ' botões h-[3.4rem] com gap-3.5; série: episódios w-[17rem] (miniatura 272×153) com espaço de 1.2rem.
@@ -292,8 +293,12 @@ end sub
 sub renderButtons(buttons as object, top as float, row as string)
     icons = { "details-play-btn": "icon-play", "series-play-btn": "icon-play", "details-fav-btn": "icon-heart-small", "series-fav-btn": "icon-heart-small", "details-back-btn": "icon-back", "series-back-btn": "icon-back" }
     x = PAD_X
+    saved = isSaved()
     for i = 0 to buttons.count() - 1
         button = buttons[i]
+        favorite = button.id = "details-fav-btn" or button.id = "series-fav-btn"
+        ' isBookmarked do MediaDetailsModal.vue: coração cheio em limão e "Nos favoritos".
+        if favorite and saved then button = { id: button.id, label: "Nos favoritos" }
         primary = i = 0
         padX = 28
         weight = 500
@@ -320,6 +325,10 @@ sub renderButtons(buttons as object, top as float, row as string)
             icon.width = 16
             icon.height = 16
             icon.blendColor = color
+            if favorite and saved then
+                icon.uri = "pkg:/images/ui/icon-heart-filled.png"
+                icon.blendColor = ui.ACCENT
+            end if
             icon.translation = [border + padX, 19]
             textX = border + padX + 28
         end if
@@ -334,6 +343,24 @@ sub renderButtons(buttons as object, top as float, row as string)
 end sub
 
 ' Centraliza o último texto desenhado na faixa dos episódios (estado de carregando).
+function isSaved() as boolean
+    store = storage.create()
+    return favorites.has(favorites.load(store, favorites.activeKey(store)), m.item, m.section)
+end function
+
+' toggleBookmark do MediaDetailsModal.vue.
+sub toggleFavorite()
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    if favorites.has(list, m.item, m.section) then
+        favorites.remove(store, key, list, favorites.plainItem(m.item, m.section).stream_id, m.section)
+    else
+        favorites.add(store, key, list, m.item, m.section)
+    end if
+    render()
+end sub
+
 sub centerLast(y as float)
     label = m.body.getChild(m.body.getChildCount() - 1)
     label.translation = [(1920 - label.boundingRect().width) / 2, y]
@@ -399,10 +426,12 @@ function onKeyEvent(key as string, press as boolean) as boolean
         m.activeSeason = result.season
         m.episodeIndex = 0
         render()
+    else if result.action = "favorite" then
+        toggleFavorite()
     else if m.focusId = "series-retry-btn" then
         loadDetails()
         render()
     end if
-    ' play/episode entram com o player (D6) e favorite com os perfis (D7).
+    ' play/episode entram com o player (D6).
     return true
 end function

@@ -3,7 +3,7 @@ import "pkg:/source/utils/formatTime.bs"
 import "pkg:/source/utils/seriesPlaylist.bs"
 ' Regras da tela de detalhes, port de src/components/MediaDetailsModal.vue (casos em tests/mediaDetailsModal.test.js e
 ' mediaDetails.spec.bs). A DetailsScreen só desenha o que sai daqui. Progresso ("Continuar assistindo", "Assistir do
-' início") entra com o player (D6) e "Nos favoritos" com os perfis (D7).
+' início") entra com o player (D6); "Nos favoritos" a DetailsScreen resolve com favorites.bs.
 namespace mediaDetails
 
     function hasRating(info as object) as boolean

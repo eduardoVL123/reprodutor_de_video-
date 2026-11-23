@@ -144,10 +144,11 @@ sub renderFocus()
 end sub
 
 ' OK: Trocar abre a escolha de perfil, Minhas listas o gerenciador, Diagnóstico o diálogo e Sair fecha o app (o
-' MainScene cuida de todos). Favoritos chega com a aba Favoritos; até lá só recebe foco.
+' MainScene cuida de todos); Favoritos troca para a aba Favoritos (o Início cuida).
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if key = "OK" then
+        if m.focusId = "acc-favorites" then m.top.navigate = { action: "tab", tab: "favorites" }
         if m.focusId = "acc-diagnostics" then m.top.navigate = { action: "diagnostics" }
         if m.focusId = "acc-exit" then m.top.navigate = { action: "exit" }
         if m.focusId = "acc-lists" then m.top.navigate = { action: "push", screen: "ListManagerScreen" }
