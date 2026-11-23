@@ -1,0 +1,65 @@
+' Casos de tests/seriesTitle.test.js e de tests/videoPlayerOverlay.test.js (retomar, próximo episódio, avançar 10 s).
+namespace tests
+
+    @suite("playerView")
+    class PlayerViewTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("parseSeriesTitle")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("separa série, temporada, episódio e nome a partir de ""Série - T2:E5 - Nome""")
+        function _()
+            m.assertEqual(playerView.seriesTitle("Maré Alta - T2:E5 - O Farol"), { header: "Maré Alta · T2:E5", title: "O Farol" })
+        end function
+
+        @it("reconhece o padrão S02E05")
+        function _()
+            m.assertEqual(playerView.seriesTitle("Stranger Things S04E02 O Massacre no Laboratório de Hawkins"), { header: "Stranger Things · T4:E2", title: "O Massacre no Laboratório de Hawkins" })
+        end function
+
+        @it("sem padrão de série devolve o título sem cabeçalho falso; vazio ou nulo não quebra")
+        function _()
+            m.assertEqual(playerView.seriesTitle("O Poderoso Chefão"), { header: "", title: "O Poderoso Chefão" })
+            m.assertEqual(playerView.seriesTitle(""), { header: "", title: "" })
+            m.assertEqual(playerView.seriesTitle(invalid), { header: "", title: "" })
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("reprodução")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("retoma do ponto salvo; perto do fim, no começo ou em vídeo curto começa do zero")
+        function _()
+            m.assertEqual(Int(playerView.resumeAt(900, 5400)), 900)
+            m.assertEqual(Int(playerView.resumeAt(5380, 5400)), 0)
+            m.assertEqual(Int(playerView.resumeAt(10, 5400)), 0)
+            m.assertEqual(Int(playerView.resumeAt(20, 30)), 0)
+        end function
+
+        @it("faltando 20 segundos mostra o próximo episódio, com a contagem até o fim; antes não")
+        function _()
+            m.assertEqual(playerView.nextOfferSeconds(600, 585, true), 15)
+            m.assertEqual(playerView.nextOfferSeconds(600, 580.5, true), 20)
+            m.assertEqual(playerView.nextOfferSeconds(600, 570, true), 0)
+            m.assertEqual(playerView.nextOfferSeconds(600, 590, false), 0)
+            m.assertEqual(playerView.nextOfferSeconds(30, 20, true), 0)
+        end function
+
+        @it("Avançar e Voltar pulam 10 segundos dentro do vídeo")
+        function _()
+            m.assertEqual(Int(playerView.seekTarget(100, 600, playerView.SEEK_STEP_S)), 110)
+            m.assertEqual(Int(playerView.seekTarget(5, 600, -playerView.SEEK_STEP_S)), 0)
+            m.assertEqual(Int(playerView.seekTarget(595, 600, playerView.SEEK_STEP_S)), 600)
+        end function
+
+        @it("formato do stream: m3u8 é HLS; extensão desconhecida vira mp4")
+        function _()
+            m.assertEqual(playerView.streamFormat("m3u8"), "hls")
+            m.assertEqual(playerView.streamFormat("MKV"), "mkv")
+            m.assertEqual(playerView.streamFormat("avi"), "mp4")
+        end function
+
+    end class
+
+end namespace

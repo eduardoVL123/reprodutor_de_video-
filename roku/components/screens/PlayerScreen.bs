@@ -1,0 +1,738 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
+import "pkg:/source/xtream/streamUrl.bs"
+import "pkg:/source/player/playerState.bs"
+import "pkg:/source/player/playerView.bs"
+
+' Medidas do VideoPlayerOverlay.vue em px (1920×1080). OSD px-24 py-14: título de 60 px (900) em x 96, y 56; Fechar
+' de 48 em 1776,56; tempos em y 882 e a barra (1728×6) em y 918; botões redondos de 56 em y 958 a cada 72 (o
+' Play/Pausa, de 76, em y 948) e o Favoritos (rounded-xl, h 54) à direita até x 1824. Abertura: título de 32 px,
+' etapa e porcentagem numa faixa de 448 e a barra de 6. Próximo: cartão de 512×254 em 1312,770.
+const PAD_X = 96
+const BAR_W = 1728
+const CIRCLE_Y = 958
+const META = "0xD4D4D8FF"
+const ACCENT_SOFT = "0xCCFF33FF"
+const PLAYBACK_ERROR = "Não foi possível reproduzir esta mídia no momento. Verifique sua conexão ou tente outro item."
+
+sub init()
+    m.store = storage.create()
+    bg = m.top.createChild("Rectangle")
+    bg.width = 1920
+    bg.height = 1080
+    bg.color = "0x000000FF"
+    m.video = m.top.createChild("Video")
+    m.video.width = 1920
+    m.video.height = 1080
+    m.video.enableUI = false
+    m.video.observeField("state", "onVideoState")
+    m.video.observeField("position", "onPosition")
+    m.video.observeField("duration", "onDuration")
+    m.video.observeField("bufferingStatus", "onBuffering")
+    ' Ordem do web: OSD (z-10) embaixo da abertura e do "Carregando" (z-20), do erro (z-30) e do próximo.
+    m.osd = m.top.createChild("Group")
+    m.loadingLayer = m.top.createChild("Group")
+    m.bufferLayer = m.top.createChild("Group")
+    m.nextLayer = m.top.createChild("Group")
+    m.errorLayer = m.top.createChild("Group")
+    m.osdTimer = m.top.createChild("Timer")
+    m.osdTimer.duration = playerView.OSD_HIDE_MS / 1000
+    m.osdTimer.observeField("fire", "onOsdTimeout")
+    m.countdown = m.top.createChild("Timer")
+    m.countdown.duration = 1
+    m.countdown.repeat = true
+    m.countdown.observeField("fire", "onCountdown")
+    m.focusables = {}
+    m.focusId = "osd-play-pause"
+    m.lastControl = "osd-play-pause"
+    m.osdVisible = true
+    m.playingItem = invalid
+    m.position = 0#
+    m.duration = 0#
+    m.offer = invalid
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub onParams()
+    params = m.top.params
+    m.state = params.state
+    ' Da categoria (zapping): toca o item já e a Task monta a janela em volta dele.
+    if params.catalog <> invalid then
+        m.state = playerState.forItem(params.catalog.item)
+        m.state.mode = params.catalog.section
+    end if
+    m.dir = utils.textOr(params.dir, "")
+    m.hidden = params.hidden
+    if m.hidden = invalid then m.hidden = []
+    active = session.hydrate(m.store)
+    m.ctx = invalid
+    listId = invalid
+    if active <> invalid then
+        m.ctx = catalog.contextFor(active)
+        listId = active.id
+        if m.dir = "" then m.dir = m.ctx.dir
+    end if
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    m.historyKey = playerState.historyKey(profileId, listId)
+    m.history = playerState.loadHistory(m.store, m.historyKey)
+    playCurrent()
+    if params.catalog <> invalid then runQueue({ mode: "open", catalog: params.catalog })
+end sub
+
+' ---------- Reprodução ----------
+
+function currentSection() as string
+    item = playerState.current(m.state)
+    if item <> invalid and utils.textOr(item.section, "") <> "" then return item.section
+    if m.state.mode = "queue" then return "vod"
+    return m.state.mode
+end function
+
+function isLive() as boolean
+    return m.state.mode = "live" or currentSection() = "live"
+end function
+
+' startPlayback: o progresso fica no item que estava tocando (nunca no próximo) e o novo começa do zero.
+sub playCurrent()
+    saveProgress()
+    cancelOffer()
+    m.nextDismissed = false
+    m.hasFrame = false
+    m.buffering = true
+    m.paused = false
+    m.resumed = false
+    m.position = 0#
+    m.duration = 0#
+    m.loadingProgress = 0
+    m.loadingStage = "Conectando à transmissão..."
+    m.lastSave = 0#
+    m.errorText = ""
+    m.playingItem = playerState.current(m.state)
+    if m.playingItem = invalid then return
+    stream = invalid
+    if m.ctx <> invalid then stream = xtream.buildStreamUrl({ apiBase: m.ctx.apiBase, credentials: m.ctx.credentials, section: currentSection(), item: m.playingItem })
+    if stream = invalid then
+        showError(PLAYBACK_ERROR)
+        return
+    end if
+    content = CreateObject("roSGNode", "ContentNode")
+    content.url = stream.primaryUrl
+    content.streamFormat = playerView.streamFormat(stream.containerExtension)
+    content.live = isLive()
+    content.title = utils.textOr(m.playingItem.name, "")
+    m.video.content = content
+    m.video.control = "play"
+    showOsd()
+    renderLoading()
+    renderOsd()
+end sub
+
+' Salva o progresso do item que está (ou estava) na tela.
+sub saveProgress()
+    if m.playingItem = invalid then return
+    m.history = playerState.saveProgress(m.store, m.historyKey, m.history, m.playingItem, m.position, m.duration, parental.clockMs())
+end sub
+
+sub onVideoState()
+    state = m.video.state
+    if state = "playing" then
+        m.hasFrame = true
+        m.buffering = false
+        m.paused = false
+        m.loadingProgress = 100
+        resetOsdTimer()
+    else if state = "buffering" then
+        m.buffering = true
+    else if state = "paused" then
+        m.paused = true
+        m.osdTimer.control = "stop"
+        showOsd()
+        saveProgress()
+    else if state = "finished" then
+        onEnded()
+    else if state = "error" then
+        ' Mapa de erros, formato alternativo e watchdog entram no passo 3.
+        showError(PLAYBACK_ERROR)
+        return
+    end if
+    renderLoading()
+    renderOsd()
+end sub
+
+sub onPosition()
+    m.position = m.video.position
+    if m.position > 0 then m.hasFrame = true
+    offerNextNearEnd()
+    now = parental.clockMs()
+    if now - m.lastSave >= playerView.SAVE_EVERY_S * 1000 then
+        m.lastSave = now
+        saveProgress()
+    end if
+    updateProgress()
+end sub
+
+sub onDuration()
+    m.duration = m.video.duration
+    checkAutoResume()
+    renderOsd()
+end sub
+
+' Abertura: a porcentagem do buffer da Roku no lugar da barra do hls.js.
+sub onBuffering()
+    status = m.video.bufferingStatus
+    if status <> invalid and status.percentage <> invalid and not m.hasFrame then
+        m.loadingProgress = status.percentage
+        renderLoading()
+    end if
+end sub
+
+' checkAutoResume: uma vez por item, se passou de 15 s e faltam mais de 30 s.
+sub checkAutoResume()
+    if m.resumed or isLive() or m.duration <= 0 then return
+    m.resumed = true
+    saved = playerState.getSavedTime(m.history, m.playingItem.stream_id, currentSection())
+    target = playerView.resumeAt(saved, m.duration)
+    if target > 0 then
+        m.video.seek = target
+        m.position = target
+    end if
+end sub
+
+sub onEnded()
+    if isLive() then return
+    if m.duration > 0 then
+        m.position = m.duration
+        saveProgress()
+    end if
+    if m.offer <> invalid then
+        playNextNow()
+    else if m.hasFrame and playerState.hasNext(m.state) and not m.nextDismissed then
+        startOffer(5)
+    end if
+end sub
+
+'' A janela da categoria vem da PlayerQueueTask (abrir e trocar para fora da que está na memória).
+sub runQueue(request as object)
+    request.dir = m.dir
+    request.hidden = m.hidden
+    m.queueTask = CreateObject("roSGNode", "PlayerQueueTask")
+    m.queueTask.observeField("result", "onQueueResult")
+    m.queueTask.request = request
+    m.queueTask.control = "run"
+end sub
+
+sub onQueueResult(event as object)
+    data = event.getData()
+    if data.mode = "open" then
+        ' Mesmo item: troca só a fila, sem reiniciar o vídeo; se a posição não confere, fica sem "próximo".
+        playing = playerState.current(data.state)
+        if playing <> invalid and m.playingItem <> invalid and favorites.same(playing, m.playingItem) then m.state = data.state
+        renderOsd()
+        return
+    end if
+    if data.moved then
+        m.state = data.state
+        playCurrent()
+    else
+        showOsd()
+        focusControl()
+    end if
+end sub
+
+sub moveInQueue(delta as integer)
+    if playerState.needsWindow(m.state, delta) then
+        runQueue({ mode: "step", state: m.state, delta: delta })
+        return
+    end if
+    if playerState.stepBy(m.state, delta, m.dir, m.hidden) then
+        playCurrent()
+    else
+        ' Sem outro canal: o menu aparece em vez de não reagir (zap do web).
+        showOsd()
+        focusControl()
+    end if
+end sub
+
+sub togglePlayPause()
+    if m.paused then
+        m.video.control = "resume"
+        m.paused = false
+        resetOsdTimer()
+    else
+        m.video.control = "pause"
+    end if
+    renderOsd()
+end sub
+
+sub seekBy(delta as double)
+    if isLive() or m.duration <= 0 then return
+    target = playerView.seekTarget(m.position, m.duration, delta)
+    m.video.seek = target
+    m.position = target
+    updateProgress()
+    resetOsdTimer()
+end sub
+
+sub closePlayer()
+    saveProgress()
+    cancelOffer()
+    m.osdTimer.control = "stop"
+    m.video.control = "stop"
+    m.top.navigate = { action: "back" }
+end sub
+
+sub toggleFavorite()
+    item = m.playingItem
+    if item = invalid then return
+    key = favorites.activeKey(m.store)
+    list = favorites.load(m.store, key)
+    section = currentSection()
+    if favorites.has(list, item, section) then
+        favorites.remove(m.store, key, list, item.stream_id, section)
+    else
+        favorites.add(m.store, key, list, item, section)
+    end if
+    renderOsd()
+end sub
+
+' ---------- Próximo episódio ----------
+
+sub offerNextNearEnd()
+    if m.offer <> invalid or m.nextDismissed or isLive() then return
+    seconds = playerView.nextOfferSeconds(m.duration, m.position, playerState.hasNext(m.state))
+    if seconds > 0 then startOffer(seconds)
+end sub
+
+sub startOffer(seconds as integer)
+    nextItem = invalid
+    if m.state.index + 1 < m.state.items.count() then nextItem = m.state.items[m.state.index + 1]
+    if nextItem = invalid then return
+    m.offer = { item: nextItem, secondsLeft: seconds }
+    m.osdTimer.control = "stop"
+    showOsd()
+    m.focusId = "autoadvance-play"
+    m.countdown.control = "start"
+    renderNext()
+    renderFocus()
+end sub
+
+' Pausado, a contagem espera junto.
+sub onCountdown()
+    if m.offer = invalid or m.paused then return
+    if m.offer.secondsLeft <= 1 then
+        playNextNow()
+        return
+    end if
+    m.offer.secondsLeft = m.offer.secondsLeft - 1
+    renderNext()
+end sub
+
+sub cancelOffer()
+    m.countdown.control = "stop"
+    m.offer = invalid
+    m.nextLayer.removeChildrenIndex(m.nextLayer.getChildCount(), 0)
+    if Left(m.focusId, 12) = "autoadvance-" then m.focusId = m.lastControl
+end sub
+
+' Cancelar pelo usuário: o próximo não volta neste item nem entra sozinho no fim.
+sub dismissOffer()
+    m.nextDismissed = true
+    cancelOffer()
+    resetOsdTimer()
+    renderFocus()
+end sub
+
+sub playNextNow()
+    cancelOffer()
+    moveInQueue(1)
+end sub
+
+' ---------- OSD ----------
+
+sub showOsd()
+    m.osdVisible = true
+    m.osd.visible = true
+    resetOsdTimer()
+end sub
+
+sub resetOsdTimer()
+    m.osdTimer.control = "stop"
+    if m.paused or m.offer <> invalid then return
+    m.osdTimer.control = "start"
+end sub
+
+sub onOsdTimeout()
+    if m.paused or m.offer <> invalid then return
+    m.osdVisible = false
+    m.osd.visible = false
+end sub
+
+sub focusControl()
+    m.focusId = m.lastControl
+    if m.focusables[m.focusId] = invalid then m.focusId = "osd-play-pause"
+    renderFocus()
+end sub
+
+sub renderLoading()
+    m.loadingLayer.removeChildrenIndex(m.loadingLayer.getChildCount(), 0)
+    m.bufferLayer.removeChildrenIndex(m.bufferLayer.getChildCount(), 0)
+    if m.errorText <> "" then return
+    if not m.hasFrame then
+        ' Abertura do vídeo: nome + etapa + barra de progresso real.
+        cover = m.loadingLayer.createChild("Rectangle")
+        cover.width = 1920
+        cover.height = 1080
+        cover.color = "0x000000FF"
+        name = utils.textOr(m.playingItem.name, "Carregando transmissão...")
+        title = ui.text(m.loadingLayer, name, ui.font(700, 32), ui.WHITE, 624, 491, 672, 44)
+        title.wrap = false
+        title.horizAlign = "center"
+        ui.text(m.loadingLayer, m.loadingStage, ui.font(500, 20), ui.NEUTRAL_400, 740, 547, 360, 28).wrap = false
+        percent = ui.text(m.loadingLayer, Int(m.loadingProgress).toStr() + "%", ui.monoFont(20), ui.WHITE, 1080, 547, 100, 28)
+        percent.horizAlign = "right"
+        ui.panel(m.loadingLayer, "loading-track", 736, 583, 448, 6)
+        fillWidth = Int(448 * m.loadingProgress / 100)
+        if fillWidth >= 6 then ui.panel(m.loadingLayer, "progress-fill", 736, 583, fillWidth, 6)
+    else if m.buffering then
+        ' No meio do vídeo: só o indicador (a porcentagem da abertura não se aplica).
+        shade = m.bufferLayer.createChild("Rectangle")
+        shade.width = 1920
+        shade.height = 1080
+        shade.color = "0x00000066"
+        spinner = ui.panelImage(m.bufferLayer, "icon-spinner-64.png", 928, 486, 64, 64)
+        spinner.blendColor = ui.WHITE
+        label = ui.text(m.bufferLayer, "Carregando…", ui.font(500, 20), ui.WHITE, 0, 566, 1920, 28)
+        label.horizAlign = "center"
+    end if
+end sub
+
+sub renderOsd()
+    m.osd.removeChildrenIndex(m.osd.getChildCount(), 0)
+    m.focusables = {}
+    if m.playingItem = invalid or m.errorText <> "" then return
+    ui.panelImage(m.osd, "osd-shade.png", 0, 0, 1920, 1080)
+
+    ' Topo: série (TxEy + episódio), canal (AO VIVO) ou filme.
+    name = utils.textOr(m.playingItem.name, "")
+    series = playerView.seriesTitle(name)
+    titleY = 56
+    if series.header <> "" then
+        ui.text(m.osd, series.header, ui.font(500, 20), META, PAD_X, 56, 1040, 28).wrap = false
+        titleY = 88
+        name = series.title
+    else if isLive() then
+        badge = ui.panel(m.osd, "badge-lime", PAD_X, 56, 10, 32)
+        letters = ui.trackedText(m.osd, "AO VIVO", ui.font(700, 20), ui.TEXT_ON_ACCENT, PAD_X + 10, 58, 1)
+        badge.width = letters.boundingRect().width + 20
+        titleY = 92
+    end if
+    title = ui.text(m.osd, name, ui.font(900, 60), ui.WHITE, PAD_X, titleY, 1040, 75)
+    title.wrap = false
+    addCircle("osd-top-close", "osd-glass-48", "osd-ring-58", "icon-close-20", 1776, 56, 48, 20, META)
+
+    ' Barra de progresso (filme e série).
+    m.progress = invalid
+    if not isLive() and m.duration > 0 then
+        m.progress = {}
+        m.progress.elapsed = ui.text(m.osd, "", ui.monoFont(20), META, PAD_X, 882, 300, 28)
+        m.progress.remaining = ui.text(m.osd, "", ui.monoFont(20), META, 1824 - 300, 882, 300, 28)
+        m.progress.remaining.horizAlign = "right"
+        ui.panel(m.osd, "progress-track", PAD_X, 918, BAR_W, 6)
+        m.progress.fill = ui.panel(m.osd, "progress-fill", PAD_X, 918, 6, 6)
+        m.progress.knob = ui.panelImage(m.osd, "circle.png", PAD_X, 913, 16, 16)
+        ring = ui.squareRing(m.osd, PAD_X, 913, BAR_W, 16)
+        m.focusables["osd-progress"] = { ring: ring }
+        updateProgress()
+    end if
+
+    ' Controles redondos: Anterior, -10 s, Play/Pausa, +10 s e Próximo (no ao vivo, sem os de 10 s).
+    x = PAD_X
+    addCircle("osd-prev", "osd-glass-56", "osd-ring-66", "icon-prev", x, CIRCLE_Y, 56, 20, ui.WHITE)
+    m.focusables["osd-prev"].disabled = not playerState.hasPrev(m.state)
+    x = x + 72
+    if not isLive() then
+        addCircle("osd-seek-back", "osd-glass-56", "osd-ring-66", "icon-seek-back", x, CIRCLE_Y, 56, 20, ui.WHITE)
+        x = x + 72
+    end if
+    icon = "icon-pause-28"
+    if m.paused then icon = "icon-play-28"
+    addCircle("osd-play-pause", "osd-white-76", "osd-ring-86", icon, x, CIRCLE_Y - 10, 76, 28, ui.BLACK)
+    x = x + 92
+    if not isLive() then
+        addCircle("osd-seek-fwd", "osd-glass-56", "osd-ring-66", "icon-seek-fwd", x, CIRCLE_Y, 56, 20, ui.WHITE)
+        x = x + 72
+    end if
+    addCircle("osd-next", "osd-glass-56", "osd-ring-66", "icon-next", x, CIRCLE_Y, 56, 20, ui.WHITE)
+    m.focusables["osd-next"].disabled = not playerState.hasNext(m.state)
+
+    addBookmark()
+    renderFocus()
+end sub
+
+sub addCircle(id as string, image as string, ringImage as string, icon as string, x as float, y as float, size as integer, iconSize as integer, iconColor as string)
+    group = m.osd.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panelImage(group, ringImage + ".png", -5, -5, size + 10, size + 10)
+    ui.panelImage(group, image + ".png", 0, 0, size, size)
+    iconNode = ui.panelImage(group, icon + ".png", (size - iconSize) / 2, (size - iconSize) / 2, iconSize, iconSize)
+    iconNode.blendColor = iconColor
+    group.scaleRotateCenter = [size / 2, size / 2]
+    m.focusables[id] = { node: group, ring: ring, disabled: false }
+end sub
+
+' Favoritos (rounded-xl, px-6, ícone w-4, 20 px bold); marcado com a borda white/40 e o coração cheio em limão.
+sub addBookmark()
+    saved = favorites.has(favorites.load(m.store, favorites.activeKey(m.store)), m.playingItem, currentSection())
+    label = "Favoritos"
+    image = "osd-btn"
+    icon = "icon-heart-small"
+    if saved then
+        label = "Nos favoritos"
+        image = "osd-btn-on"
+        icon = "icon-heart-filled"
+    end if
+    group = m.osd.createChild("Group")
+    ring = ui.panel(group, "osd-ring-16", -5, -5, 10, 64)
+    bg = ui.panel(group, image, 0, 0, 10, 54)
+    iconNode = ui.panelImage(group, icon + ".png", 25, 19, 16, 16)
+    iconNode.blendColor = ui.WHITE
+    if saved then iconNode.blendColor = ui.ACCENT
+    text = ui.inlineText(group, label, ui.font(700, 20), ui.WHITE, 49, 13, 28)
+    width = 49 + text.boundingRect().width + 25
+    bg.width = width
+    ring.width = width + 10
+    group.translation = [1824 - width, 959]
+    group.scaleRotateCenter = [width / 2, 27]
+    m.focusables["osd-bookmark"] = { node: group, ring: ring, disabled: false }
+end sub
+
+sub updateProgress()
+    if m.progress = invalid or m.duration <= 0 then return
+    pct = m.position / m.duration
+    if pct > 1 then pct = 1
+    if pct < 0 then pct = 0
+    m.progress.elapsed.text = utils.formatTime(m.position)
+    remaining = m.duration - m.position
+    if remaining < 0 then remaining = 0
+    m.progress.remaining.text = "-" + utils.formatTime(remaining)
+    fillWidth = Int(BAR_W * pct)
+    m.progress.fill.visible = fillWidth >= 6
+    m.progress.fill.width = fillWidth
+    m.progress.knob.translation = [PAD_X + fillWidth - 8, 913]
+end sub
+
+' Cartão "Próximo na fila" com a contagem e os botões Reproduzir agora e Cancelar.
+sub renderNext()
+    m.nextLayer.removeChildrenIndex(m.nextLayer.getChildCount(), 0)
+    if m.offer = invalid then return
+    ui.panel(m.nextLayer, "next-card", 1312, 770, 512, 254)
+    ui.trackedText(m.nextLayer, "PRÓXIMO NA FILA", ui.font(600, 20), ACCENT_SOFT, 1346, 804, 1)
+    ui.text(m.nextLayer, utils.textOr(m.offer.item.name, ""), ui.font(700, 32), ui.WHITE, 1346, 836, 444, 44).wrap = false
+    lead = ui.inlineText(m.nextLayer, "Iniciando automaticamente em ", ui.font(400, 20), ui.NEUTRAL_400, 1346, 888, 28)
+    x = 1346 + lead.boundingRect().width
+    count = ui.inlineText(m.nextLayer, m.offer.secondsLeft.toStr() + "s", ui.font(700, 20), ui.WHITE, x, 888, 28)
+    ui.inlineText(m.nextLayer, "...", ui.font(400, 20), ui.NEUTRAL_400, x + count.boundingRect().width, 888, 28)
+    addCardButton("autoadvance-play", "Reproduzir agora", 1346, true)
+    addCardButton("autoadvance-cancel", "Cancelar", 1576, false)
+    renderFocus()
+end sub
+
+sub addCardButton(id as string, label as string, x as float, primary as boolean)
+    group = m.nextLayer.createChild("Group")
+    group.translation = [x, 940]
+    ring = ui.panel(group, "focus-ring", -5, -5, 224, 60)
+    image = "btn"
+    color = ui.WHITE
+    weight = 500
+    if primary then
+        image = "btn-primary"
+        color = ui.BLACK
+        weight = 600
+    end if
+    ui.panel(group, image, 0, 0, 214, 50)
+    text = ui.text(group, label, ui.font(weight, 20), color, 0, 11, 214, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [107, 25]
+    m.focusables[id] = { node: group, ring: ring, disabled: false }
+end sub
+
+' Erro (o passo 3 traz o formato alternativo, o mapa de erros e o Tentar novamente).
+sub showError(message as string)
+    cancelOffer()
+    m.osdTimer.control = "stop"
+    m.errorText = message
+    m.video.control = "stop"
+    m.errorLayer.removeChildrenIndex(m.errorLayer.getChildCount(), 0)
+    cover = m.errorLayer.createChild("Rectangle")
+    cover.width = 1920
+    cover.height = 1080
+    cover.color = "0x000000E6"
+    ui.text(m.errorLayer, "Falha na Reprodução", ui.font(700, 44), ui.WHITE, 0, 470, 1920, 56).horizAlign = "center"
+    detail = ui.text(m.errorLayer, message, ui.font(400, 24), ui.NEUTRAL_400, 560, 540, 800, 36)
+    detail.horizAlign = "center"
+    renderLoading()
+    renderOsd()
+end sub
+
+' ---------- Foco e teclas ----------
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    focusedTree = m.top.isInFocusChain()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = focusedTree and id = m.focusId and m.osdVisible
+        entry.ring.visible = focused
+        if entry.node <> invalid then
+            if focused then
+                entry.node.scale = [1.02, 1.02]
+            else
+                entry.node.scale = [1, 1]
+            end if
+        end if
+    end for
+end sub
+
+function controlOrder() as object
+    order = []
+    for each id in ["osd-prev", "osd-seek-back", "osd-play-pause", "osd-seek-fwd", "osd-next", "osd-bookmark"]
+        entry = m.focusables[id]
+        if entry <> invalid and not entry.disabled then order.push(id)
+    end for
+    return order
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if m.errorText <> "" then
+        if key = "back" or key = "OK" then closePlayer()
+        return true
+    end if
+    ' Teclas de mídia do controle: funcionam com o menu visível ou não.
+    if key = "play" then
+        togglePlayPause()
+        return true
+    end if
+    if key = "rewind" or key = "fastforward" then
+        delta = playerView.SEEK_STEP_S
+        if key = "rewind" then delta = -delta
+        seekBy(delta)
+        return true
+    end if
+    if key = "back" then
+        if m.offer <> invalid then
+            dismissOffer()
+        else if m.osdVisible then
+            m.osdVisible = false
+            m.osd.visible = false
+            m.osdTimer.control = "stop"
+        else
+            closePlayer()
+        end if
+        return true
+    end if
+    if m.offer <> invalid then
+        offerKey(key)
+        return true
+    end if
+    if not m.osdVisible then
+        ' Zapping rápido no ao vivo com o menu oculto; as outras teclas trazem o menu de volta no último controle.
+        if isLive() and key = "up" then
+            moveInQueue(1)
+        else if isLive() and key = "down" then
+            moveInQueue(-1)
+        else if key = "OK" or key = "left" or key = "right" or key = "up" or key = "down" then
+            showOsd()
+            focusControl()
+        end if
+        return true
+    end if
+    resetOsdTimer()
+    if key = "OK" then
+        onSelect()
+    else
+        moveFocus(key)
+    end if
+    return true
+end function
+
+sub offerKey(key as string)
+    if key = "OK" then
+        if m.focusId = "autoadvance-play" then playNextNow()
+        if m.focusId = "autoadvance-cancel" then dismissOffer()
+        return
+    end if
+    if key = "left" then m.focusId = "autoadvance-play"
+    if key = "right" then m.focusId = "autoadvance-cancel"
+    renderFocus()
+end sub
+
+sub onSelect()
+    id = m.focusId
+    if id = "osd-top-close" then
+        closePlayer()
+    else if id = "osd-play-pause" then
+        togglePlayPause()
+    else if id = "osd-seek-back" then
+        seekBy(-playerView.SEEK_STEP_S)
+    else if id = "osd-seek-fwd" then
+        seekBy(playerView.SEEK_STEP_S)
+    else if id = "osd-prev" then
+        moveInQueue(-1)
+    else if id = "osd-next" then
+        moveInQueue(1)
+    else if id = "osd-bookmark" then
+        toggleFavorite()
+    end if
+end sub
+
+' Linhas do OSD: Fechar em cima, a barra (filme) e os controles embaixo; na barra, Esquerda/Direita pulam 10 s.
+sub moveFocus(key as string)
+    id = m.focusId
+    hasBar = m.focusables["osd-progress"] <> invalid
+    if id = "osd-progress" then
+        if key = "left" then seekBy(-playerView.SEEK_STEP_S)
+        if key = "right" then seekBy(playerView.SEEK_STEP_S)
+        if key = "up" then m.focusId = "osd-top-close"
+        if key = "down" then
+            focusControl()
+            return
+        end if
+    else if id = "osd-top-close" then
+        if key = "down" then
+            if hasBar then
+                m.focusId = "osd-progress"
+            else
+                focusControl()
+                return
+            end if
+        end if
+    else
+        order = controlOrder()
+        position = -1
+        for i = 0 to order.count() - 1
+            if order[i] = id then position = i
+        end for
+        if key = "left" and position > 0 then m.focusId = order[position - 1]
+        if key = "right" and position >= 0 and position < order.count() - 1 then m.focusId = order[position + 1]
+        if key = "up" then
+            if hasBar then
+                m.focusId = "osd-progress"
+            else
+                m.focusId = "osd-top-close"
+            end if
+        end if
+        if m.focusId <> id and Left(m.focusId, 4) = "osd-" and m.focusId <> "osd-progress" and m.focusId <> "osd-top-close" then m.lastControl = m.focusId
+    end if
+    renderFocus()
+end sub

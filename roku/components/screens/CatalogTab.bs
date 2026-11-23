@@ -10,6 +10,7 @@ import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/favorites/favorites.bs"
 import "pkg:/source/parental/parental.bs"
+import "pkg:/source/player/playerState.bs"
 
 ' Medidas do CatalogBrowser.vue em px (1920×1080): seção de x 152 a 1824 (pl-10/pr-24) e y 56 (py-14); cabeçalho
 ' de 75 px; conteúdo rolável de y 131 a 1024; fileiras com px-6 (x 176) e cartões 176×264 com gap-4.
@@ -804,7 +805,16 @@ function onKeyEvent(key as string, press as boolean) as boolean
     return true
 end function
 
-'' ---------- Controle parental ----------
+'' playFromCatalog: a fila é a janela da categoria em volta do item (total = a contagem já sem o que está fora da vista).
+sub playFrom(categoryId as string, item as object, index as integer)
+    total = 1
+    for each cat in m.categories
+        if cat.category_id = categoryId and cat.count <> invalid then total = cat.count
+    end for
+    m.top.navigate = playerState.catalogRequest(m.ctx.dir, m.section, categoryId, item, index, total, m.hidden)
+end sub
+
+' ---------- Controle parental ----------
 
 ' "unlock": PIN da categoria bloqueada; "manage": o Controle parental da aba (todas as categorias, menos "Todos").
 sub openParental(mode as string, category as dynamic)
@@ -865,11 +875,28 @@ function onSelect() as boolean
         toggleHeroFavorite()
         return true
     end if
+    ' "Assistir" do destaque de filme: toca a partir da categoria ativa (handlePlayFeatured do web).
+    if m.focusId = "catalog-hero-play" and m.section = "vod" and m.heroItem <> invalid then
+        playFrom(m.activeCategory, m.heroItem, 0)
+        return true
+    end if
     item = invalid
     if m.focusId = "catalog-hero-info" or (m.focusId = "catalog-hero-play" and m.section = "series") then item = m.heroItem
     entry = m.focusables[m.focusId]
     if entry <> invalid and entry.item <> invalid then item = entry.item
-    ' Canais e "Assistir" de filme entram com o player (D6).
+    ' Canal toca na hora, com a posição na categoria para o zapping (handleSelectItem do web).
+    if item <> invalid and m.section = "live" and entry <> invalid then
+        if entry.categoryId = "favorites" then
+            m.top.navigate = playerState.openRequest(playerState.forItem(item))
+        else
+            categoryId = m.activeCategory
+            if entry.categoryId <> invalid then categoryId = entry.categoryId
+            index = gridIndexOf(m.focusId)
+            if entry.index <> invalid then index = entry.index
+            playFrom(categoryId, item, index)
+        end if
+        return true
+    end if
     if item <> invalid and m.section <> "live" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: m.section } }
     return true
 end function

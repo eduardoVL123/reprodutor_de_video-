@@ -152,6 +152,18 @@ namespace tests
             m.assertEqual(playerState.current(state).stream_id, 7)
         end function
 
+        @it("só pede outra janela quando o próximo está fora da que está na memória")
+        function _()
+            channels = tests.playerChannels(30)
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, channels[6], 6, 30, [])
+            m.assertFalse(playerState.needsWindow(state, 1))
+            state.items = [state.items[6]]
+            state.context.windowStart = 6
+            state.index = 0
+            m.assertTrue(playerState.needsWindow(state, 1))
+            m.assertFalse(playerState.needsWindow(playerState.forItem(channels[0]), 1))
+        end function
+
         @it("filme não dá a volta: no último da categoria não há próximo")
         function _()
             tests.playerChannels(3)

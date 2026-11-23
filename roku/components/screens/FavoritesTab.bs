@@ -4,6 +4,7 @@ import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/favorites/favorites.bs"
 import "pkg:/source/parental/parental.bs"
+import "pkg:/source/player/playerState.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/catalog/catalog.bs"
 
@@ -223,7 +224,8 @@ sub renderFocus()
     m.content.translation = [0, -m.scroll]
 end sub
 
-' OK: série abre os detalhes (openFavorite do web); filme, canal e Reproduzir Tudo entram com o player (D6). Limpar
+' OK: série abre os detalhes; filme e canal tocam a fila dos favoritos a partir dele, e Reproduzir Tudo do começo
+' (openFavorite e playFromCustomQueue do web; a lista já vem sem o que o controle parental tira). Limpar
 ' Lista apaga os favoritos deste perfil e lista, e o foco volta ao menu (não sobra nada focável na aba).
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
@@ -253,8 +255,18 @@ sub onSelect()
         m.top.exit = "left"
         return
     end if
+    if m.focusId = "fav-play-all" then
+        request = playerState.openRequest(playerState.forFavorites(m.items, invalid))
+        if request <> invalid then m.top.navigate = request
+        return
+    end if
     entry = m.focusables[m.focusId]
     if entry = invalid or entry.index = invalid then return
     item = m.items[entry.index]
-    if item.section = "series" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: "series" } }
+    if item.section = "series" then
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: "series" } }
+        return
+    end if
+    request = playerState.openRequest(playerState.forFavorites(m.items, item))
+    if request <> invalid then m.top.navigate = request
 end sub

@@ -9,6 +9,7 @@ import "pkg:/source/account/account.bs"
 import "pkg:/source/profiles/profiles.bs"
 import "pkg:/source/favorites/favorites.bs"
 import "pkg:/source/parental/parental.bs"
+import "pkg:/source/player/playerState.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
@@ -509,8 +510,8 @@ sub refreshNav()
 end sub
 
 ' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
-' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir e canais entram com o player (D6);
-'' Trocar perfil abre a escolha de perfil; o coração do destaque guarda ou tira dos Favoritos.
+' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir (filme) e os canais tocam (handleHeroPlay e
+' handleCardPlay do web); Trocar perfil abre a escolha de perfil; o coração do destaque guarda ou tira dos Favoritos.
 function onSelect() as boolean
     if m.focusId = "hero-mylist" then
         toggleHeroFavorite()
@@ -527,16 +528,35 @@ function onSelect() as boolean
         return true
     end if
     item = invalid
-    if m.focusId = "hero-info" then item = m.heroItem
+    index = 0
+    if m.focusId = "hero-info" or m.focusId = "hero-play" then item = m.heroItem
     for each rail in m.rails
         prefix = rail.section + "-card-"
-        if Left(m.focusId, Len(prefix)) = prefix then item = rail.items[Int(Val(Mid(m.focusId, Len(prefix) + 1)))]
+        if Left(m.focusId, Len(prefix)) = prefix then
+            index = Int(Val(Mid(m.focusId, Len(prefix) + 1)))
+            item = rail.items[index]
+        end if
     end for
     if not utils.isObject(item) or item.isSeeAll = true then return true
     section = utils.textOr(item.section, "")
+    if section = "live" or (m.focusId = "hero-play" and section = "vod") then
+        playFromAll(section, item, index)
+        return true
+    end if
     if section = "vod" or section = "series" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: section } }
     return true
 end function
+
+'' playFromCatalog em "Todos": a fileira são os primeiros itens, então a posição nela é a posição na categoria
+' (CH+/CH- certos).
+sub playFromAll(section as string, item as object, index as integer)
+    store = storage.create()
+    active = session.hydrate(store)
+    if active = invalid then return
+    dir = catalog.contextFor(active).dir
+    hidden = parental.hiddenMap(parental.activeContext(store), dir)[section]
+    m.top.navigate = playerState.catalogRequest(dir, section, catalog.ALL_CATEGORIES, item, index, invalid, hidden)
+end sub
 
 ' focusEl do web: lembra o foco, desliza a fileira até o cartão e rola o conteúdo (o destaque volta ao topo).
 sub focusOn(id as string)

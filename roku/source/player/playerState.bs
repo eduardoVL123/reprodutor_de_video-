@@ -246,6 +246,31 @@ namespace playerState
         return true
     end function
 
+    ' Pedido de navegação que abre o PlayerScreen com a fila (invalid quando não há o que tocar).
+    function openRequest(state as dynamic, dir = "" as string, hidden = [] as object) as dynamic
+        if state = invalid then return invalid
+        return { action: "push", screen: "PlayerScreen", params: { state: state, dir: dir, hidden: hidden } }
+    end function
+
+    ' playFromCatalog em duas partes, como no web: o player toca o item na hora e uma Task monta a janela da categoria
+    ' (ler o índice de 50 mil canais na thread da tela travaria a TV). total invalid = a Task conta.
+    function catalogRequest(dir as string, section as string, categoryId as string, item as object, index as integer, total as dynamic, hidden as object) as object
+        return { action: "push", screen: "PlayerScreen", params: { dir: dir, hidden: hidden, catalog: { section: section, categoryId: categoryId, item: item, index: index, total: total } } }
+    end function
+
+    ' true quando step(delta) precisa ler outra janela do catálogo (vai para a Task); false = resolve na memória.
+    function needsWindow(state as object, delta as integer) as boolean
+        ctx = state.context
+        if ctx = invalid then return false
+        absolute = ctx.windowStart + state.index + delta
+        if absolute < 0 or absolute >= ctx.total then
+            if state.mode <> "live" or ctx.total < 2 then return false
+            absolute = (absolute + ctx.total) mod ctx.total
+        end if
+        localIndex = absolute - ctx.windowStart
+        return localIndex < 0 or localIndex >= state.items.count()
+    end function
+
     function hasNext(state as object) as boolean
         ctx = state.context
         if ctx = invalid then return state.index + 1 < state.items.count()

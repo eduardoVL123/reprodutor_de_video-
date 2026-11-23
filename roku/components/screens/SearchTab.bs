@@ -8,6 +8,7 @@ import "pkg:/source/catalog/grid.bs"
 import "pkg:/source/search/searchScreen.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/player/playerState.bs"
 
 ' Medidas do SearchScreen.vue em px (1920×1080): teclado de x 176 a 720 (w-[34rem]); campo em y 56 (64 de altura);
 ' teclas de 72 com gap 10; painel da direita em x 760: sugestões com 352 e resultados de x 1144 a 1824 (4 colunas).
@@ -642,8 +643,13 @@ function onSelect() as boolean
     else if isResultId(id) then
         entry = m.focusables[id]
         rememberSearch()
-        ' Canal entra com o player (D6).
-        if entry <> invalid and entry.result.section <> "live" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: entry.result.item, section: entry.result.section } }
+        ' Canal toca na hora (playItem do web); filme e série abrem os detalhes.
+        if entry <> invalid and entry.result.section = "live" then
+            channel = {}
+            channel.append(entry.result.item)
+            channel.section = "live"
+            m.top.navigate = playerState.openRequest(playerState.forItem(channel))
+        else if entry <> invalid then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: entry.result.item, section: entry.result.section } }
     end if
     return true
 end function
