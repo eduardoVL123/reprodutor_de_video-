@@ -128,13 +128,14 @@ sub renderFocus()
     end for
 end sub
 
-' OK: Diagnóstico abre o diálogo e Sair fecha o app (o MainScene cuida dos dois). Trocar perfil e Favoritos chegam
-' com os perfis (D7) e Minhas listas com o ListManager; até lá só recebem foco.
+' OK: Diagnóstico abre o diálogo, Sair fecha o app e Minhas listas abre o gerenciador (o MainScene cuida dos três).
+' Trocar perfil e Favoritos chegam com os perfis (D7); até lá só recebem foco.
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
     if key = "OK" then
         if m.focusId = "acc-diagnostics" then m.top.navigate = { action: "diagnostics" }
         if m.focusId = "acc-exit" then m.top.navigate = { action: "exit" }
+        if m.focusId = "acc-lists" then m.top.navigate = { action: "push", screen: "ListManagerScreen" }
         return true
     end if
     if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false

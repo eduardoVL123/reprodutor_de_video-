@@ -91,6 +91,101 @@ namespace tests
         end function
 
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("trocar, excluir e sair (ListManager)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("ativar uma lista salva decifra a senha, autentica com ela e grava a sessão")
+        function _()
+            t = tests.fakeTransport(tests.okLoginAt(tests.SERVER))
+            session.login(t, m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            session.login(t, m.store, { dns: tests.SERVER, username: "b", password: "pb" })
+            t.calls.clear()
+            result = session.switchList(t, m.store, "list_http___srv_test_8080_a")
+            m.assertTrue(result.ok)
+            m.assertTrue(t.calls[0].instr("username=a&password=pa") > 0, t.calls[0])
+            m.assertEqual(session.hydrate(m.store).username, "a")
+        end function
+
+        @it("ativar uma lista M3U salva decifra a URL sem baixar nada")
+        function _()
+            t = tests.fakeTransport([{ prefix: "http://m3u.test", response: tests.textResponse(tests.playlist()) }])
+            first = session.login(t, m.store, { dns: tests.TOKEN_URL }).session
+            session.login(tests.fakeTransport(tests.okLoginAt(tests.SERVER)), m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            t.calls.clear()
+            result = session.switchList(t, m.store, first.id)
+            m.assertTrue(result.ok)
+            m.assertEqual(t.calls.count(), 0)
+            restored = session.hydrate(m.store)
+            m.assertEqual(restored.id, first.id)
+            m.assertEqual(restored.resolvedUrl, tests.TOKEN_URL)
+        end function
+
+        @it("lista que não existe mais não troca")
+        function _()
+            result = session.switchList(tests.fakeTransport([]), m.store, "sumiu")
+            m.assertFalse(result.ok)
+            m.assertEqual(result.error, "Lista não encontrada.")
+        end function
+
+        @it("excluir a lista ativa troca para a próxima e só então a remove")
+        function _()
+            t = tests.fakeTransport(tests.okLoginAt(tests.SERVER))
+            session.login(t, m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            session.login(t, m.store, { dns: tests.SERVER, username: "b", password: "pb" })
+            result = session.removeList(t, m.store, "list_http___srv_test_8080_b")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.outcome, "changed")
+            m.assertEqual(session.readSavedLists(m.store).count(), 1)
+            m.assertEqual(session.readSavedLists(m.store)[0].username, "a")
+            m.assertEqual(session.hydrate(m.store).username, "a")
+        end function
+
+        @it("se a troca falhar (sem rede), a lista ativa NÃO é excluída e a sessão continua nela")
+        function _()
+            t = tests.fakeTransport(tests.okLoginAt(tests.SERVER))
+            session.login(t, m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            session.login(t, m.store, { dns: tests.SERVER, username: "b", password: "pb" })
+            result = session.removeList(tests.fakeTransport([]), m.store, "list_http___srv_test_8080_b")
+            m.assertFalse(result.ok)
+            m.assertNotEmpty(result.error)
+            m.assertEqual(session.readSavedLists(m.store).count(), 2)
+            m.assertEqual(session.hydrate(m.store).username, "b")
+        end function
+
+        @it("excluir uma lista que não está ativa não mexe na sessão nem usa a rede")
+        function _()
+            t = tests.fakeTransport(tests.okLoginAt(tests.SERVER))
+            session.login(t, m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            session.login(t, m.store, { dns: tests.SERVER, username: "b", password: "pb" })
+            t.calls.clear()
+            result = session.removeList(t, m.store, "list_http___srv_test_8080_a")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.outcome, "kept")
+            m.assertEqual(t.calls.count(), 0)
+            m.assertEqual(session.hydrate(m.store).username, "b")
+            m.assertEqual(session.readSavedLists(m.store)[0].username, "b")
+        end function
+
+        @it("excluir a única lista ativa encerra a sessão")
+        function _()
+            t = tests.fakeTransport(tests.okLoginAt(tests.SERVER))
+            session.login(t, m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            result = session.removeList(t, m.store, "list_http___srv_test_8080_a")
+            m.assertTrue(result.ok)
+            m.assertEqual(result.outcome, "loggedOut")
+            m.assertEqual(session.readSavedLists(m.store).count(), 0)
+            m.assertInvalid(session.hydrate(m.store))
+        end function
+
+        @it("sair da conta apaga a sessão e mantém as listas salvas")
+        function _()
+            session.login(tests.fakeTransport(tests.okLoginAt(tests.SERVER)), m.store, { dns: tests.SERVER, username: "a", password: "pa" })
+            session.logout(m.store)
+            m.assertInvalid(session.hydrate(m.store))
+            m.assertEqual(session.readSavedLists(m.store).count(), 1)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         @describe("login — erros")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 

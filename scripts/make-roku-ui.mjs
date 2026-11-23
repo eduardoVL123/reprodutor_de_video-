@@ -417,6 +417,10 @@ const errorDetailBg = over([0, 0, 0], 0.5, errorBg) // bg-black/50 dentro da cai
 const btnSecondary = over(WHITE, 0.06, DIALOG) // bg-white/[0.06] sobre o painel
 const termCard = over(DEEP, 0.6, DIALOG) // bg-tv-bg/60 sobre o painel
 const iconBox = over(WHITE, 0.08, DIALOG) // bg-white/[0.08]
+const LIST_CARD = over(WHITE, 0.02, DIALOG) // cartão de lista: bg-white/[0.02] sobre o painel
+const LIST_CARD_ACTIVE = over(WHITE, 0.04, DIALOG) // lista ativa: bg-white/[0.04]
+const EMERALD = hex('#10B981')
+const AMBER = hex('#F59E0B')
 
 export const OUTPUTS = [
   // Painel do FTUE: rounded-2xl (16), borda white/10 de 1 px, fundo #121215.
@@ -508,6 +512,17 @@ export const OUTPUTS = [
   // Conta (AccountScreen.vue): .acc-card (rounded 16, #141a15, borda white/8), anel das linhas (rounded 16) e os
   // ícones das linhas (w-7, stroke 1.9), brancos para a tela tingir.
   ['acc-card.9.png', () => ninePatch([{ inset: 0, radius: 16, color: over(WHITE, 0.08, ACC_CARD) }, { inset: 1, radius: 15, color: ACC_CARD }])],
+  // Gerenciador de listas (ListManagerModal.vue), sobre o painel #121215: cartão da lista (rounded-xl; ativa com borda
+  // limão e white/4, as outras white/10 e white/2), selos ATIVA e SEM CRIPTOGRAFIA (cor/15, borda cor/30, rounded),
+  // Excluir confirmando (borda red-400) e os ícones de Fechar, lixeira e sair (w-4).
+  ['list-card.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(WHITE, 0.1, LIST_CARD) }, { inset: 1, radius: 11, color: LIST_CARD }])],
+  ['list-card-active.9.png', () => ninePatch([{ inset: 0, radius: 12, color: LIME }, { inset: 1, radius: 11, color: LIST_CARD_ACTIVE }])],
+  ['badge-ok.9.png', () => ninePatch([{ inset: 0, radius: 4, color: over(EMERALD, 0.3, LIST_CARD_ACTIVE) }, { inset: 1, radius: 3, color: over(EMERALD, 0.15, LIST_CARD_ACTIVE) }])],
+  ['badge-warn.9.png', () => ninePatch([{ inset: 0, radius: 4, color: over(AMBER, 0.3, LIST_CARD_ACTIVE) }, { inset: 1, radius: 3, color: over(AMBER, 0.15, LIST_CARD_ACTIVE) }])],
+  ['btn-danger.9.png', () => ninePatch([{ inset: 0, radius: 8, color: hex('#F87171') }, { inset: 1, radius: 7, color: btnSecondary }])],
+  ['icon-close.png', () => svgIcon(16, [{ points: [18, 6, 6, 18] }, { points: [6, 6, 18, 18] }])],
+  ['icon-trash.png', () => svgIcon(16, [{ points: [3, 6, 5, 6, 21, 6] }, { d: 'M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2' }], { stroke: 1.75 })],
+  ['icon-logout.png', () => svgIcon(16, [{ d: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4' }, { points: [16, 17, 21, 12, 16, 7] }, { points: [21, 12, 9, 12] }])],
   ['avatar-12.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE }])],
   ['focus-ring-16.9.png', () => ninePatch([{ inset: 0, radius: 21, color: WHITE }, { inset: 2, radius: 19, color: DEEP }])],
   ['icon-acc-heart.png', () => svgIcon(28, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }], { stroke: 1.9 })],

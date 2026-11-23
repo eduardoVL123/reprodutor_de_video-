@@ -4,8 +4,8 @@ import "pkg:/source/xtream/m3uParser.bs"
 import "pkg:/source/device/secrets.bs"
 ' Port de login/hydrate de src/stores/authStore.js e de src/utils/urlSnippets.js (casos em tests/authStore.test.js,
 ' tests/login.test.js e roku/source/session/session.spec.bs). Roda num Task node (usa a rede e a cifra).
-' Ainda não portado: importar o catálogo da lista e limpar o catálogo/player da conta anterior (D4/D6), trocar e
-' excluir listas (ListManager) e migrar dados legados do web (a Roku começa sem dados antigos).
+' Ainda não portado: limpar o player da conta anterior (D6) e migrar dados legados do web (a Roku começa sem dados
+' antigos). O catálogo fica numa pasta por lista (catalog.contextFor), então trocar de lista não precisa limpá-lo.
 namespace session
 
     const SESSION_KEY = "auth:session"
@@ -147,6 +147,74 @@ namespace session
         store.set(session.SAVED_LISTS_KEY, lists)
     end sub
 
+    function readSavedLists(store as object) as object
+        lists = store.get(session.SAVED_LISTS_KEY)
+        if GetInterface(lists, "ifArray") = invalid then return []
+        return lists
+    end function
+
+    function failureMessage(message as string) as object
+        return { ok: false, error: message, errorDetail: "", session: invalid }
+    end function
+
+    ' switchList do authStore.js: abre uma lista salva (decifra a senha e autentica; M3U só decifra a URL, o
+    ' catálogo baixa quando as telas pedirem). { ok, error, errorDetail, session }
+    function switchList(transport as object, store as object, listId as string) as object
+        item = invalid
+        for each saved in session.readSavedLists(store)
+            if utils.isObject(saved) and utils.textOr(saved.id, "") = listId then item = saved
+        end for
+        if item = invalid then return session.failureMessage("Lista não encontrada.")
+        if item.type = "m3u" then
+            urls = { baseUrl: item.baseUrl, resolvedUrl: item.resolvedUrl }
+            if item.urlEnc <> invalid then
+                json = secrets.decrypt(item.urlEnc)
+                urls = invalid
+                if json <> invalid then urls = ParseJson(json)
+            end if
+            if not utils.isObject(urls) then return session.failure(xtream.newError("SAVED_DATA_UNREADABLE", "URL da lista não pôde ser decifrada"))
+            current = { id: item.id, type: "m3u", label: item.label, baseUrl: urls.baseUrl, resolvedUrl: urls.resolvedUrl, username: utils.textOr(item.username, "M3U Playlist"), password: "", userInfo: { auth: 1, status: "Active", exp_date: invalid }, serverInfo: { port: "", server_protocol: "http" }, savedAt: session.nowIso() }
+            store.set(session.SESSION_KEY, session.toStored(current))
+            return { ok: true, error: "", errorDetail: "", session: current }
+        end if
+        password = utils.textOr(item.password, "")
+        if password = "" and item.passwordEnc <> invalid then password = utils.textOr(secrets.decrypt(item.passwordEnc), "")
+        if password = "" then return session.failure(xtream.newError("SAVED_DATA_UNREADABLE", "Senha salva não pôde ser decifrada"))
+        auth = xtream.authenticate(transport, { dns: item.baseUrl, username: item.username, password: password })
+        if auth.error <> invalid then return session.failure(auth.error)
+        current = { id: item.id, type: "xtream", label: item.label, baseUrl: auth.baseUrl, resolvedUrl: auth.resolvedUrl, username: item.username, password: password, userInfo: auth.userInfo, serverInfo: auth.serverInfo, savedAt: session.nowIso() }
+        store.set(session.SESSION_KEY, session.toStored(current))
+        return { ok: true, error: "", errorDetail: "", session: current }
+    end function
+
+    ' removeList do authStore.js: a ativa troca antes para a próxima; se a troca falhar nada é removido.
+    ' outcome: "changed" (abriu outra lista), "loggedOut" (era a única) ou "kept" (a sessão não mudou).
+    function removeList(transport as object, store as object, listId as string) as object
+        current = session.hydrate(store)
+        remaining = []
+        for each saved in session.readSavedLists(store)
+            if not (utils.isObject(saved) and utils.textOr(saved.id, "") = listId) then remaining.push(saved)
+        end for
+        wasActive = current <> invalid and utils.textOr(current.id, "") = listId
+        outcome = "kept"
+        if wasActive and remaining.count() > 0 then
+            switched = session.switchList(transport, store, utils.textOr(remaining[0].id, ""))
+            if not switched.ok then return switched
+            outcome = "changed"
+        end if
+        store.set(session.SAVED_LISTS_KEY, remaining)
+        if wasActive and remaining.count() = 0 then
+            session.logout(store)
+            outcome = "loggedOut"
+        end if
+        return { ok: true, error: "", errorDetail: "", outcome: outcome }
+    end function
+
+    ' logout do authStore.js: só a sessão sai; as listas salvas ficam para entrar de novo.
+    sub logout(store as object)
+        store.remove(session.SESSION_KEY)
+    end sub
+
     function failure(err as dynamic) as object
         described = xtream.describeError(err)
         message = described.message
@@ -169,7 +237,7 @@ namespace session
             listId = session.m3uListId(resolved.resolvedUrl)
             username = utils.textOr(resolved.username, "M3U Playlist")
             insecure = CreateObject("roRegex", "^http:\/\/", "i").isMatch(resolved.resolvedUrl)
-            ' TODO(D4): importar read.parsed no catálogo e limpar o catálogo/player da lista anterior.
+            ' O catálogo baixa quando as telas pedirem, na pasta desta lista (catalog.contextFor).
             session.saveList(store, { id: listId, type: "m3u", label: label, baseUrl: resolved.baseUrl, resolvedUrl: resolved.resolvedUrl, username: username, password: invalid, passwordEnc: invalid, insecure: insecure, updatedAt: session.nowIso() })
             current = { id: listId, type: "m3u", label: label, baseUrl: resolved.baseUrl, resolvedUrl: resolved.resolvedUrl, username: username, password: "", userInfo: { auth: 1, status: "Active", exp_date: invalid }, serverInfo: { port: "", server_protocol: "http" }, savedAt: session.nowIso() }
             store.set(session.SESSION_KEY, session.toStored(current))
@@ -184,7 +252,7 @@ namespace session
         if label = "" then label = username + " @ " + session.hostOf(auth.baseUrl, auth.baseUrl)
         listId = CreateObject("roRegex", "[^a-z0-9_]", "i").replaceAll("list_" + auth.baseUrl + "_" + username, "_")
         session.saveList(store, { id: listId, type: "xtream", label: label, baseUrl: auth.baseUrl, resolvedUrl: auth.resolvedUrl, username: username, password: password, passwordEnc: invalid, insecure: auth.insecure, updatedAt: session.nowIso() })
-        ' TODO(D4/D6): conta possivelmente diferente: descartar o catálogo e o player anteriores antes da sessão nova.
+        ' TODO(D6): conta possivelmente diferente: descartar o player anterior antes da sessão nova.
         current = { id: listId, type: "xtream", label: label, baseUrl: auth.baseUrl, resolvedUrl: auth.resolvedUrl, username: username, password: password, userInfo: auth.userInfo, serverInfo: auth.serverInfo, savedAt: session.nowIso() }
         store.set(session.SESSION_KEY, session.toStored(current))
         return { ok: true, error: "", errorDetail: "", session: current }

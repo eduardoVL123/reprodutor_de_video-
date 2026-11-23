@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Ações do gerenciador de listas em segundo plano (rede e cifra fora da render thread). -->
+<component name="ListTask" extends="Task">
+    <interface>
+        <!-- { action: "switch"|"remove", listId } ou { action: "add", form: { label, dns, username, password } } -->
+        <field id="params" type="assocarray" />
+        <!-- { ok, error, errorDetail, outcome: "changed"|"loggedOut"|"kept" } -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

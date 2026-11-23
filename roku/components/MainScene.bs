@@ -58,9 +58,20 @@ sub onNavigate(event as object)
         pushScreen(screen)
     else if request.action = "back" then
         popScreen()
+    else if request.action = "reset" then
+        resetTo(request.screen)
     else if request.action = "diagnostics" then
         showDiagnostics()
     end if
+end sub
+
+' A lista aberta mudou (gerenciador de listas): o app recomeça nesta tela, sem nada da lista anterior na pilha.
+' As cargas antigas que ainda rodam gravam na pasta da lista delas (catalog.contextFor); a vez de baixar cada seção
+' fica livre para a lista nova não esperar por elas.
+sub resetTo(screenName as string)
+    m.screens.removeChildrenIndex(m.screens.getChildCount(), 0)
+    m.global.setFields({ catalogLoad_live: "", catalogLoad_vod: "", catalogLoad_series: "" })
+    pushScreen(CreateObject("roSGNode", screenName))
 end sub
 
 sub popScreen()
