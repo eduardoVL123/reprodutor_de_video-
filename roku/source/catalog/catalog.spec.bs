@@ -119,6 +119,35 @@ namespace tests
             m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod"), ["homem aranha"])
         end function
 
+        @it("grava sem os campos que o app nunca lê (o catálogo de 50 mil canais não cabia no disco)")
+        function _()
+            raw = { num: 7, name: "Canal 7", stream_type: "live", stream_id: 70, stream_icon: "http://i.test/7.png", epg_channel_id: "c7", added: "1700000000", category_id: "2", custom_sid: "", tv_archive: 0, direct_source: "", tv_archive_duration: 0 }
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], [raw])
+            item = catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 1, [])[0]
+            m.assertEqual(item, { num: 7, name: "Canal 7", stream_id: 70, series_id: 70, stream_icon: "http://i.test/7.png", added: "1700000000", category_id: "2", container_extension: "", section: "live" })
+            ' direct_source com link continua (é o fallback do player).
+            raw.direct_source = "http://cdn.test/7.m3u8"
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], [raw])
+            m.assertEqual(catalog.getItems(tests.CATALOG_DIR, "live", catalog.ALL_CATEGORIES, 0, 1, [])[0].direct_source, "http://cdn.test/7.m3u8")
+        end function
+
+        @it("índice de busca que não coube no disco é refeito pelos chunks (buildSearchIndex)")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.numberedStreams(1200))
+            DeleteFile(tests.CATALOG_DIR + "/vod/search.json")
+            names = catalog.getSearchIndex(tests.CATALOG_DIR, "vod")
+            m.assertEqual(names.count(), 1200)
+            m.assertEqual(names[0], "item 1")
+            m.assertEqual(names[1199], "item 1200")
+        end function
+
+        @it("índice de busca com tamanho diferente do resumo também é refeito")
+        function _()
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.numberedStreams(3))
+            WriteAsciiFile(tests.CATALOG_DIR + "/vod/search.json", FormatJson(["item 1"]))
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod"), ["item 1", "item 2", "item 3"])
+        end function
+
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         @describe("categorias fora da vista (controle parental)")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -111,6 +111,11 @@ namespace catalog
         if extension = "" and (section = "vod" or section = "series") then extension = "mp4"
         item["container_extension"] = extension
         item["section"] = utils.textOr(raw.section, section)
+        ' Campos que o app nunca lê: fora, senão 50 mil canais não cabem no disco da Roku (o web grava o item inteiro).
+        for each unused in ["stream_type", "epg_channel_id", "custom_sid", "tv_archive", "tv_archive_duration"]
+            item.delete(unused)
+        end for
+        if utils.textOr(item.direct_source, "") = "" then item.delete("direct_source")
         return item
     end function
 
@@ -125,6 +130,7 @@ namespace catalog
         index = {}
         index.setModeCaseSensitive()
         searchIndex = []
+        incomplete = false
         for n = 0 to chunkCount - 1
             base = n * catalog.CHUNK_SIZE
             chunk = []
@@ -141,17 +147,24 @@ namespace catalog
                 if utils.isObject(item) then name = item.name
                 searchIndex.push(catalog.normalizeText(name))
             end for
-            WriteAsciiFile(path + "/chunk-" + n.toStr() + ".json", FormatJson(chunk))
+            if not WriteAsciiFile(path + "/chunk-" + n.toStr() + ".json", FormatJson(chunk)) then incomplete = true
         end for
         counts = {}
         counts.setModeCaseSensitive()
         for each cat in index
             counts[cat] = index[cat].count()
         end for
-        WriteAsciiFile(path + "/categories.json", FormatJson(categories))
-        WriteAsciiFile(path + "/index.json", FormatJson(index))
-        WriteAsciiFile(path + "/search.json", FormatJson(searchIndex))
-        ' O resumo vai por último: sem ele a seção conta como inexistente (gravação interrompida baixa de novo).
+        if not WriteAsciiFile(path + "/categories.json", FormatJson(categories)) then incomplete = true
+        if not WriteAsciiFile(path + "/index.json", FormatJson(index)) then incomplete = true
+        ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
+        if not WriteAsciiFile(path + "/search.json", FormatJson(searchIndex)) then print "[catalog] Índice de busca de "; section; " não coube no disco; será refeito pelos chunks."
+        ' O resumo vai por último e só com tudo gravado: sem ele a seção conta como inexistente e é baixada de novo.
+        ' shortcut: o web segura no meio da sessão o que não coube (memoryChunks); aqui a seção fica vazia até o próximo
+        ' download. Guardar em memória exige o catálogo fora do Task; fazer se aparecer aparelho com disco cheio.
+        if incomplete then
+            print "[catalog] Seção "; section; " não coube no disco; o resumo não foi gravado (vai baixar de novo)."
+            return
+        end if
         meta = { version: catalog.CATALOG_VERSION, count: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunkCount, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
         WriteAsciiFile(path + "/meta.json", FormatJson(meta))
     end sub
@@ -176,9 +189,26 @@ namespace catalog
         return index
     end function
 
+    ' Nomes normalizados da seção pela posição global (vazio se a seção não foi baixada). Sem o search.json, ou com
+    ' tamanho diferente do resumo, refaz pelos chunks e tenta gravar de novo (buildSearchIndex do web).
     function getSearchIndex(dir as string, section as string) as object
-        names = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/search.json")
-        if GetInterface(names, "ifArray") = invalid then return []
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid then return []
+        path = catalog.sectionDir(dir, section)
+        names = catalog.readJsonFile(path + "/search.json")
+        if GetInterface(names, "ifArray") <> invalid and names.count() = meta.count then return names
+        names = []
+        for n = 0 to meta.chunkCount - 1
+            chunk = catalog.readJsonFile(path + "/chunk-" + n.toStr() + ".json")
+            if GetInterface(chunk, "ifArray") <> invalid then
+                for each item in chunk
+                    name = invalid
+                    if utils.isObject(item) then name = item.name
+                    names.push(catalog.normalizeText(name))
+                end for
+            end if
+        end for
+        WriteAsciiFile(path + "/search.json", FormatJson(names))
         return names
     end function
 
