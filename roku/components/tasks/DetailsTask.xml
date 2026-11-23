@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Metadados da tela de detalhes (loadDetails do MediaDetailsModal.vue): get_vod_info do filme ou get_series_info da
+     série (temporadas e episódios). ctx = { apiBase, credentials }; item = item do catálogo; section = "vod"|"series". -->
+<component name="DetailsTask" extends="Task">
+    <interface>
+        <field id="ctx" type="assocarray" />
+        <field id="item" type="assocarray" />
+        <field id="section" type="string" />
+        <!-- { info, seriesData, error } -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

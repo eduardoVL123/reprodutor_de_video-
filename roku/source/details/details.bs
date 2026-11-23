@@ -1,0 +1,100 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
+import "pkg:/source/utils/seriesPlaylist.bs"
+' Regras da tela de detalhes, port de src/components/MediaDetailsModal.vue (casos em tests/mediaDetailsModal.test.js e
+' mediaDetails.spec.bs). A DetailsScreen só desenha o que sai daqui. Progresso ("Continuar assistindo", "Assistir do
+' início") entra com o player (D6) e "Nos favoritos" com os perfis (D7).
+namespace mediaDetails
+
+    function hasRating(info as object) as boolean
+        rating = utils.textOr(info.rating, "")
+        return rating <> "" and Val(rating) <> 0
+    end function
+
+    ' Linha de meta: Nota · ano · duração/temporadas · gênero (os pontos ficam entre os três primeiros).
+    function metaLine(info as object, middle as string) as object
+        parts = []
+        if mediaDetails.hasRating(info) then parts.push({ text: "Nota " + utils.textOr(info.rating, ""), kind: "rating" })
+        year = utils.textOr(info.year, "")
+        if year <> "" then parts.push({ text: year, kind: "text" })
+        if middle <> "" then parts.push({ text: middle, kind: "text" })
+        genre = utils.textOr(info.genre, "")
+        if genre <> "" then parts.push({ text: genre, kind: "genre" })
+        return parts
+    end function
+
+    function movieView(info as object) as object
+        duration = utils.textOr(info.duration, "")
+        if duration = "" then duration = "Longa-metragem"
+        return {
+            badge: "FILME",
+            title: utils.textOr(info.name, ""),
+            meta: mediaDetails.metaLine(info, duration),
+            buttons: [{ id: "details-play-btn", label: "Assistir agora" }, { id: "details-fav-btn", label: "Favoritos" }, { id: "details-back-btn", label: "Voltar" }]
+        }
+    end function
+
+    ' data = resposta do get_series_info (temporadas). Sem histórico ainda: o botão é o primeiro episódio.
+    function seriesView(info as object, data as dynamic) as object
+        seasonList = seriesPlaylist.seasonsOf(data)
+        middle = ""
+        if seasonList.count() = 1 then middle = "1 temporada"
+        if seasonList.count() > 1 then middle = seasonList.count().toStr() + " temporadas"
+        firstNumber = "1"
+        firstEpisode = "1"
+        if seasonList.count() > 0 then
+            firstNumber = seasonList[0].number.toStr()
+            episodes = seriesPlaylist.episodesOf(data, seasonList[0].key)
+            if episodes.count() > 0 then firstEpisode = utils.textOr(episodes[0].episode_num, "1")
+        end if
+        tabs = []
+        for each season in seasonList
+            tabs.push({ key: season.key, number: season.number, id: "season-tab-" + season.key, label: "Temporada " + season.number.toStr() })
+        end for
+        return {
+            badge: "SÉRIE",
+            title: utils.textOr(info.name, ""),
+            meta: mediaDetails.metaLine(info, middle),
+            seasons: tabs,
+            buttons: [{ id: "series-play-btn", label: "Assistir T" + firstNumber + ":E" + firstEpisode }, { id: "series-fav-btn", label: "Favoritos" }, { id: "series-back-btn", label: "Voltar" }]
+        }
+    end function
+
+    ' Cartões de episódio da temporada: selo E<n>, título sem o prefixo S01E02 e a duração.
+    function episodeCards(data as dynamic, seasonKey as string, poster = "" as string) as object
+        cards = []
+        episodes = seriesPlaylist.episodesOf(data, seasonKey)
+        for i = 0 to episodes.count() - 1
+            ep = episodes[i]
+            image = ""
+            if utils.isObject(ep.info) then image = utils.textOr(ep.info.movie_image, "")
+            if image = "" then image = poster
+            cards.push({ id: "episode-card-" + i.toStr(), badge: "E" + utils.textOr(ep.episode_num, ""), title: seriesPlaylist.episodeTitle(ep), subtitle: mediaDetails.episodeDuration(ep), image: image })
+        end for
+        return cards
+    end function
+
+    function episodeDuration(ep as object) as string
+        secs = 0
+        if utils.isObject(ep.info) then secs = Val(utils.textOr(ep.info.duration_secs, "0"))
+        if secs > 0 then return Cint(secs / 60).toStr() + " min"
+        if utils.isObject(ep.info) then return utils.durationLabel(ep.info.duration)
+        return ""
+    end function
+
+    function episodeCountText(count as integer) as string
+        if count = 1 then return "1 episódio"
+        return count.toStr() + " episódios"
+    end function
+
+    ' OK num focável → o que a tela faz. state = { activeSeason, episodeIndex }
+    function onSelect(id as string, state as object) as object
+        if id = "details-back-btn" or id = "series-back-btn" then return { action: "back" }
+        if id = "details-play-btn" or id = "series-play-btn" then return { action: "play" }
+        if id = "details-fav-btn" or id = "series-fav-btn" then return { action: "favorite" }
+        if Left(id, 11) = "season-tab-" then return { action: "season", season: Mid(id, 12), episodeIndex: 0 }
+        if Left(id, 13) = "episode-card-" then return { action: "episode", episodeIndex: Int(Val(Mid(id, 14))) }
+        return { action: "none" }
+    end function
+
+end namespace

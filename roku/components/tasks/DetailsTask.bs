@@ -1,0 +1,29 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/errors.bs"
+
+sub init()
+    m.top.functionName = "runDetails"
+end sub
+
+sub runDetails()
+    ctx = m.top.ctx
+    item = m.top.item
+    transport = net.urlTransport()
+    if m.top.section = "series" then
+        seriesId = item.stream_id
+        if seriesId = invalid then seriesId = item.series_id
+        response = xtream.fetchSeriesInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, seriesId: seriesId })
+        if response.error <> invalid then
+            ' Mesma mensagem do web quando as temporadas não carregam.
+            message = response.error.userMessage
+            if message = invalid or message = "" then message = "Não foi possível carregar os episódios desta série."
+            m.top.result = { info: xtream.normalizeVodInfo(invalid, item), seriesData: invalid, error: message }
+            return
+        end if
+        m.top.result = { info: xtream.normalizeVodInfo({ info: response.data.info }, item), seriesData: response.data, error: "" }
+        return
+    end if
+    info = xtream.fetchVodInfo(transport, { apiBase: ctx.apiBase, credentials: ctx.credentials, vodId: item.stream_id, item: item })
+    m.top.result = { info: info, seriesData: invalid, error: "" }
+end sub

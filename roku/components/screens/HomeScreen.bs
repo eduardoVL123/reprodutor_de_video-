@@ -440,6 +440,21 @@ sub refreshNav()
     m.nav.groupRects = layout.groupRects
 end sub
 
+' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue). Assistir,
+' canais, "Ver todos" e as abas do menu entram com o player (D6) e as telas de catálogo.
+function onSelect() as boolean
+    item = invalid
+    if m.focusId = "hero-info" then item = m.heroItem
+    for each rail in m.rails
+        prefix = rail.section + "-card-"
+        if Left(m.focusId, Len(prefix)) = prefix then item = rail.items[Int(Val(Mid(m.focusId, Len(prefix) + 1)))]
+    end for
+    if not utils.isObject(item) or item.isSeeAll = true then return true
+    section = utils.textOr(item.section, "")
+    if section = "vod" or section = "series" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: section } }
+    return true
+end function
+
 ' focusEl do web: lembra o foco, desliza a fileira até o cartão e rola o conteúdo (o destaque volta ao topo).
 sub focusOn(id as string)
     wasMenu = isMenuId(m.focusId)
@@ -494,6 +509,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
+    if key = "OK" then return onSelect()
     if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
     refreshNav()
     target = spatial.navigate(m.nav, m.focusId, key)

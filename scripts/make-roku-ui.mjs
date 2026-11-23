@@ -468,7 +468,12 @@ export const OUTPUTS = [
   ['icon-heart-filled.png', () => svgIcon(16, [{ d: 'M12 20s-7-4.5-7-10a4 4 0 017-2.5A4 4 0 0119 10c0 5.5-7 10-7 10z' }], { fill: true })],
   // "Ver todos" (chevron) e o ícone de canais da fileira ao vivo (w-5).
   ['icon-chevron-right.png', () => svgIcon(24, [{ points: [9, 18, 15, 12, 9, 6] }])],
-  ['icon-broadcast.png', () => svgIcon(20, [{ d: 'M4.93 19.07A10 10 0 0 1 19.07 4.93' }, { d: 'M7.76 16.24a6 6 0 0 1 8.48-8.48' }, { circle: [12, 12, 2] }])],
+  // Detalhes (MediaDetailsModal.vue): Voltar e "Assistir do início", w-4 stroke 2.
+  // .tv-badge (selo E1 do episódio): rounded (4), bg-black/60, border white/25.
+  ['badge.9.png', () => ninePatch([{ inset: 0, radius: 4, color: WHITE, alpha: 0.25, hole: { inset: 1, radius: 3 } }, { inset: 1, radius: 3, color: [0, 0, 0], alpha: 0.6 }])],
+  ['icon-back.png',() => svgIcon(16, [{ points: [19, 12, 5, 12] }, { points: [12, 19, 5, 12, 12, 5] }])],
+  ['icon-restart.png', () => svgIcon(16, [{ points: [1, 4, 1, 10, 7, 10] }, { d: 'M3.51 15a9 9 0 1 0 2.13-9.36L1 10' }])],
+  ['icon-broadcast.png', () => svgIcon(20,[{ d: 'M4.93 19.07A10 10 0 0 1 19.07 4.93' }, { d: 'M7.76 16.24a6 6 0 0 1 8.48-8.48' }, { circle: [12, 12, 2] }])],
   // Item do menu: ativo bg-white/15, rounded-xl (12).
   ['nav-active.9.png', () => ninePatch([{ inset: 0, radius: 12, color: WHITE, alpha: 0.15 }])],
   // Anel de foco em volta de algo rounded-xl (cartões e itens do menu): ring 2 branco + offset 3 grafite.

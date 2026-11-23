@@ -48,7 +48,12 @@ sub onNavigate(event as object)
     else if request.action = "replace" then
         replaceScreen(CreateObject("roSGNode", request.screen))
     else if request.action = "push" then
-        pushScreen(CreateObject("roSGNode", request.screen))
+        screen = CreateObject("roSGNode", request.screen)
+        ' Dados da tela nova (ex.: o item dos detalhes), como as props do web.
+        if request.params <> invalid and screen.hasField("params") then screen.params = request.params
+        pushScreen(screen)
+    else if request.action = "back" then
+        popScreen()
     end if
 end sub
 
