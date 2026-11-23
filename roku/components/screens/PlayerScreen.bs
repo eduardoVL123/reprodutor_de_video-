@@ -11,6 +11,7 @@ import "pkg:/source/player/playerState.bs"
 import "pkg:/source/player/playerView.bs"
 import "pkg:/source/player/playerEngine.bs"
 import "pkg:/source/player/trickPlay.bs"
+import "pkg:/source/player/tracks.bs"
 
 ' Medidas do VideoPlayerOverlay.vue em px (1920×1080). OSD px-24 py-14: título de 60 px (900) em x 96, y 56; Fechar
 ' de 48 em 1776,56; tempos em y 882 e a barra (1728×6) em y 918; botões redondos de 56 em y 958 a cada 72 (o
@@ -36,11 +37,15 @@ sub init()
     m.video.observeField("position", "onPosition")
     m.video.observeField("duration", "onDuration")
     m.video.observeField("bufferingStatus", "onBuffering")
+    m.video.observeField("availableAudioTracks", "onTracksChanged")
+    m.video.observeField("availableSubtitleTracks", "onTracksChanged")
     ' Ordem do web: OSD (z-10) embaixo da abertura e do "Carregando" (z-20), do erro (z-30) e do próximo.
     m.osd = m.top.createChild("Group")
     m.loadingLayer = m.top.createChild("Group")
     m.bufferLayer = m.top.createChild("Group")
     m.nextLayer = m.top.createChild("Group")
+    m.tracksLayer = m.top.createChild("Group")
+    m.tracksOpen = false
     m.errorLayer = m.top.createChild("Group")
     m.osdTimer = m.top.createChild("Timer")
     m.osdTimer.duration = playerView.OSD_HIDE_MS / 1000
@@ -128,6 +133,8 @@ sub playCurrent()
     m.lastSave = 0#
     m.errorText = ""
     m.errorDetail = ""
+    m.tracksApplied = false
+    closeTracks()
     m.recovering = false
     m.watchdog.control = "stop"
     m.playingItem = playerState.current(m.state)
@@ -411,6 +418,145 @@ sub replay()
     updateProgress()
 end sub
 
+' ---------- Áudio e legendas ----------
+
+' As faixas chegam depois de o stream abrir: aplica o idioma guardado do perfil uma vez por item e mostra o botão.
+sub onTracksChanged()
+    if not m.tracksApplied then applyPreferredTracks()
+    if m.errorText = "" then renderOsd()
+end sub
+
+function tracksPrefsKey() as string
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    return tracks.prefsKey(profileId)
+end function
+
+' Áudio no idioma guardado; legenda na faixa do idioma guardado, sem mexer no modo global da Roku (cert. 4.8).
+sub applyPreferredTracks()
+    audio = m.video.availableAudioTracks
+    subtitles = m.video.availableSubtitleTracks
+    if GetInterface(audio, "ifArray") = invalid and GetInterface(subtitles, "ifArray") = invalid then return
+    m.tracksApplied = true
+    prefs = m.store.get(tracksPrefsKey())
+    if not utils.isObject(prefs) then return
+    audioId = tracks.preferred(tracks.audioOptions(audio, m.video.audioTrack), prefs.audio)
+    if audioId <> "" then m.video.audioTrack = audioId
+    if prefs.subtitle <> tracks.OFF then
+        subtitleId = tracks.preferred(tracks.subtitleOptions(subtitles, m.video.subtitleTrack, captionsOn()), prefs.subtitle)
+        if subtitleId <> "" then m.video.subtitleTrack = subtitleId
+    end if
+end sub
+
+function captionsOn() as boolean
+    return m.video.globalCaptionMode = "On"
+end function
+
+' Opções na ordem da tela: áudio e depois legendas, cada uma com o tipo.
+function trackRows() as object
+    rows = []
+    for each o in tracks.audioOptions(m.video.availableAudioTracks, m.video.audioTrack)
+        o.kind = "audio"
+        rows.push(o)
+    end for
+    for each o in tracks.subtitleOptions(m.video.availableSubtitleTracks, m.video.subtitleTrack, captionsOn())
+        o.kind = "subtitle"
+        rows.push(o)
+    end for
+    return rows
+end function
+
+sub openTracks()
+    m.tracksOpen = true
+    m.osdTimer.control = "stop"
+    m.trackRows = trackRows()
+    m.trackIndex = 0
+    for i = 0 to m.trackRows.count() - 1
+        if m.trackRows[i].selected then
+            m.trackIndex = i
+            exit for
+        end if
+    end for
+    renderTracks()
+end sub
+
+sub closeTracks()
+    m.tracksOpen = false
+    m.tracksLayer.removeChildrenIndex(m.tracksLayer.getChildCount(), 0)
+end sub
+
+' Gaveta da direita no estilo da Fila do web: w-[40rem], bg-tv-surface/95, borda esquerda, pl-8 pr-24 py-14.
+sub renderTracks()
+    m.tracksLayer.removeChildrenIndex(m.tracksLayer.getChildCount(), 0)
+    if not m.tracksOpen then return
+    panel = m.tracksLayer.createChild("Rectangle")
+    panel.color = "0x111114F2"
+    panel.translation = [1280, 0]
+    panel.width = 640
+    panel.height = 1080
+    border = m.tracksLayer.createChild("Rectangle")
+    border.color = "0xFFFFFF1A"
+    border.translation = [1280, 0]
+    border.width = 2
+    border.height = 1080
+    ui.text(m.tracksLayer, "Áudio e legendas", ui.font(700, 32), ui.WHITE, 1314, 56, 510, 44).wrap = false
+    ui.text(m.tracksLayer, "Faixas que este vídeo traz.", ui.font(400, 20), ui.MUTED, 1314, 100, 510, 28)
+    y = 160
+    lastKind = ""
+    for i = 0 to m.trackRows.count() - 1
+        row = m.trackRows[i]
+        if row.kind <> lastKind then
+            heading = "ÁUDIO"
+            if row.kind = "subtitle" then heading = "LEGENDAS"
+            if lastKind <> "" then y = y + 16
+            ui.trackedText(m.tracksLayer, heading, ui.font(600, 20), META, 1314, y, 1.6)
+            y = y + 40
+            lastKind = row.kind
+        end if
+        group = m.tracksLayer.createChild("Group")
+        group.translation = [1314, y]
+        ring = ui.panel(group, "focus-ring", -5, -5, 520, 62)
+        ring.visible = i = m.trackIndex
+        color = ui.WHITE
+        if row.selected then
+            color = ui.ACCENT
+            dot = ui.panelImage(group, "circle.png", 12, 20, 12, 12)
+            dot.blendColor = ui.ACCENT
+        end if
+        ui.text(group, row.label, ui.font(500, 24), color, 40, 10, 460, 32).wrap = false
+        y = y + 60
+    end for
+end sub
+
+' Cima/Baixo andam nas opções, OK escolhe (e guarda o idioma no perfil), Voltar fecha.
+sub tracksKey(key as string)
+    if key = "back" then
+        closeTracks()
+        m.focusId = "osd-tracks"
+        resetOsdTimer()
+        renderFocus()
+        return
+    end if
+    if key = "up" and m.trackIndex > 0 then m.trackIndex = m.trackIndex - 1
+    if key = "down" and m.trackIndex < m.trackRows.count() - 1 then m.trackIndex = m.trackIndex + 1
+    if key = "OK" then
+        row = m.trackRows[m.trackIndex]
+        if row.kind = "audio" then
+            m.video.audioTrack = row.id
+        else if row.id = tracks.OFF then
+            m.video.globalCaptionMode = "Off"
+        else
+            m.video.subtitleTrack = row.id
+            m.video.globalCaptionMode = "On"
+        end if
+        tracks.remember(m.store, tracksPrefsKey(), row.kind, row)
+        index = m.trackIndex
+        m.trackRows = trackRows()
+        m.trackIndex = index
+    end if
+    renderTracks()
+end sub
+
 ' ---------- Próximo episódio ----------
 
 sub offerNextNearEnd()
@@ -600,31 +746,34 @@ sub addCircle(id as string, image as string, ringImage as string, icon as string
     m.focusables[id] = { node: group, ring: ring, disabled: false }
 end sub
 
-' Favoritos (rounded-xl, px-6, ícone w-4, 20 px bold); marcado com a borda white/40 e o coração cheio em limão.
+' Favoritos (rounded-xl, px-6, ícone w-4, 20 px bold); marcado com a borda white/40 e o coração cheio em limão. À
+' esquerda dele (gap-4), "Áudio e legendas" quando o stream tem o que escolher.
 sub addBookmark()
     saved = favorites.has(favorites.load(m.store, favorites.activeKey(m.store)), m.playingItem, currentSection())
-    label = "Favoritos"
-    image = "osd-btn"
-    icon = "icon-heart-small"
     if saved then
-        label = "Nos favoritos"
-        image = "osd-btn-on"
-        icon = "icon-heart-filled"
+        left = addTextButton("osd-bookmark", "Nos favoritos", "icon-heart-filled", ui.ACCENT, "osd-btn-on", 1824)
+    else
+        left = addTextButton("osd-bookmark", "Favoritos", "icon-heart-small", ui.WHITE, "osd-btn", 1824)
     end if
+    if tracks.hasChoices(m.video.availableAudioTracks, m.video.availableSubtitleTracks) then addTextButton("osd-tracks", "Áudio e legendas", "icon-subtitles", ui.WHITE, "osd-btn", left - 16)
+end sub
+
+' Botão de texto do OSD alinhado pela direita em `rightEdge`; devolve a borda esquerda.
+function addTextButton(id as string, label as string, icon as string, iconColor as string, image as string, rightEdge as float) as float
     group = m.osd.createChild("Group")
     ring = ui.panel(group, "osd-ring-16", -5, -5, 10, 64)
     bg = ui.panel(group, image, 0, 0, 10, 54)
     iconNode = ui.panelImage(group, icon + ".png", 25, 19, 16, 16)
-    iconNode.blendColor = ui.WHITE
-    if saved then iconNode.blendColor = ui.ACCENT
+    iconNode.blendColor = iconColor
     text = ui.inlineText(group, label, ui.font(700, 20), ui.WHITE, 49, 13, 28)
     width = 49 + text.boundingRect().width + 25
     bg.width = width
     ring.width = width + 10
-    group.translation = [1824 - width, 959]
+    group.translation = [rightEdge - width, 959]
     group.scaleRotateCenter = [width / 2, 27]
-    m.focusables["osd-bookmark"] = { node: group, ring: ring, disabled: false }
-end sub
+    m.focusables[id] = { node: group, ring: ring, disabled: false }
+    return rightEdge - width
+end function
 
 sub updateProgress()
     if m.progress = invalid or m.duration <= 0 then return
@@ -794,7 +943,7 @@ end sub
 
 function controlOrder() as object
     order = []
-    for each id in ["osd-prev", "osd-seek-back", "osd-play-pause", "osd-seek-fwd", "osd-next", "osd-bookmark"]
+    for each id in ["osd-prev", "osd-seek-back", "osd-play-pause", "osd-seek-fwd", "osd-next", "osd-tracks", "osd-bookmark"]
         entry = m.focusables[id]
         if entry <> invalid and not entry.disabled then order.push(id)
     end for
@@ -834,6 +983,10 @@ function onKeyEvent(key as string, press as boolean) as boolean
     end if
     if key = "replay" then
         replay()
+        return true
+    end if
+    if m.tracksOpen then
+        tracksKey(key)
         return true
     end if
     if key = "back" then
@@ -900,6 +1053,8 @@ sub onSelect()
         moveInQueue(1)
     else if id = "osd-bookmark" then
         toggleFavorite()
+    else if id = "osd-tracks" then
+        openTracks()
     end if
 end sub
 
