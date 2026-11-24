@@ -654,6 +654,11 @@ function onSelect() as boolean
         clearHistory()
         return true
     end if
+    ' "Ver todos ›" / "Explorar canais ›" no título da fileira abre a aba dela (activeTab do Dashboard.vue).
+    if Left(m.focusId, 13) = "home-see-all-" then
+        openTab(Mid(m.focusId, 14))
+        return true
+    end if
     if Left(m.focusId, 13) = "history-card-" then
         for each rail in m.rails
             if rail.section = "history" then playHistoryItem(rail.items[Int(Val(Mid(m.focusId, 14)))])
@@ -680,7 +685,12 @@ function onSelect() as boolean
             item = rail.items[index]
         end if
     end for
-    if not utils.isObject(item) or item.isSeeAll = true then return true
+    if not utils.isObject(item) then return true
+    ' Cartão "Ver todos os filmes / Ver todas as séries / Explorar canais" no fim da fileira: a aba da seção.
+    if item.isSeeAll = true then
+        openTab(item.section)
+        return true
+    end if
     section = utils.textOr(item.section, "")
     if section = "live" or (m.focusId = "hero-play" and section = "vod") then
         playFromAll(section, item, index)
