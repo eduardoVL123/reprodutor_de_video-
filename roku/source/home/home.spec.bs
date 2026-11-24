@@ -163,6 +163,20 @@ namespace tests
             m.assertEqual(spatial.navigate(state, "hero-play", "down"), "vod-card-0")
         end function
 
+        @it("com uma seção que não carregou, o Tentar novamente fica entre o destaque e a primeira fileira")
+        function _()
+            layout = home.navItems({
+                scroll: 0, menuOpen: false, menuX: 12, menuWidth: 88, menu: [], heroY: 388,
+                hero: [{ id: "hero-play", x: 176, width: 209 }, { id: "hero-info", x: 399, width: 236 }],
+                railX: 176, gap: 16, headerRight: 1836, retry: [176, 512, 220, 50],
+                rails: [{ section: "series", top: 640, count: 21, cardWidth: 168, cardHeight: 252, offset: 0, seeAllWidth: 119 }]
+            })
+            state = spatial.create(layout.items, layout.groupRects, [1920, 1080])
+            m.assertEqual(spatial.navigate(state, "hero-play", "down"), "home-retry")
+            m.assertEqual(spatial.navigate(state, "home-retry", "down"), "series-card-0")
+            m.assertEqual(spatial.navigate(state, "home-retry", "up"), "hero-play")
+        end function
+
         @it("Esquerda no conteúdo abre o menu no item ativo (Início) e Direita volta para onde estava")
         function _()
             state = tests.homeSpatial(0)

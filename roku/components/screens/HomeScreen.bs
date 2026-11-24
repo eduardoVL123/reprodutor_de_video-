@@ -36,6 +36,9 @@ sub init()
     m.heroFromHistory = false
     m.heroInfo = invalid
     m.heroButtons = []
+    ' Seções que falharam ao carregar (failedSections do Dashboard.vue): { section, error } na ordem em que falharam.
+    m.failed = []
+    m.retryButton = invalid
     m.scroll = 0
     m.maxScroll = 0
     m.nav = spatial.create([], {}, [1920, 1080])
@@ -99,6 +102,7 @@ sub reloadRails()
         m.task.unobserveField("state")
     end if
     m.rails = []
+    m.failed = []
     m.heroItem = invalid
     m.heroInfo = invalid
     m.heroFromHistory = false
@@ -134,8 +138,11 @@ sub loadHistory()
     m.rails = rails
     recent = home.recentHistoryItem(visible)
     if recent <> invalid then
+        ' Mesmo item de antes: os detalhes já buscados ficam (relê o histórico quando uma seção chega ao disco, e
+        ' zerar aqui deixava o destaque sem sinopse nem nota).
+        sameHero = m.heroFromHistory = true and utils.isObject(m.heroItem) and favorites.same(recent, m.heroItem)
+        if not sameHero then m.heroInfo = invalid
         m.heroItem = recent
-        m.heroInfo = invalid
         m.heroFromHistory = true
     else if m.heroFromHistory then
         m.heroItem = invalid
@@ -175,7 +182,13 @@ end function
 
 sub onRail(event as object)
     data = event.getData()
-    if not data.ok or data.items.count() = 0 then return
+    if not data.ok then
+        ' A seção ficou sem fileira: o aviso aparece em cima, como o homeError do web.
+        m.failed.push({ section: data.section, error: utils.textOr(data.error, "") })
+        renderRails()
+        return
+    end if
+    if data.items.count() = 0 then return
     items = []
     items.append(data.items)
     items.push(home.seeAllCard(data.section))
@@ -332,10 +345,32 @@ end function
 sub renderRails()
     m.railsGroup.removeChildrenIndex(m.railsGroup.getChildCount(), 0)
     m.railsBottom = RAILS_TOP
+    m.retryButton = invalid
+    if m.failed.count() > 0 then m.railsBottom = buildHomeError(m.railsBottom)
     for each rail in m.rails
         m.railsBottom = buildRail(rail, m.railsBottom)
     end for
     finishRails()
+end sub
+
+' Aviso "Não foi possível carregar sua lista" (space-y-2): título text-tv-row, a mensagem da primeira seção que
+' falhou em text-tv-sm neutral-400 e "Tentar novamente" (.tv-btn-primary mt-2). Devolve o y das fileiras.
+function buildHomeError(y as float) as float
+    ui.text(m.railsGroup, "Não foi possível carregar sua lista", ui.font(700, 28), ui.WHITE, CONTENT_X, y, RAIL_WIDTH, 36).wrap = false
+    message = ui.text(m.railsGroup, m.failed[0].error, ui.font(400, 20), ui.NEUTRAL_400, CONTENT_X, y + 44, RAIL_WIDTH, 28)
+    buttonY = y + 44 + ui.textHeight(message, 28) + 16
+    m.retryButton = m.railsGroup.createChild("PulseButton")
+    m.retryButton.variant = "primary"
+    m.retryButton.text = "Tentar novamente"
+    m.retryButton.translation = [CONTENT_X, buttonY]
+    m.retryRect = [CONTENT_X, buttonY, m.retryButton.buttonWidth, 50]
+    return buttonY + 50 + RAIL_SPACING
+end function
+
+' Tentar novamente (retryHome): recarrega o Início; o que já está no disco volta na hora e a seção que falhou baixa de novo.
+sub retryHome()
+    m.focusId = "hero-play"
+    reloadRails()
 end sub
 
 ' Desenha uma fileira que acabou de chegar embaixo das outras.
@@ -670,7 +705,9 @@ sub refreshNav()
     for each rail in m.rails
         if rail.seeAllWidth <> invalid then rails.push({ section: rail.section, top: rail.top, count: rail.items.count(), cardWidth: rail.cardWidth, cardHeight: rail.cardHeight, offset: rail.offset, seeAllWidth: rail.seeAllWidth })
     end for
-    layout = home.navItems({ scroll: m.scroll, menuOpen: open, menuX: menuX, menuWidth: menuWidth, menu: menu, heroY: 388, hero: m.heroButtons, railX: CONTENT_X, gap: RAIL_GAP, headerRight: CONTENT_X + RAIL_WIDTH + 12, rails: rails })
+    retry = invalid
+    if m.retryButton <> invalid then retry = m.retryRect
+    layout = home.navItems({ scroll: m.scroll, menuOpen: open, menuX: menuX, menuWidth: menuWidth, menu: menu, heroY: 388, hero: m.heroButtons, railX: CONTENT_X, gap: RAIL_GAP, headerRight: CONTENT_X + RAIL_WIDTH + 12, rails: rails, retry: retry })
     m.nav.items = layout.items
     m.nav.groupRects = layout.groupRects
 end sub
@@ -695,6 +732,10 @@ function onSelect() as boolean
     end if
     if m.focusId = "home-see-all-history" then
         clearHistory()
+        return true
+    end if
+    if m.focusId = "home-retry" then
+        retryHome()
         return true
     end if
     ' "Ver todos ›" / "Explorar canais ›" no título da fileira abre a aba dela (activeTab do Dashboard.vue).
@@ -778,6 +819,7 @@ sub focusOn(id as string)
 end sub
 
 sub renderFocus()
+    if m.retryButton <> invalid then m.retryButton.focused = m.focusId = "home-retry"
     for each button in m.heroButtons
         focused = button.id = m.focusId
         button.ring.visible = focused

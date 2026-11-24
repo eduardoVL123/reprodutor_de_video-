@@ -160,6 +160,8 @@ namespace home
                 list.push(home.vitrineItem(rail.section + "-card-" + i.toStr(), "rail-" + rail.section + "-card", [x, rail.top + 56 - p.scroll, rail.cardWidth, rail.cardHeight], true))
             end for
         end for
+        ' "Tentar novamente" do aviso de lista que não carregou (home-error), acima das fileiras.
+        if p.retry <> invalid then list.push(home.vitrineItem("home-retry", "home-error", [p.retry[0], p.retry[1] - p.scroll, p.retry[2], p.retry[3]], false))
         sideWidth = 112
         if p.menuOpen then sideWidth = 304
         return { items: list, groupRects: { "side-menu": [0, 0, sideWidth, 1080], "home-vitrine": [112, 0, 1808, 1080] } }
