@@ -67,6 +67,8 @@ self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim(
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url)
   if (url.origin === self.location.origin || !/^https?:$/.test(url.protocol) || event.request.method !== 'GET') return
+  // O proxy só repassa o Range: a consulta do pareamento (X-Pair-Secret) vai direto, o serviço de pareamento tem CORS.
+  if (event.request.headers.has('x-pair-secret')) return
   const headers = {}
   const range = event.request.headers.get('range')
   if (range) headers.Range = range

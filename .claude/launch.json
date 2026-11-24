@@ -8,6 +8,12 @@
       "port": 6502
     },
     {
+      "name": "roku-sim",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/roku-preview.mjs"],
+      "port": 6502
+    },
+    {
       "name": "web-dev",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
