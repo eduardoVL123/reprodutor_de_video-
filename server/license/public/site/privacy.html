@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f7f5f0" />
+    <title>Privacy Policy · Pulse Player</title>
+    <meta name="description" content="How Pulse Player handles your data." />
+    <link rel="icon" href="/site/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/site/site.css" />
+  </head>
+  <body>
+    <!-- Tradução de PRIVACY.md (fonte única). Ao mudar PRIVACY.md, atualize esta página também. -->
+    <header class="site-header">
+      <a class="brand" href="/" aria-label="Pulse Player, página inicial"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 947 256" aria-hidden="true" focusable="false"><path fill="#B8F000" d="M56.00 122.00 L56.00 64.25 A14 14 0 0 1 77.00 52.12 L198.03 122.00 L146.58 122.00 L137.34 138.00 L107.32 86.00 L86.54 122.00 Z"/><path fill="#B8F000" d="M56.00 134.00 L93.46 134.00 L107.32 110.00 L137.34 162.00 L153.50 134.00 L198.03 134.00 L77.00 203.88 A14 14 0 0 1 56.00 191.75 Z"/><g transform="translate(252 93.50) scale(1.15)"><g fill="none" stroke="#F4F7EE" stroke-linejoin="miter" stroke-miterlimit="2"><path transform="translate(0.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(52.00 0)" stroke-width="6" d="M0 0V42A18 18 0 0 0 36 42V0"/><path transform="translate(106.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(156.00 0)" stroke-width="6" d="M35 12C34 5 27 0 18 0C8 0 1 6 1 14C1 24 9 27 18 30C28 33 36 36 36 46C36 55 28 60 18 60C8 60 1 55 0 47"/><path transform="translate(210.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(292.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0"/><path transform="translate(344.00 0)" stroke-width="6" d="M0 0V60H32"/><path transform="translate(394.00 0)" stroke-width="6" d="M0 60L20 0L40 60M8 40H32"/><path transform="translate(452.00 0)" stroke-width="6" d="M0 0L20 34.64M40 0L20 34.64M20 30V60"/><path transform="translate(510.00 0)" stroke-width="6" d="M32 0H0V60H32M0 30H26"/><path transform="translate(560.00 0)" stroke-width="6" d="M0 60V0H19A15.5 15.5 0 0 1 19 31H0M19 31L35.74 60"/></g></g></svg></a>
+      <nav class="site-nav" aria-label="Seções do site">
+        <a href="/" class="tab">Início</a>
+        <a href="/assinar" class="tab">Ativar meu app</a>
+        <a href="/creditos" class="tab">Revendas</a>
+        <a href="/enviar" class="tab">Enviar listas</a>
+      </nav>
+    </header>
+
+    <main class="page privacy">
+      <h1>Privacy Policy — Pulse Player</h1>
+      <p>Last updated: November 4, 2026</p>
+      <p>This is the English version of the <a href="/privacidade">Portuguese privacy policy</a>. If the two differ, the Portuguese version prevails. <a href="/privacy-ko">한국어</a></p>
+      <h2>What the app is</h2>
+      <p>Pulse Player is a generic media player. It does not provide, host, endorse or sell any content. The user enters the addresses (server or playlist) from which they want to play media and is solely responsible for them.</p>
+      <h2>Data the app handles</h2>
+      <div class="table-wrap"><table class="privacy-table"><thead><tr><th>Data</th><th>Purpose</th><th>Where it is kept</th></tr></thead><tbody>
+      <tr><td>Server address, user name and password entered by the user</td><td>Sign in and play from the server the user chose</td><td>Only on the device (app storage). The password is encrypted with AES-GCM; the key never leaves the device. Exception: in M3U playlists whose channel links contain a user name and password, those links are kept unencrypted in the catalog, history and queue on the device.</td></tr>
+      <tr><td>Catalog (names, categories, cover images) downloaded from the user's playlist</td><td>Show channels, movies and series</td><td>Only on the device</td></tr>
+      <tr><td>Profiles, favorites, playback history and recent searches</td><td>App features per profile</td><td>Only on the device</td></tr>
+      <tr><td>Acceptance of the legal notice (date and version)</td><td>Record the user's consent</td><td>Only on the device</td></tr>
+      <tr><td>Parental control: PIN (stored as a cryptographic hash, never the number itself) and the state of each category per profile (visible, locked or hidden)</td><td>Lock or hide categories, including adult content</td><td>Only on the device</td></tr>
+      <tr><td><strong>Optional, only if the user chooses "add from phone":</strong> the playlist pasted on the phone (address, user name, password and nickname), encrypted</td><td>Move the playlist from the phone to the TV without typing on the remote</td><td>Encrypted end to end on the phone; the pairing service keeps <strong>only the encrypted text</strong>, in memory, for up to 10 minutes (60 seconds after the phone sends it) and deletes it as soon as the TV reads it. Never written to disk.</td></tr>
+      <tr><td><strong>Optional, same case:</strong> network address (IP) of whoever uses the pairing service</td><td>Prevent abuse (many attempts in a row)</td><td>A counter in the service's memory, for up to 1 minute; the service does not write it to any file</td></tr>
+      <tr><td><strong>Optional, only if the user sends the playlist through the website:</strong> the playlist (address, user name, password and nickname), encrypted in the browser with the TV's key</td><td>Move the playlist to the TV without typing on the remote</td><td>The playlist sent through the website is encrypted in the browser; the license service keeps <strong>only the encrypted text</strong>, which it cannot open, for up to <strong>7 days</strong>, and deletes it as soon as the TV receives it. The TV asks before adding it.</td></tr>
+      <tr><td><strong>License (7-day free trial and yearly activation), when the service is enabled in the build:</strong> device identifier (SHA-256 hash of the system or TV ID, or a random code created by the app), the short device code, the platform (Android, Samsung, LG or browser), the <strong>domain</strong> of the playlist in use (only the server name; never the user name, password or full address) and the dates of use</td><td>Manage the 7-day trial and the yearly activation of the device, and count active devices per partner server in order to bill that partner. Legal basis (Brazilian LGPD): performance of the app's terms of use and the developer's legitimate interest</td><td>In the developer's license service, for up to <strong>24 months</strong> (billing and dispute period); then it is deleted. The network address (IP) is used only in memory, for up to 1 minute, to prevent abuse.</td></tr>
+      <tr><td><strong>Optional, only on phones, if the user taps "Cast":</strong> the video address (which includes the playlist's user name and password) and the title</td><td>Play the video on the chosen TV (Chromecast / Google Cast)</td><td>Sent over the local network to the chosen Google Cast device, which fetches the video directly from the user's server. The app does not keep it or send it to anyone else.</td></tr>
+      </tbody></table></div>
+      <h2>What the app does not do</h2>
+      <ul>
+      <li>It does not send personal, usage or diagnostic data to the developer or to third parties, <strong>except</strong> what the user chooses to send from the phone (optional item in the table above), which travels encrypted and only their TV can open, and the license data described in the table (device identifier, playlist domain and dates of use), which is used only for the trial, activation and billing of partner servers and is never sold.</li>
+      <li>It does not use advertising, trackers, usage analytics or third-party cookies.</li>
+      <li>It does not access contacts, location, camera or microphone. (The phone only <strong>reads</strong> the QR code with the device's own camera app; Pulse Player does not ask for camera access.)</li>
+      </ul>
+      <h2>Network connections</h2>
+      <p>The app only connects to the addresses the user registered (API, playlists, video streams and the cover/logo images those servers point to). These servers belong to third parties and have their own policies; the app does not control what they record.</p>
+      <p>If the user chooses "Experimentar com vídeos de demonstração" (Try with demo videos) on the sign-in screen, the app downloads the demo playlist from the address published by the developer and plays free-to-use videos and public test streams (Blender Foundation via archive.org, Mux and Apple). No user data is sent in this case.</p>
+      <h3>Add a playlist from the phone (optional)</h3>
+      <p>When the app version includes this option (the sign-in screen shows "Use o seu celular" / Use your phone), the app talks to the developer's <strong>pairing service</strong> at <code>https://par.pulseplayer.com.br</code>:</p>
+      <ol>
+      <li>The TV requests a short code and sends the service a <strong>public key</strong> generated on the spot. The private key stays only in the TV's memory and never leaves it.</li>
+      <li>The user opens the service's page on the phone (through the QR code or by typing the short address), pastes the playlist link and taps send. The page <strong>encrypts the playlist on the phone itself</strong> with the TV's key (end-to-end encryption); the service receives only the encrypted text.</li>
+      <li>The TV collects the encrypted text, opens it with the private key and <strong>shows the received server for the user to confirm</strong> before adding it. The service deletes the text the moment it is read; if nobody reads it, it disappears on its own within 10 minutes at most (60 seconds after it was sent).</li>
+      </ol>
+      <p>The service runs on Cloudflare's infrastructure (Cloudflare Workers and Durable Objects), which processes network requests (seeing the IP address of whoever connects) under the provider's own privacy policy. Worker observability and logs are explicitly turned off in the configuration, so no request body, key or secret is recorded. The service cannot read the playlist, does not write its content to disk or to a database, and does not use cookies, ads or trackers; the phone page loads no third-party resources. The service sees the network address (IP) of whoever connects only to prevent abuse, through counters kept in volatile memory for up to 1 minute.</p>
+      <p>Users who do not use this option send nothing to the service: the TV contacts it only while the "Use o seu celular" screen is open.</p>
+      <h3>Cast to a TV (optional, phones only)</h3>
+      <p>In the Android phone and tablet app, the player shows "Transmitir" (Cast) when the device has Google Play Services. When the user picks a TV with Google Cast (Chromecast or a compatible TV), the app sends the video address (which includes the playlist's user name and password) and the title to that TV over the local network. The TV opens Google's standard receiver (Default Media Receiver) and fetches the video <strong>directly from the user's server</strong>; the app does not route the video through any developer server. Discovering TVs and connecting to them is done by the device's Google Play Services, under Google's privacy policy. While casting is active, other devices on the same network may see what is playing on the TV. Users who do not tap "Transmitir" send nothing to any TV.</p>
+      <h2>Control and deletion</h2>
+      <ul>
+      <li><strong>Remove a playlist:</strong> Dashboard → Listas (Playlists) → trash icon. Deletes the saved playlist and the encrypted password.</li>
+      <li><strong>Sign out:</strong> Dashboard → Listas → "Sair da conta atual" (Sign out). Ends the session and deletes the cached catalog; saved playlists stay on the device until removed with the trash icon.</li>
+      <li><strong>Delete everything:</strong> clear the app's data in the device settings or uninstall the app.</li>
+      <li><strong>Pairing from the phone:</strong> there is nothing to delete in the service after use (it has already deleted it). To cancel earlier, just close the screen or create a new code on the TV: the old code stops working within 10 minutes at most.</li>
+      </ul>
+      <h2>Children</h2>
+      <p>The app is not directed at children and has no content of its own: what appears depends on the playlists the user adds. To protect children, the app has <strong>parental control</strong>: categories with adult-content names start <strong>locked</strong> (they open only with a PIN, created on first use and changeable later), and any category can be locked or hidden per profile ("Controle parental" button in the Movies, Series and Channels tabs). Items from locked or hidden categories also do not appear on the Home screen or in search. Parents and guardians should create the PIN before handing over the device and supervise its use.</p>
+      <h2>Contact</h2>
+      <p>Eduardo Lopes Valerio — eduardo.lopes.valerio@hotmail.com</p>
+    </main>
+
+    <footer class="site-footer">
+      <p>This is a generic media player. No content is provided, endorsed or sold in this app.</p>
+      <p><a id="support-link" href="#" hidden>Atendimento pelo WhatsApp</a></p>
+    </footer>
+    <script src="/site/site.js"></script>
+  </body>
+</html>

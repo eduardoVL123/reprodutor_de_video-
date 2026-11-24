@@ -32,6 +32,9 @@ const ADMIN_FILES = {
   '/enviar': { file: 'site/enviar.html', type: 'text/html; charset=utf-8' },
   '/cliente': { file: 'site/cliente.html', type: 'text/html; charset=utf-8' },
   '/privacidade': { file: 'site/privacidade.html', type: 'text/html; charset=utf-8' },
+  // Samsung Seller Office pede a política em inglês e em coreano
+  '/privacy': { file: 'site/privacy.html', type: 'text/html; charset=utf-8' },
+  '/privacy-ko': { file: 'site/privacy-ko.html', type: 'text/html; charset=utf-8' },
   '/site/favicon.svg': { file: 'site/favicon.svg', type: 'image/svg+xml' },
   '/assinar': { file: 'site/assinar.html', type: 'text/html; charset=utf-8' },
   '/creditos': { file: 'site/creditos.html', type: 'text/html; charset=utf-8' },
