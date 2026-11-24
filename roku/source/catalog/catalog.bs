@@ -283,7 +283,14 @@ namespace catalog
     ' vão ocupar). Se a seção não couber inteira, passa a vir do servidor por categoria (saveRemote): a lista aparece
     ' toda, carregada por partes. Sem servidor para isso (M3U, remoteOk = false), ficam os itens que couberam
     ' (meta.truncated). budget = limite de bytes para os testes (-1: o espaço livre do volume).
-    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, remoteOk = true as boolean)
+    ' Chamada como função solta (sem o hooks na frente): senão o m dela seria o próprio hooks, não o da Task.
+    sub reportStage(hooks as dynamic, text as string)
+        if hooks = invalid or hooks.stage = invalid then return
+        notify = hooks.stage
+        notify(text)
+    end sub
+
+    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, remoteOk = true as boolean, hooks = invalid as dynamic)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
         ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
@@ -294,7 +301,13 @@ namespace catalog
         end while
         CreateDirectory(dir)
         CreateDirectory(path)
-        if remoteOk then catalog.writeProvisional(dir, section, categories, streams)
+        if remoteOk then
+            catalog.writeProvisional(dir, section, categories, streams)
+            if hooks <> invalid and hooks.provisional <> invalid then
+                ready = hooks.provisional
+                ready(section)
+            end if
+        end if
         total = streams.count()
         chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
         free = budget
@@ -847,9 +860,9 @@ namespace catalog
     ' em andamento do catalogStore, quem chega depois espera a primeira terminar e lê o que ela gravou.
     ' Dono da seção no campo m.global["catalogLoad_" + seção] (criado pela MainScene; "" = livre); sem ele, carrega direto.
     ' Dona que some (Task morta por falta de memória) perde a vez depois de maxWaitMs sem trocar de dono.
-    function loadShared(transport as object, ctx as object, section as string, force as boolean, maxWaitMs = catalog.SHARED_WAIT_MS as integer, onParsed = invalid as dynamic) as object
+    function loadShared(transport as object, ctx as object, section as string, force as boolean, maxWaitMs = catalog.SHARED_WAIT_MS as integer, hooks = invalid as dynamic) as object
         field = "catalogLoad_" + section
-        if m.global = invalid or not m.global.hasField(field) then return catalog.loadSection(transport, ctx, section, force, onParsed)
+        if m.global = invalid or not m.global.hasField(field) then return catalog.loadSection(transport, ctx, section, force, hooks)
         token = CreateObject("roDeviceInfo").GetRandomUUID()
         waited = false
         seen = m.global.getField(field)
@@ -877,31 +890,40 @@ namespace catalog
             sleep(200)
         end while
         ' Quem esperou não força: a lista acabou de ser baixada pela outra carga.
-        result = catalog.loadSection(transport, ctx, section, force and not waited, onParsed)
+        result = catalog.loadSection(transport, ctx, section, force and not waited, hooks)
         ' Só libera se ainda for a dona (quem tomou a vez por prazo libera a própria).
         if m.global.getField(field) = token then m.global.setField(field, "")
         return result
     end function
 
-    ' onParsed(section, categorias, itens crus): chamado com a lista recém-baixada, antes de gravar (a gravação de
-    ' 30 mil itens leva bem mais que o download): o Início mostra a primeira fileira sem esperar o disco.
-    function loadSection(transport as object, ctx as object, section as string, force as boolean, onParsed = invalid as dynamic) as object
+    ' hooks (opcional, funções chamadas na Task que carrega):
+    '   parsed(section, categorias, itens crus): a lista recém-baixada, antes de gravar (o Início mostra a 1ª fileira);
+    '   stage(texto): a etapa da carga (state.step do catalogStore), para a tela de carregamento;
+    '   provisional(section): a ficha provisória está no disco e a seção já abre (a aba não espera a gravação).
+    function loadSection(transport as object, ctx as object, section as string, force as boolean, hooks = invalid as dynamic) as object
         meta = invalid
         if not force then meta = catalog.getMeta(ctx.dir, section)
         if meta = invalid then
             if ctx.type = "m3u" then
+                catalog.reportStage(hooks, "Baixando e processando a playlist M3U...")
                 err = catalog.importM3u(transport, ctx)
                 if err <> invalid then return catalog.loadFailure(err, section)
             else
                 names = catalog.actions(section)
+                catalog.reportStage(hooks, "Baixando categorias...")
                 cats = catalog.requestList(transport, ctx, names.categories)
                 if cats.error <> invalid then return catalog.loadFailure(cats.error, section)
+                catalog.reportStage(hooks, "Baixando a lista (pode levar alguns segundos)...")
                 streams = catalog.requestList(transport, ctx, names.streams)
                 if streams.error <> invalid then return catalog.loadFailure(streams.error, section)
                 list = streams.list
                 if section = "series" then list = catalog.remapSeries(list)
-                if onParsed <> invalid then onParsed(section, cats.list, list)
-                catalog.saveSection(ctx.dir, section, cats.list, list)
+                if hooks <> invalid and hooks.parsed <> invalid then
+                    parsed = hooks.parsed
+                    parsed(section, cats.list, list)
+                end if
+                catalog.reportStage(hooks, "Salvando no dispositivo...")
+                catalog.saveSection(ctx.dir, section, cats.list, list, -1, true, hooks)
             end if
         end if
         return { ok: true, error: "", errorDetail: "", list: catalog.publishList(ctx.dir, section) }

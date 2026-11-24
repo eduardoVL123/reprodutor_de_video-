@@ -77,6 +77,7 @@ end sub
 
 sub load(force as boolean)
     m.state = "loading"
+    m.loadingStep = ""
     render()
     requestData({ mode: "open", force: force })
 end sub
@@ -100,8 +101,16 @@ end sub
 
 sub onResult(event as object)
     data = event.getData()
-    ' A Task terminou (o "open" com destaque ainda manda o "hero"): sai da lista para não acumular página após página.
-    if not (data.mode = "open" and data.heroItem <> invalid) then releaseTask(event.getRoSGNode())
+    ' A Task terminou: sai da lista para não acumular página após página. O "open" bom ainda manda o "hero" (ou o
+    ' "done"), e pode chegar antes de a gravação acabar (early): soltar a Task aí interromperia a gravação.
+    final = data.mode = "page" or data.mode = "hero" or data.mode = "done" or (data.mode = "open" and data.ok <> true)
+    if final then releaseTask(event.getRoSGNode())
+    if data.mode = "stage" then
+        ' Etapa da carga no lugar do "Carregando catálogo..." (state.step do CatalogBrowser.vue).
+        m.loadingStep = utils.textOr(data.text, "")
+        if m.state = "loading" then renderContent()
+        return
+    end if
     if data.mode = "open" then
         if not data.ok then
             m.state = "error"
@@ -292,7 +301,9 @@ sub renderContent()
     resetFocusables("content")
     m.railStrips = {}
     if m.state = "loading" then
-        label = ui.inlineText(m.scrollGroup, "Carregando catálogo...", ui.font(400, 24), NEUTRAL_300, 0, 560, 39)
+        loadingText = "Carregando catálogo..."
+        if utils.textOr(m.loadingStep, "") <> "" then loadingText = m.loadingStep
+        label = ui.inlineText(m.scrollGroup, loadingText, ui.font(400, 24), NEUTRAL_300, 0, 560, 39)
         label.translation = [SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - label.boundingRect().width) / 2, label.translation[1]]
         m.contentHeight = CONTENT_HEIGHT
         return

@@ -24,7 +24,7 @@ sub runHome()
     if heroItem <> invalid then m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
     for each section in ["vod", "series", "live"]
-        loaded = catalog.loadShared(transport, ctx, section, false, catalog.SHARED_WAIT_MS, previewRail)
+        loaded = catalog.loadShared(transport, ctx, section, false, catalog.SHARED_WAIT_MS, { parsed: previewRail })
         items = []
         if m.previewed.doesExist(section) then
             ' A fileira já foi para a tela antes de gravar; agora a seção está no disco (o histórico dela pode entrar).

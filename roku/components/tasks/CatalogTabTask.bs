@@ -24,16 +24,45 @@ sub runCatalogTab()
     end if
 
     transport = net.urlTransport()
-    loaded = catalog.loadShared(transport, ctx, section, request.force = true)
+    m.ctx = ctx
+    m.section = section
+    m.openSent = invalid
+    loaded = catalog.loadShared(transport, ctx, section, request.force = true, catalog.SHARED_WAIT_MS, { stage: tabStage, provisional: tabProvisional })
     if not loaded.ok then
         m.top.result = { mode: "open", ok: false, error: loaded.error, categories: [], rows: [] }
         return
     end if
+    if m.openSent <> invalid then
+        ' A aba já abriu pela ficha provisória; agora a gravação acabou: só falta o destaque (ou avisar que terminou).
+        heroDetails(transport, ctx, section, m.openSent.heroItem)
+        return
+    end if
+    result = openResult(ctx, section, loaded.list)
+    m.top.result = result
+    heroDetails(transport, ctx, section, result.heroItem)
+end sub
+
+' Etapa da carga (state.step do catalogStore) para a tela de carregamento da aba.
+sub tabStage(text as string)
+    m.top.result = { mode: "stage", text: text }
+end sub
+
+' A ficha provisória ficou pronta (a aba é quem está gravando): abre já; a gravação segue nesta Task.
+sub tabProvisional(section as string)
+    m.openSent = openResult(m.ctx, section, catalog.publishList(m.ctx.dir, section))
+    m.openSent.early = true
+    m.top.result = m.openSent
+end sub
+
+' Categorias (com o controle parental), fileiras de "Todos" e o item do destaque.
+function openResult(ctx as object, section as string, list as object) as object
+    loaded = { list: list }
+    choices = m.top.parental
+    sectionHidden = []
     ' Controle parental (CatalogBrowser.vue): escondidas somem das categorias; bloqueadas ficam com cadeado e fora das
     ' fileiras; os itens das duas saem de "Todos" e as contagens descontam (item em duas categorias conta uma vez).
     categories = loaded.list
     locked = {}
-    choices = m.top.parental
     if choices <> invalid then
         sectionHidden = parental.blockedIds(choices, section, loaded.list)
         visible = catalog.visibleCategoryCounts(ctx.dir, section, sectionHidden)
@@ -59,8 +88,14 @@ sub runCatalogTab()
     end for
     heroItem = invalid
     if section <> "live" and rows.count() > 0 then heroItem = rows[0].items[0]
-    m.top.result = { mode: "open", ok: true, error: "", categories: categories, rows: rows, heroItem: heroItem, hidden: sectionHidden, allCategories: loaded.list }
-    if heroItem = invalid then return
+    return { mode: "open", ok: true, error: "", categories: categories, rows: rows, heroItem: heroItem, hidden: sectionHidden, allCategories: loaded.list }
+end function
+
+sub heroDetails(transport as object, ctx as object, section as string, heroItem as dynamic)
+    if heroItem = invalid then
+        m.top.result = { mode: "done" }
+        return
+    end if
 
     ' Detalhes do destaque (loadFeaturedInfo): série pelo get_series_info, filme pelo get_vod_info.
     info = xtream.normalizeVodInfo(invalid, heroItem)
