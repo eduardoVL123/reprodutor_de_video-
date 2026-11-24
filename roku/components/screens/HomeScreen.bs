@@ -32,6 +32,8 @@ sub init()
     m.global.observeField("parental", "onParentalChanged")
     m.rails = []
     m.heroItem = invalid
+    ' Sem histórico (instalação nova) o loadHistory não define: o onHero quebrava com "and" em Invalid e o app fechava.
+    m.heroFromHistory = false
     m.heroInfo = invalid
     m.heroButtons = []
     m.scroll = 0
