@@ -415,6 +415,42 @@ namespace tests
             m.assertEqual(t.calls.count(), 1)
         end function
 
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("packRow — gravação numa passada")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("a linha do item cru é a mesma de packChunk([normalizeItem(item)]), capa por capa")
+        function _()
+            raws = [
+                { stream_id: 7, name: "Ação", stream_icon: "http://img.test/a/b/capa.jpg", category_id: "3", container_extension: "mkv", added: "1700000000", rating: 7.5, plot: "extra", stream_type: "movie", epg_channel_id: invalid, tv_archive: 0 },
+                { series_id: 9, name: "Série", cover: "http://img.test/a/b/outra.png", category_id: 4, category_ids: [4, 5], section: "x", direct_source: "" },
+                { stream_id: 1, name: "Sem capa", stream_icon: "", category_id: "0", direct_source: "http://srv.test/v.mp4", custom_sid: "a" },
+                "não é objeto"
+            ]
+            for each section in ["vod", "series", "live"]
+                normalized = []
+                for each raw in raws
+                    normalized.push(catalog.normalizeItem(raw, section))
+                end for
+                expected = catalog.packChunk(normalized)
+                packer = catalog.newPacker()
+                rows = []
+                for each raw in raws
+                    rows.push(catalog.packRow(packer, raw, section))
+                end for
+                m.assertEqual(FormatJson({ p: packer.prefixes, i: rows }), FormatJson(expected))
+            end for
+        end function
+
+        @it("categoriesOf: categoria só, número zero, vazia e lista com repetidas")
+        function _()
+            m.assertEqual(catalog.categoriesOf({ category_id: 12 }), ["12"])
+            m.assertEqual(catalog.categoriesOf({ category_id: 0 }), ["0"])
+            m.assertEqual(catalog.categoriesOf({ category_id: "" }), ["none"])
+            m.assertEqual(catalog.categoriesOf({ category_id: "3", category_ids: [3, "4", "3"] }), ["3", "4"])
+            m.assertEqual(catalog.categoriesOf("x"), ["none"])
+        end function
+
     end class
 
 end namespace
