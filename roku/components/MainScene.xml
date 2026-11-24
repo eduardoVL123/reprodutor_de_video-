@@ -4,8 +4,11 @@
     <interface>
         <!-- main.bs observa e encerra o app quando vira true. -->
         <field id="exitApp" type="boolean" alwaysNotify="true" />
+        <!-- main.bs avisa quando a rede do aparelho cai ou volta (roDeviceInfo, link status). -->
+        <field id="offline" type="boolean" value="false" onChange="renderOffline" />
     </interface>
     <children>
         <Group id="screens" />
+        <Group id="offlineNotice" />
     </children>
 </component>

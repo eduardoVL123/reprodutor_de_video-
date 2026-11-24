@@ -593,6 +593,9 @@ export const OUTPUTS = [
   ['player-error.9.png', () => ninePatch([{ inset: 0, radius: 16, color: over(RED_500, 0.3, DIALOG) }, { inset: 1, radius: 15, color: DIALOG }])],
   ['player-error-detail.9.png', () => ninePatch([{ inset: 0, radius: 4, color: over(RED_500, 0.2, over([0, 0, 0], 0.6, DIALOG)) }, { inset: 1, radius: 3, color: over([0, 0, 0], 0.6, DIALOG) }])],
   ['player-error-icon.png', () => toPng(64, 64, renderLayers(64, 64, [{ inset: 0, radius: 32, color: over(RED_500, 0.15, DIALOG) }]))],
+  // Aviso de sem internet (NetworkStatus.vue): rounded-xl, borda amber-400/40 sobre #1a1408/95 e o wifi cortado (w-6).
+  ['offline.9.png', () => ninePatch([{ inset: 0, radius: 12, color: over(AMBER_400, 0.4, hex('#1A1408')) }, { inset: 1, radius: 11, color: hex('#1A1408') }])],
+  ['icon-wifi-off.png', () => svgIcon(24, [{ points: [1, 1, 23, 23] }, { d: 'M16.72 11.06A10.94 10.94 0 0 1 19 12.55' }, { d: 'M5 12.55a10.94 10.94 0 0 1 5.17-2.39' }, { d: 'M10.71 5.05A16 16 0 0 1 22.58 9' }, { d: 'M1.42 9a15.91 15.91 0 0 1 4.7-2.88' }, { d: 'M8.53 16.11a6 6 0 0 1 6.95 0' }, { points: [12, 20, 12.01, 20] }])],
   ['icon-alert-32.png', () => svgIcon(32, [{ d: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z' }, { points: [12, 9, 12, 13] }, { points: [12, 17, 12.01, 17] }])],
   // Botão "Áudio e legendas" do player (w-4): quadro de legenda com duas linhas de texto.
   ['icon-subtitles.png', () => svgIcon(16, [{ d: 'M4 5h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z' }, { points: [6, 12, 10, 12] }, { points: [13, 12, 18, 12] }, { points: [6, 15, 14, 15] }])],

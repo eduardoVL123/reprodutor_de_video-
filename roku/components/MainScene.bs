@@ -1,3 +1,4 @@
+import "pkg:/source/ui/ui.bs"
 import "pkg:/source/nav/nav.bs"
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/ftue/ftue.bs"
@@ -25,6 +26,7 @@ sub init()
     m.profileAsked = false
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
+    m.offlineNotice = m.top.findNode("offlineNotice")
     pushScreen(CreateObject("roSGNode", initialScreen()))
     askProfile()
 end sub
@@ -36,6 +38,21 @@ sub askProfile()
     if m.profileAsked or current = invalid or current.subtype() <> "HomeScreen" then return
     m.profileAsked = true
     if profiles.hydrate(storage.create()).gateOpen then pushScreen(CreateObject("roSGNode", "ProfileScreen"))
+end sub
+
+' NetworkStatus.vue: aviso no topo (top-14, centralizado) quando a rede cai; não bloqueia a tela, o que está no disco
+' continua navegável. px-6 py-3, ícone w-6 e gap-3, texto text-tv-sm amber-200.
+sub renderOffline()
+    m.offlineNotice.removeChildrenIndex(m.offlineNotice.getChildCount(), 0)
+    if not m.top.offline then return
+    group = m.offlineNotice.createChild("Group")
+    bg = ui.panel(group, "offline", 0, 0, 10, 52)
+    icon = ui.panelImage(group, "icon-wifi-off.png", 24, 14, 24, 24)
+    icon.blendColor = "0xFDE68AFF"
+    text = ui.inlineText(group, "Sem conexão com a internet. Verifique a rede do aparelho.", ui.font(400, 20), "0xFDE68AFF", 60, 12, 28)
+    width = 60 + text.boundingRect().width + 24
+    bg.width = width
+    group.translation = [(1920 - width) / 2, 56]
 end sub
 
 ' Como a guarda do router do web: sem o aceite dos termos só o FTUE; sem sessão salva, o login; senão a home.
