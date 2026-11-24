@@ -9,6 +9,8 @@
         <field id="heroItem" type="assocarray" />
         <!-- { section, ok, items, error, errorDetail } -->
         <field id="rail" type="assocarray" alwaysNotify="true" />
+        <!-- seção que terminou de gravar depois de a fileira ter ido antes (previewRail) -->
+        <field id="saved" type="string" alwaysNotify="true" />
         <!-- { item, info } -->
         <field id="hero" type="assocarray" />
     </interface>

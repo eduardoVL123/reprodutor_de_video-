@@ -11,28 +11,74 @@ sub runHome()
     ctx = m.top.ctx
     ' Escolhas do controle parental do perfil (parental.activeContext): o que está fora da vista sai das fileiras.
     choices = m.top.parental
+    m.choices = choices
+    m.previewed = {}
     transport = net.urlTransport()
     ' Só a lista ativa fica no disco (as outras ocupariam o cachefs à toa).
     catalog.pruneOtherLists(ctx.dir)
     ' "Continuar assistindo" no destaque: os detalhes dele primeiro (episódio: os da série).
     heroItem = m.top.heroItem
     if not utils.isObject(heroItem) or heroItem.count() = 0 then heroItem = invalid
+    m.heroItem = heroItem
+    m.heroBasic = false
     if heroItem <> invalid then m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
     ' Uma seção por vez: três JSON de 50 mil itens juntos estouram a memória da TV e o limite de conexões do painel.
     for each section in ["vod", "series", "live"]
-        loaded = catalog.loadShared(transport, ctx, section, false)
+        loaded = catalog.loadShared(transport, ctx, section, false, catalog.SHARED_WAIT_MS, previewRail)
         items = []
-        if loaded.ok then
-            sectionHidden = []
-            if choices <> invalid then sectionHidden = parental.blockedIds(choices, section, catalog.getCategories(ctx.dir, section))
-            items = catalog.getItems(ctx.dir, section, catalog.ALL_CATEGORIES, 0, 20, sectionHidden)
+        if m.previewed.doesExist(section) then
+            ' A fileira já foi para a tela antes de gravar; agora a seção está no disco (o histórico dela pode entrar).
+            items = m.previewed[section]
+            m.top.saved = section
+        else
+            if loaded.ok then
+                sectionHidden = []
+                if choices <> invalid then sectionHidden = parental.blockedIds(choices, section, catalog.getCategories(ctx.dir, section))
+                items = catalog.getItems(ctx.dir, section, catalog.ALL_CATEGORIES, 0, 20, sectionHidden)
+            end if
+            m.top.rail = { section: section, ok: loaded.ok, items: items, error: loaded.error, errorDetail: loaded.errorDetail }
         end if
-        m.top.rail = { section: section, ok: loaded.ok, items: items, error: loaded.error, errorDetail: loaded.errorDetail }
-        if not utils.isObject(heroItem) and items.count() > 0 then
-            heroItem = items[0]
-            m.top.hero = { item: heroItem, info: heroDetails(transport, ctx, heroItem) }
+        ' Destaque: o primeiro item; se a prévia já o mostrou só com o básico, agora vêm os detalhes (sinopse, nota).
+        if m.heroItem = invalid and items.count() > 0 then
+            m.heroItem = items[0]
+            m.heroBasic = true
+        end if
+        if m.heroBasic then
+            m.heroBasic = false
+            m.top.hero = { item: m.heroItem, info: heroDetails(transport, ctx, m.heroItem) }
         end if
     end for
+end sub
+
+' A lista acabou de chegar da API (ainda não está no disco): os 20 primeiros itens visíveis de "Todos" vão para a
+' tela já, como o getItems faria depois de gravar (mesma ordem, sem as categorias fora da vista).
+sub previewRail(section as string, categories as object, streams as object)
+    hidden = {}
+    hidden.setModeCaseSensitive()
+    if m.choices <> invalid then
+        for each id in parental.blockedIds(m.choices, section, categories)
+            hidden[utils.textOr(id, "")] = true
+        end for
+    end if
+    items = []
+    for each raw in streams
+        if items.count() >= 20 then exit for
+        visible = true
+        if hidden.count() > 0 then
+            for each cat in catalog.categoriesOf(raw)
+                if hidden.doesExist(cat) then visible = false
+            end for
+        end if
+        if visible and utils.isObject(raw) then items.push(catalog.normalizeItem(raw, section))
+    end for
+    m.previewed[section] = items
+    m.top.rail = { section: section, ok: true, items: items, error: "", errorDetail: "" }
+    ' O destaque aparece junto, com os dados do próprio item; os detalhes chegam depois de gravar.
+    if m.heroItem = invalid and items.count() > 0 then
+        m.heroItem = items[0]
+        m.heroBasic = true
+        m.top.hero = { item: m.heroItem, info: xtream.normalizeVodInfo(invalid, m.heroItem) }
+    end if
 end sub
 
 ' Detalhes do destaque: filme pelo get_vod_info, série pelo get_series_info (como o watch do heroKey no web).

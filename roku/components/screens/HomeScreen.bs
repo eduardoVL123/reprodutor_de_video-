@@ -73,9 +73,11 @@ sub startLoading()
     m.task = CreateObject("roSGNode", "HomeTask")
     m.task.ctx = catalog.contextFor(current)
     m.task.parental = parental.activeContext(store)
+    m.loadedFor = loadKey()
     ' O destaque é o "Continuar assistindo" mais recente (recentHistoryItem); a Task busca os detalhes dele.
     if m.heroFromHistory then m.task.heroItem = m.heroItem
     m.task.observeField("rail", "onRail")
+    m.task.observeField("saved", "onSaved")
     m.task.observeField("hero", "onHero")
     m.task.control = "run"
 end sub
@@ -92,6 +94,7 @@ sub reloadRails()
     m.reloadPending = false
     if m.task <> invalid then
         m.task.unobserveField("rail")
+        m.task.unobserveField("saved")
         m.task.unobserveField("hero")
         m.task.unobserveField("state")
     end if
@@ -159,8 +162,16 @@ sub onTaskState()
 end sub
 
 sub onParentalChanged()
-    reloadRails()
+    if loadKey() <> m.loadedFor then reloadRails()
 end sub
+
+' Perfil e escolhas do controle parental com que as fileiras foram carregadas. Escolher na "Quem está assistindo?" o
+' mesmo perfil que a carga já usa não recarrega nada (antes o Início baixava e desenhava tudo duas vezes).
+function loadKey() as string
+    profileId = ""
+    if utils.isObject(m.global.profile) then profileId = utils.textOr(m.global.profile.id, "")
+    return profileId + "|" + FormatJson(parental.activeContext(storage.create()))
+end function
 
 sub onRail(event as object)
     data = event.getData()
@@ -168,10 +179,27 @@ sub onRail(event as object)
     items = []
     items.append(data.items)
     items.push(home.seeAllCard(data.section))
-    m.rails.push({ section: data.section, items: items })
-    ' A seção acabou de chegar ao disco: o histórico dela passa pelo filtro do controle parental agora.
-    loadHistory()
+    rail = { section: data.section, items: items }
+    m.rails.push(rail)
+    ' Só a fileira nova é desenhada (refazer todas a cada chegada travava o controle por segundos).
+    appendRail(rail)
+    ' A seção chegou ao disco: o histórico dela passa pelo filtro do controle parental agora.
+    if historyHas(data.section) then loadHistory()
 end sub
+
+' A fileira foi antes de gravar (previewRail); agora que está no disco, o histórico dela pode entrar.
+sub onSaved(event as object)
+    if historyHas(event.getData()) then loadHistory()
+end sub
+
+' O histórico do perfil tem item desta seção? Sem isso, reler o histórico (e redesenhar tudo) não muda nada.
+function historyHas(section as string) as boolean
+    if m.historyKey = invalid then return false
+    for each entry in playerState.loadHistory(storage.create(), m.historyKey)
+        if utils.isObject(entry) and entry.section = section then return true
+    end for
+    return false
+end function
 
 sub onHero(event as object)
     data = event.getData()
@@ -303,80 +331,95 @@ end function
 
 sub renderRails()
     m.railsGroup.removeChildrenIndex(m.railsGroup.getChildCount(), 0)
-    y = RAILS_TOP
-    for r = 0 to m.rails.count() - 1
-        rail = m.rails[r]
-        live = rail.section = "live"
-        rail.top = y
-        titleX = CONTENT_X
-        if live then
-            broadcast = m.railsGroup.createChild("Poster")
-            broadcast.uri = "pkg:/images/ui/icon-broadcast.png"
-            broadcast.width = 20
-            broadcast.height = 20
-            broadcast.blendColor = ui.ACCENT
-            broadcast.translation = [CONTENT_X, y + 4]
-            titleX = CONTENT_X + 30
-        end if
-        history = rail.section = "history"
-        titleText = "Filmes da sua lista"
-        if rail.section = "series" then titleText = "Séries da sua lista"
-        if live then titleText = "Canais da sua lista"
-        if history then titleText = "Continuar assistindo"
-        title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
-        title.wrap = false
-        ' Botão "Ver todos ›" (px-3 py-3 -mx-3 -my-3, gap-1) alinhado à direita da fileira.
-        seeAll = "Ver todos"
-        if live then seeAll = "Explorar canais"
-        headerRight = CONTENT_X + RAIL_WIDTH + 12
-        if history then
-            ' "Limpar histórico" (text-tv-xs, neutral-400) no lugar do "Ver todos".
-            more = ui.inlineText(m.railsGroup, "Limpar histórico", ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
-            moreWidth = more.boundingRect().width
-            more.translation = [headerRight - 12 - moreWidth, more.translation[1]]
-            rail.seeAllWidth = moreWidth + 24
-        else
-            ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
-            more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
-            moreWidth = more.boundingRect().width
-            more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
-            rail.seeAllWidth = moreWidth + 34
-        end if
-        rail.seeAllRing = ui.squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
-        if rail.offset = invalid then rail.offset = 0
-
-        cardWidth = 168
-        cardHeight = 252
-        if live or history then
-            cardWidth = 256
-            cardHeight = 144
-        end if
-        rail.cardWidth = cardWidth
-        rail.cardHeight = cardHeight
-        track = m.railsGroup.createChild("Group")
-        track.translation = [CONTENT_X, y + 56]
-        ' overflow-hidden da fileira: sobra 12 px dos lados e 16/24 em cima/embaixo para o cartão focado crescer.
-        track.clippingRect = [-12, -16, RAIL_WIDTH + 24, cardHeight + 40]
-        strip = track.createChild("Group")
-        rail.strip = strip
-        rail.cards = []
-        for i = 0 to rail.items.count() - 1
-            item = rail.items[i]
-            if history then
-                card = buildHistoryCard(strip, item, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
-            else
-                card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
-            end if
-            rail.cards.push(card)
-        end for
-        y = y + 56 + cardHeight + RAIL_SPACING
+    m.railsBottom = RAILS_TOP
+    for each rail in m.rails
+        m.railsBottom = buildRail(rail, m.railsBottom)
     end for
-    ' Altura do conteúdo: fim da última fileira + folga de baixo dela (24) + pb-20 (80).
+    finishRails()
+end sub
+
+' Desenha uma fileira que acabou de chegar embaixo das outras.
+sub appendRail(rail as object)
+    if m.railsBottom = invalid then m.railsBottom = RAILS_TOP
+    m.railsBottom = buildRail(rail, m.railsBottom)
+    finishRails()
+end sub
+
+' Altura do conteúdo: fim da última fileira + folga de baixo dela (24) + pb-20 (80).
+sub finishRails()
     m.maxScroll = 0
-    if m.rails.count() > 0 then m.maxScroll = y - RAIL_SPACING + 24 + 80 - 1080
+    if m.rails.count() > 0 then m.maxScroll = m.railsBottom - RAIL_SPACING + 24 + 80 - 1080
     if m.maxScroll < 0 then m.maxScroll = 0
     renderFocus()
 end sub
+
+' Título, "Ver todos" e cartões de uma fileira a partir de y; devolve o y da próxima.
+function buildRail(rail as object, y as float) as float
+    live = rail.section = "live"
+    rail.top = y
+    titleX = CONTENT_X
+    if live then
+        broadcast = m.railsGroup.createChild("Poster")
+        broadcast.uri = "pkg:/images/ui/icon-broadcast.png"
+        broadcast.width = 20
+        broadcast.height = 20
+        broadcast.blendColor = ui.ACCENT
+        broadcast.translation = [CONTENT_X, y + 4]
+        titleX = CONTENT_X + 30
+    end if
+    history = rail.section = "history"
+    titleText = "Filmes da sua lista"
+    if rail.section = "series" then titleText = "Séries da sua lista"
+    if live then titleText = "Canais da sua lista"
+    if history then titleText = "Continuar assistindo"
+    title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
+    title.wrap = false
+    ' Botão "Ver todos ›" (px-3 py-3 -mx-3 -my-3, gap-1) alinhado à direita da fileira.
+    seeAll = "Ver todos"
+    if live then seeAll = "Explorar canais"
+    headerRight = CONTENT_X + RAIL_WIDTH + 12
+    if history then
+        ' "Limpar histórico" (text-tv-xs, neutral-400) no lugar do "Ver todos".
+        more = ui.inlineText(m.railsGroup, "Limpar histórico", ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+        moreWidth = more.boundingRect().width
+        more.translation = [headerRight - 12 - moreWidth, more.translation[1]]
+        rail.seeAllWidth = moreWidth + 24
+    else
+        ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
+        more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+        moreWidth = more.boundingRect().width
+        more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
+        rail.seeAllWidth = moreWidth + 34
+    end if
+    rail.seeAllRing = ui.squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
+    if rail.offset = invalid then rail.offset = 0
+
+    cardWidth = 168
+    cardHeight = 252
+    if live or history then
+        cardWidth = 256
+        cardHeight = 144
+    end if
+    rail.cardWidth = cardWidth
+    rail.cardHeight = cardHeight
+    track = m.railsGroup.createChild("Group")
+    track.translation = [CONTENT_X, y + 56]
+    ' overflow-hidden da fileira: sobra 12 px dos lados e 16/24 em cima/embaixo para o cartão focado crescer.
+    track.clippingRect = [-12, -16, RAIL_WIDTH + 24, cardHeight + 40]
+    strip = track.createChild("Group")
+    rail.strip = strip
+    rail.cards = []
+    for i = 0 to rail.items.count() - 1
+        item = rail.items[i]
+        if history then
+            card = buildHistoryCard(strip, item, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+        else
+            card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+        end if
+        rail.cards.push(card)
+    end for
+    return y + 56 + cardHeight + RAIL_SPACING
+end function
 
 ' Cartão de pôster 2:3 (ou canal 16:9) com o anel de foco e o zoom 1.08 do .tv-rail-item.
 function buildCard(parent as object, item as object, live as boolean, x as float, width as float, height as float) as object
@@ -593,7 +636,7 @@ end function
 
 ' Perfil escolhido (onProfileSelected do web): o menu mostra o novo e, no Início, o foco vai para o Assistir.
 sub onProfileChanged()
-    reloadRails()
+    if loadKey() <> m.loadedFor then reloadRails()
     if m.tab = "home" then
         m.focusId = "hero-play"
         spatial.remember(m.nav, m.focusId)
