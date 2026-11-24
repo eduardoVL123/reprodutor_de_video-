@@ -2,7 +2,7 @@
  * Biblioteca da página do celular (RFC-016). Script clássico: no navegador cria `PairLib` global.
  * Contrato do `box` (a TV abre do outro lado): base64url( chave pública efêmera do celular [65 bytes]
  * | iv [12] | AES-GCM(JSON) ), chave AES-256 = ECDH P-256(efêmera, chave da TV), com o código da
- * sessão como dado autenticado adicional.
+ * sessão como dado autenticado adicional. Sessão "plain" (TV sem ECDH, a Roku): base64url(JSON) — ver wrapPlain.
  */
 ;(function (root) {
   var CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // sem 0/O/1/I/L, igual ao servidor
@@ -64,5 +64,12 @@
     return toBase64Url(box)
   }
 
-  root.PairLib = { extractUrl: extractUrl, normalizeCode: normalizeCode, seal: seal, MAX_PLAINTEXT_CHARS: MAX_PLAINTEXT_CHARS, CODE_LENGTH: CODE_LENGTH }
+  /** TV sem ECDH (Roku): a lista vai em base64url do JSON, protegida pelo TLS e pelo segredo da sessão. */
+  function wrapPlain(data) {
+    var plain = new TextEncoder().encode(JSON.stringify(data))
+    if (plain.length > MAX_PLAINTEXT_CHARS) throw new Error('too_long')
+    return toBase64Url(plain)
+  }
+
+  root.PairLib = { extractUrl: extractUrl, normalizeCode: normalizeCode, seal: seal, wrapPlain: wrapPlain, MAX_PLAINTEXT_CHARS: MAX_PLAINTEXT_CHARS, CODE_LENGTH: CODE_LENGTH }
 })(typeof globalThis !== 'undefined' ? globalThis : self)

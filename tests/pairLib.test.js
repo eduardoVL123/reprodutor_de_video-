@@ -118,6 +118,17 @@ describe('seal — cifrar a lista para a TV', () => {
     await expect(seal(tv.pub, 'K7M2QP', enorme)).rejects.toThrow('too_long')
   })
 
+  it('wrapPlain (Roku): base64url do JSON, que a TV lê de volta; recusa o que passa de 2000', async () => {
+    const { wrapPlain } = await load()
+    const lista = { dns: 'http://srv.com/x', username: 'ana', password: 'ç', label: 'Casa' }
+
+    const box = wrapPlain(lista)
+
+    expect(box).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect(JSON.parse(new TextDecoder().decode(b64u.decode(box)))).toEqual(lista)
+    expect(() => wrapPlain({ dns: `http://srv.com/${'a'.repeat(2100)}` })).toThrow('too_long')
+  })
+
   it('chave pública da TV inválida dá erro claro', async () => {
     const { seal } = await load()
 

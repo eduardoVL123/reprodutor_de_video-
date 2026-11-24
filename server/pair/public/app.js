@@ -14,7 +14,8 @@
       nameLabel: 'Apelido da lista',
       send: 'Enviar para a TV',
       sending: 'Enviando…',
-      privacy: 'Os dados vão cifrados e só a sua TV consegue abrir. Nada fica guardado depois de alguns minutos.',
+      // Vale para os dois tipos de sessão (cifrada ou "plain", da Roku): só a TV com o segredo busca a lista.
+      privacy: 'Os dados vão por conexão segura e só a sua TV consegue buscá-los. Nada fica guardado depois de alguns minutos.',
       doneTitle: 'Enviado!',
       doneText: 'Olhe a TV e confirme para adicionar a lista.',
       doneHint: 'Se a TV não mostrar nada em 1 minuto, gere um novo código na TV e envie de novo.',
@@ -39,7 +40,7 @@
       nameLabel: 'List nickname',
       send: 'Send to TV',
       sending: 'Sending…',
-      privacy: 'The data is encrypted and only your TV can open it. Nothing is kept after a few minutes.',
+      privacy: 'The data travels over a secure connection and only your TV can fetch it. Nothing is kept after a few minutes.',
       doneTitle: 'Sent!',
       doneText: 'Look at your TV and confirm to add the list.',
       doneHint: 'If the TV shows nothing in 1 minute, create a new code on the TV and send again.',
@@ -96,14 +97,14 @@
     try {
       var keyRes = await fetch('/v1/sessions/' + code)
       if (!keyRes.ok) return fail(statusKey(keyRes.status))
-      var key = (await keyRes.json()).pub
-
-      var box = await lib.seal(key, code, {
+      var session = await keyRes.json()
+      var list = {
         dns: link,
         username: $('user').value.trim(),
         password: $('pass').value,
         label: $('name').value.trim(),
-      })
+      }
+      var box = session.plain ? lib.wrapPlain(list) : await lib.seal(session.pub, code, list)
       var sent = await fetch('/v1/sessions/' + code + '/payload', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -92,6 +92,26 @@ describe('página do celular', () => {
     expect($('done').textContent).toContain('Enviado!')
   })
 
+  it('sessão sem chave (Roku): envia a lista em base64url sem cifrar', async () => {
+    let posted = null
+    const { $ } = await openPage({
+      fetchImpl: async (url, init) => {
+        if (init && init.method === 'POST') {
+          posted = JSON.parse(init.body)
+          return reply(204)
+        }
+        return reply(200, { pub: null, plain: true })
+      },
+    })
+    await fill($, { link: 'http://srv.com/lista.m3u', name: 'Sala' })
+
+    await submit($)
+
+    const text = atob(posted.box.replace(/-/g, '+').replace(/_/g, '/'))
+    expect(JSON.parse(text)).toEqual({ dns: 'http://srv.com/lista.m3u', username: '', password: '', label: 'Sala' })
+    expect($('done').hidden).toBe(false)
+  })
+
   it('aceita o código digitado em minúsculas e com hífen', async () => {
     const tv = await newTv()
     const { $, fetchMock } = await openPage({ path: '/', fetchImpl: async (_u, init) => (init && init.method === 'POST' ? reply(204) : reply(200, { pub: tv.pub })) })
