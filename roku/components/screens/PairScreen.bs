@@ -15,6 +15,7 @@ const AMBER = "0xF59E0BFF"
 
 sub init()
     m.base = config.pairBaseUrl()
+    m.demoUrl = config.demoPlaylistUrl()
     m.fromList = false
     m.run = 0
     m.state = "idle"
@@ -178,6 +179,16 @@ sub onLoginResult(event as object)
     fail("login", utils.textOr(result.error, ""), utils.textOr(result.errorDetail, ""))
 end sub
 
+' tryDemo do Login.vue: entra na lista de demonstração pelo mesmo login (a espera pelo celular para).
+sub tryDemo()
+    stopTimers()
+    m.run = m.run + 1
+    m.list = { dns: m.demoUrl, username: "", password: "", label: "" }
+    m.received = { host: "vídeos de demonstração", label: "", insecure: false }
+    m.state = "received"
+    confirm()
+end sub
+
 sub manual()
     stopTimers()
     m.run = m.run + 1
@@ -256,6 +267,8 @@ sub render()
         m.buttons.push({ id: "pair-retry", label: retry, variant: "primary" })
         m.buttons.push({ id: "pair-manual", label: "Digitar manualmente", variant: "secondary" })
     end if
+    ' Lista de demonstração dos revisores das lojas: no web ela fica no mesmo cartão do login.
+    if m.demoUrl <> "" and (m.state = "starting" or m.state = "waiting" or m.state = "expired" or m.state = "error") then m.buttons.push({ id: "pair-demo", label: "Vídeos de demonstração", variant: "secondary" })
     x = 0
     for each spec in m.buttons
         button = content.createChild("PulseButton")
@@ -395,6 +408,7 @@ function onKeyEvent(key as string, press as boolean) as boolean
         if id = "pair-refresh" or id = "pair-retry" or id = "pair-discard" then start()
         if id = "pair-manual" then manual()
         if id = "pair-accept" then confirm()
+        if id = "pair-demo" then tryDemo()
     end if
     return true
 end function

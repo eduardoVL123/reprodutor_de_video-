@@ -3,6 +3,7 @@ import "pkg:/source/utils/types.bs"
 import "pkg:/source/xtream/errors.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/session/loginForm.bs"
+import "pkg:/source/config.bs"
 
 ' Medidas de src/views/Login.vue em px (1920×1080): cartão w-[50rem] com px-14 py-12, cabeçalho mb-8, campos com
 ' rótulo mb-2 e space-y-6, atalhos px-4 py-1.5 mr-2, erro mt-8, Entrar mt-10 e o pb-8 do aviso do site embaixo.
@@ -14,6 +15,7 @@ const SNIPPET_HEIGHT = 42
 
 sub init()
     m.values = { dns: "", user: "", pass: "" }
+    m.demoUrl = config.demoPlaylistUrl()
     m.focus = loginForm.initialFocus()
     m.error = ""
     m.errorDetail = ""
@@ -82,6 +84,15 @@ sub build()
     if m.loading then m.submit.text = "Conectando..."
     m.submit.loading = m.loading
     m.submit.translation = [0, y]
+    m.demo = invalid
+    if m.demoUrl <> "" then
+        ' tryDemo do Login.vue: .tv-btn w-full mt-4.
+        y = y + 50 + 16
+        m.demo = content.createChild("PulseButton")
+        m.demo.fixedWidth = width
+        m.demo.text = "Experimentar com vídeos de demonstração"
+        m.demo.translation = [0, y]
+    end if
     contentHeight = y + 50 + PAD_Y + 32 ' pb do formulário + pb-8 do aviso do site (vazio neste build)
 
     cardHeight = 1 + PAD_Y + contentHeight + 1
@@ -170,6 +181,7 @@ sub renderFocus()
         end if
     end for
     m.submit.focused = m.focus.row = "submit"
+    if m.demo <> invalid then m.demo.focused = m.focus.row = "demo"
 end sub
 
 sub openKeyboard(key as string)
@@ -237,7 +249,7 @@ end sub
 
 function onKeyEvent(key as string, press as boolean) as boolean
     if not press then return false
-    result = loginForm.onKey(key, m.focus, m.snippets.count())
+    result = loginForm.onKey(key, m.focus, m.snippets.count(), m.demoUrl <> "")
     m.focus = result.focus
     renderFocus()
     if result.action = "edit" then openKeyboard(m.focus.row)
@@ -246,5 +258,9 @@ function onKeyEvent(key as string, press as boolean) as boolean
         build()
     end if
     if result.action = "submit" then submit()
+    if result.action = "demo" then
+        m.values = { dns: m.demoUrl, user: "", pass: "" }
+        submit()
+    end if
     return result.handled
 end function

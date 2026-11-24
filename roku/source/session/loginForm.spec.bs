@@ -62,6 +62,16 @@ namespace tests
             m.assertEqual(loginForm.onKey("OK", { row: row, snippet: 0 }, 7).action, action)
         end function
 
+        @it("com a lista de demonstração, o botão dela fica embaixo do Entrar e o OK nele pede a demo")
+        function _()
+            focus = loginForm.onKey("down", { row: "submit", snippet: 0 }, 7, true).focus
+            m.assertEqual(focus.row, "demo")
+            m.assertEqual(loginForm.onKey("down", focus, 7, true).focus.row, "demo")
+            m.assertEqual(loginForm.onKey("up", focus, 7, true).focus.row, "submit")
+            m.assertEqual(loginForm.onKey("OK", focus, 7, true).action, "demo")
+            m.assertEqual(loginForm.onKey("down", { row: "submit", snippet: 0 }, 7).focus.row, "submit")
+        end function
+
         @it("Voltar não é tratado aqui (a tela inicial pergunta se quer sair)")
         function _()
             m.assertFalse(loginForm.onKey("back", loginForm.initialFocus(), 7).handled)

@@ -27,7 +27,8 @@ export function rooibosPassed(output) {
 /** Configuração do build lida pelo app (roku/source/config.bs); endereço vazio = pareamento desligado. */
 export function buildConfig(env) {
   const pairBaseUrl = String(env.PULSE_PAIR_BASE_URL || env.VITE_PAIR_BASE_URL || '').trim().replace(/\/+$/, '')
-  return { pairBaseUrl }
+  const demoPlaylistUrl = String(env.PULSE_DEMO_PLAYLIST_URL || env.VITE_DEMO_PLAYLIST_URL || '').trim()
+  return { pairBaseUrl, demoPlaylistUrl }
 }
 
 const SIM_TIMEOUT_MS = 5 * 60 * 1000
@@ -92,6 +93,7 @@ async function main(command) {
     const data = buildConfig(process.env)
     writeFileSync(`${OUT_DIR}/config/build-config.json`, JSON.stringify(data))
     console.log(`[roku] pareamento ${data.pairBaseUrl ? `em ${data.pairBaseUrl}` : 'desligado (sem PULSE_PAIR_BASE_URL)'}`)
+    console.log(`[roku] lista de demonstração ${data.demoPlaylistUrl ? 'ligada' : 'desligada (sem PULSE_DEMO_PLAYLIST_URL)'}`)
     return
   }
   if (command === 'size') {

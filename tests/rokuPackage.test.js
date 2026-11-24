@@ -73,8 +73,13 @@ describe('app Roku — limite de tamanho do pacote', () => {
 
 describe('app Roku — configuração do build (pkg:/build-config.json)', () => {
   it('leva o endereço do pareamento sem a barra final; sem ele o pareamento fica desligado', () => {
-    expect(buildConfig({ PULSE_PAIR_BASE_URL: ' https://par.exemplo.com/ ' })).toEqual({ pairBaseUrl: 'https://par.exemplo.com' })
-    expect(buildConfig({ VITE_PAIR_BASE_URL: 'http://localhost:8788' })).toEqual({ pairBaseUrl: 'http://localhost:8788' })
-    expect(buildConfig({})).toEqual({ pairBaseUrl: '' })
+    expect(buildConfig({ PULSE_PAIR_BASE_URL: ' https://par.exemplo.com/ ' }).pairBaseUrl).toBe('https://par.exemplo.com')
+    expect(buildConfig({ VITE_PAIR_BASE_URL: 'http://localhost:8788' }).pairBaseUrl).toBe('http://localhost:8788')
+    expect(buildConfig({})).toEqual({ pairBaseUrl: '', demoPlaylistUrl: '' })
+  })
+
+  it('leva a lista de demonstração dos revisores (PULSE_DEMO_PLAYLIST_URL do CI ou VITE_ do web)', () => {
+    expect(buildConfig({ PULSE_DEMO_PLAYLIST_URL: ' https://exemplo.com/demo.m3u ' }).demoPlaylistUrl).toBe('https://exemplo.com/demo.m3u')
+    expect(buildConfig({ VITE_DEMO_PLAYLIST_URL: 'https://exemplo.com/d.m3u' }).demoPlaylistUrl).toBe('https://exemplo.com/d.m3u')
   })
 })

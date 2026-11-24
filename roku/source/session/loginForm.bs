@@ -3,8 +3,11 @@ import "pkg:/source/xtream/errors.bs"
 ' Foco: { row: "dns"|"snippets"|"user"|"pass"|"submit", snippet: índice do atalho lembrado }.
 namespace loginForm
 
-    function rows() as object
-        return ["dns", "snippets", "user", "pass", "submit"]
+    ' hasDemo: com a lista de demonstração no build, "Experimentar com vídeos de demonstração" fica embaixo do Entrar.
+    function rows(hasDemo = false as boolean) as object
+        order = ["dns", "snippets", "user", "pass", "submit"]
+        if hasDemo then order.push("demo")
+        return order
     end function
 
     function fields() as object
@@ -20,18 +23,18 @@ namespace loginForm
         return { row: "dns", snippet: 0 }
     end function
 
-    function rowIndex(row as string) as integer
-        order = loginForm.rows()
+    function rowIndex(row as string, hasDemo = false as boolean) as integer
+        order = loginForm.rows(hasDemo)
         for i = 0 to order.count() - 1
             if order[i] = row then return i
         end for
         return 0
     end function
 
-    ' { focus, action ("edit"|"snippet"|"submit"|""), handled }
-    function onKey(key as string, focus as object, snippetCount as integer) as object
-        order = loginForm.rows()
-        index = loginForm.rowIndex(focus.row)
+    ' { focus, action ("edit"|"snippet"|"submit"|"demo"|""), handled }
+    function onKey(key as string, focus as object, snippetCount as integer, hasDemo = false as boolean) as object
+        order = loginForm.rows(hasDemo)
+        index = loginForm.rowIndex(focus.row, hasDemo)
         nextFocus = { row: focus.row, snippet: focus.snippet }
         if key = "down" then
             if index < order.count() - 1 then nextFocus.row = order[index + 1]
@@ -50,6 +53,7 @@ namespace loginForm
             action = "edit"
             if focus.row = "snippets" then action = "snippet"
             if focus.row = "submit" then action = "submit"
+            if focus.row = "demo" then action = "demo"
             return { focus: nextFocus, action: action, handled: true }
         end if
         return { focus: nextFocus, action: "", handled: key = "left" or key = "right" }

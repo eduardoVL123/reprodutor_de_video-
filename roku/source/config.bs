@@ -6,11 +6,20 @@ namespace config
 
     const LICENSE_ENABLED = false
 
+    function buildConfig() as object
+        data = ParseJson(ReadAsciiFile("pkg:/build-config.json"))
+        if not utils.isObject(data) then return {}
+        return data
+    end function
+
     ' Endereço do serviço de pareamento sem a barra final ("" = desligado).
     function pairBaseUrl() as string
-        data = ParseJson(ReadAsciiFile("pkg:/build-config.json"))
-        if not utils.isObject(data) then return ""
-        return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(data.pairBaseUrl, "").trim(), "")
+        return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(config.buildConfig().pairBaseUrl, "").trim(), "")
+    end function
+
+    ' Lista de demonstração para os revisores das lojas (VITE_DEMO_PLAYLIST_URL do web; "" = sem o botão).
+    function demoPlaylistUrl() as string
+        return utils.textOr(config.buildConfig().demoPlaylistUrl, "").trim()
     end function
 
     function pairingEnabled() as boolean
