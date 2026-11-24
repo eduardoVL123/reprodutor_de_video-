@@ -3,6 +3,8 @@ import "pkg:/source/utils/types.bs"
 import "pkg:/source/nav/spatial.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/pairing/pairing.bs"
 
 ' Medidas do ListManagerModal.vue em px (1920×1080) sem erro: painel de 1120×793 em x 400 (p-8 + borda: conteúdo em
 ' x 433, y 177), cabeçalho até y 286, colunas em y 310 (listas em x 433 e formulário em x 1001, divisória em 976),
@@ -90,6 +92,8 @@ sub build()
     ' Coluna 2: adicionar nova lista
     drawLine(content, 976, 310 + extra, 1, 570, "0xFFFFFF14")
     heading(content, "ADICIONAR NOVA LISTA", FORM_X, 310 + extra)
+    ' "Enviar pelo celular" (btn-pair-phone) só com o serviço de pareamento configurado, como o pairingOn do web.
+    if config.pairingEnabled() then addButton(content, "btn-pair-phone", "Enviar pelo celular", "", 0, 298 + extra, "btn-primary", ui.TEXT_ON_ACCENT, ["modal-lists-add", "modal-lists-dialog"], "", FORM_X + FORM_W)
     ui.text(content, "Navegue com as setas e pressione OK para abrir o teclado", ui.font(400, 20), ui.NEUTRAL_400, FORM_X, 342 + extra, 486, 28)
     y = 410 + extra
     for each field in fields()
@@ -350,9 +354,11 @@ sub onSelect()
         m.top.navigate = { action: "back" }
     else if id = "btn-modal-logout" then
         session.logout(storage.create())
-        m.top.navigate = { action: "reset", screen: "LoginScreen" }
+        m.top.navigate = { action: "reset", screen: phonePairing.loginScreen() }
     else if id = "btn-save-new-list" then
         addList()
+    else if id = "btn-pair-phone" then
+        m.top.navigate = { action: "push", screen: "PairScreen", params: { fromList: true } }
     else if Left(id, 11) = "btn-switch-" then
         runTask({ action: "switch", listId: m.lists[Int(Val(Mid(id, 12)))].id })
     else if Left(id, 11) = "btn-remove-" then
@@ -401,7 +407,7 @@ sub onTaskResult(event as object)
     if result.outcome = "changed" then
         m.top.navigate = { action: "reset", screen: "HomeScreen" }
     else if result.outcome = "loggedOut" then
-        m.top.navigate = { action: "reset", screen: "LoginScreen" }
+        m.top.navigate = { action: "reset", screen: phonePairing.loginScreen() }
     else
         m.error = ""
         m.errorDetail = ""

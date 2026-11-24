@@ -4,7 +4,8 @@
 //   deploy → envia build/roku/pulse-roku.zip para um aparelho em modo desenvolvedor (ROKU_HOST, ROKU_PASSWORD)
 //   test   → envia build/roku/pulse-roku-test.zip ao aparelho; resultado no console 8085
 //   size   → falha se o pacote passar de 4 MB (certificação Roku 3.x)
-import { statSync } from 'node:fs'
+//   config → grava build/roku/config/build-config.json (pkg:/build-config.json): o PULSE_PAIR_BASE_URL do .env
+import { statSync, mkdirSync, writeFileSync, existsSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 
@@ -21,6 +22,12 @@ export function checkSize(bytes, max = MAX_PACKAGE_BYTES) {
 /** O brs-cli sai com 0 mesmo com teste falhando: só a linha final do Rooibos diz se passou. */
 export function rooibosPassed(output) {
   return /^\[Rooibos Result\]: PASS\s*$/m.test(output)
+}
+
+/** Configuração do build lida pelo app (roku/source/config.bs); endereço vazio = pareamento desligado. */
+export function buildConfig(env) {
+  const pairBaseUrl = String(env.PULSE_PAIR_BASE_URL || env.VITE_PAIR_BASE_URL || '').trim().replace(/\/+$/, '')
+  return { pairBaseUrl }
 }
 
 const SIM_TIMEOUT_MS = 5 * 60 * 1000
@@ -79,13 +86,21 @@ function runSimulator(zipFile = FILES.test) {
 async function main(command) {
   if (command === 'sim') return runSimulator()
   if (command === 'integration') return runIntegration()
+  if (command === 'config') {
+    if (existsSync('.env')) process.loadEnvFile('.env')
+    mkdirSync(`${OUT_DIR}/config`, { recursive: true })
+    const data = buildConfig(process.env)
+    writeFileSync(`${OUT_DIR}/config/build-config.json`, JSON.stringify(data))
+    console.log(`[roku] pareamento ${data.pairBaseUrl ? `em ${data.pairBaseUrl}` : 'desligado (sem PULSE_PAIR_BASE_URL)'}`)
+    return
+  }
   if (command === 'size') {
     const bytes = checkSize(statSync(`${OUT_DIR}/${FILES.deploy}`).size)
     console.log(`[roku] pacote com ${(bytes / 1024).toFixed(0)} KB (limite 4096 KB)`)
     return
   }
   const outFile = FILES[command]
-  if (!outFile) throw new Error('Uso: node scripts/roku.mjs sim|deploy|test|size')
+  if (!outFile) throw new Error('Uso: node scripts/roku.mjs sim|integration|deploy|test|size|config')
   const host = process.env.ROKU_HOST
   const password = process.env.ROKU_PASSWORD
   if (!host || !password) throw new Error('Defina ROKU_HOST e ROKU_PASSWORD (senha do modo desenvolvedor)')

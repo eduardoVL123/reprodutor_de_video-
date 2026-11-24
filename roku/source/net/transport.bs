@@ -7,22 +7,36 @@ import "pkg:/source/xtream/api.bs"
 namespace net
 
     function urlTransport() as object
-        return { get: net.transportGet }
+        return { get: net.transportGet, send: net.transportSend }
     end function
 
     ' GET com tempo limite. { status, statusText, body, finalUrl } ou { error } (XtreamError de rede/tempo).
     ' O limite vale para a resposta inteira: o roUrlTransfer não avisa a chegada de cada pedaço como o fetch.
     function transportGet(url as string, timeoutMs as integer, accept as string) as object
+        return net.transportSend("GET", url, timeoutMs, { "Accept": accept }, "")
+    end function
+
+    ' Pedido com método, cabeçalhos e corpo (o pareamento faz POST com JSON); mesma resposta do transportGet.
+    function transportSend(method as string, url as string, timeoutMs as integer, headers as object, body as string) as object
         where = xtream.describeUrl(url)
         port = CreateObject("roMessagePort")
         xfer = CreateObject("roUrlTransfer")
         xfer.setMessagePort(port)
         xfer.setUrl(url)
         xfer.setCertificatesFile("common:/certs/ca-bundle.crt")
-        xfer.addHeader("Accept", accept)
+        for each name in headers
+            xfer.addHeader(name, headers[name])
+        end for
         xfer.retainBodyOnError(true)
         xfer.enableEncodings(true)
-        if not xfer.asyncGetToString() then
+        started = false
+        if method = "GET" then
+            started = xfer.asyncGetToString()
+        else
+            xfer.setRequest(method)
+            started = xfer.asyncPostFromString(body)
+        end if
+        if not started then
             return { error: xtream.newError("CORS_OR_NETWORK_ERROR", { host: where.host, endpoint: where.endpoint, raw: "roUrlTransfer recusou o pedido" }) }
         end if
 

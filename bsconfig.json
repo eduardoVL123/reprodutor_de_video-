@@ -1,6 +1,14 @@
 {
   "rootDir": "roku",
-  "files": ["manifest", "source/**/*", "components/**/*", "images/**/*", "fonts/*.ttf", "!**/*.spec.bs"],
+  "files": [
+    "manifest",
+    "source/**/*",
+    "components/**/*",
+    "images/**/*",
+    "fonts/*.ttf",
+    "!**/*.spec.bs",
+    { "src": "../build/roku/config/build-config.json", "dest": "build-config.json" }
+  ],
   "stagingFolderPath": "build/roku/staging",
   "outFile": "build/roku/pulse-roku.zip",
   "retainStagingDir": true,

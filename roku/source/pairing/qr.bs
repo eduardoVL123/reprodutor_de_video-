@@ -1,0 +1,327 @@
+import "pkg:/source/utils/types.bs"
+' QR code do pareamento (port do que src/utils/qrSvg.js pede ao qrcode-generator): modo byte, correção M, versão
+' automática de 1 a 6 e a máscara de menor penalidade, como a biblioteca. Casos em qr.spec.bs (gerados por ela).
+' shortcut: só até a versão 6 (106 bytes; o endereço do pareamento tem ~40). Passou disso devolve invalid e a tela
+' mostra só o endereço e o código, como o web quando o QR não cabe.
+namespace qr
+
+    ' Por versão (índice 1 a 6), correção M: [blocos, dados por bloco, correção por bloco].
+    function blocksM() as object
+        return [invalid, [1, 16, 10], [1, 28, 16], [1, 44, 26], [2, 32, 18], [2, 43, 24], [4, 27, 16]]
+    end function
+
+    ' Linhas da matriz ("1" = escuro), ou invalid se o texto não cabe na versão 6.
+    function matrix(text as string) as dynamic
+        bytes = CreateObject("roByteArray")
+        bytes.fromAsciiString(text)
+        if bytes.count() = 0 then return invalid
+        version = 0
+        for v = 1 to 6
+            spec = qr.blocksM()[v]
+            if 4 + 8 + 8 * bytes.count() <= spec[0] * spec[1] * 8 then
+                version = v
+                exit for
+            end if
+        end for
+        if version = 0 then return invalid
+        stream = qr.codewords(bytes, qr.blocksM()[version])
+        size = 17 + 4 * version
+        best = -1
+        bestLost = 0#
+        for mask = 0 to 7
+            cells = qr.build(version, size, stream, mask, true)
+            lost = qr.lostPoint(cells, size)
+            if best < 0 or lost < bestLost then
+                best = mask
+                bestLost = lost
+            end if
+        end for
+        cells = qr.build(version, size, stream, best, false)
+        rows = []
+        for r = 0 to size - 1
+            line = ""
+            for c = 0 to size - 1
+                if cells[r][c] = true then
+                    line = line + "1"
+                else
+                    line = line + "0"
+                end if
+            end for
+            rows.push(line)
+        end for
+        return rows
+    end function
+
+    ' Dados (modo 0100, tamanho em 8 bits, bytes, terminador, 0xEC/0x11) e a correção Reed-Solomon, intercalados.
+    function codewords(bytes as object, spec as object) as object
+        bits = []
+        qr.putBits(bits, 4, 4)
+        qr.putBits(bits, bytes.count(), 8)
+        for each b in bytes
+            qr.putBits(bits, b, 8)
+        end for
+        capacity = spec[0] * spec[1] * 8
+        if bits.count() + 4 <= capacity then qr.putBits(bits, 0, 4)
+        while bits.count() mod 8 <> 0
+            bits.push(0)
+        end while
+        pad = [&hEC, &h11]
+        i = 0
+        while bits.count() < capacity
+            qr.putBits(bits, pad[i mod 2], 8)
+            i = i + 1
+        end while
+        data = []
+        for p = 0 to bits.count() - 1 step 8
+            value = 0
+            for k = 0 to 7
+                value = value * 2 + bits[p + k]
+            end for
+            data.push(value)
+        end for
+        gf = qr.galois()
+        dataBlocks = []
+        ecBlocks = []
+        for b = 0 to spec[0] - 1
+            block = []
+            for k = 0 to spec[1] - 1
+                block.push(data[b * spec[1] + k])
+            end for
+            dataBlocks.push(block)
+            ecBlocks.push(qr.reedSolomon(block, spec[2], gf))
+        end for
+        out = []
+        for k = 0 to spec[1] - 1
+            for each block in dataBlocks
+                out.push(block[k])
+            end for
+        end for
+        for k = 0 to spec[2] - 1
+            for each block in ecBlocks
+                out.push(block[k])
+            end for
+        end for
+        return out
+    end function
+
+    sub putBits(bits as object, value as integer, count as integer)
+        for k = count - 1 to 0 step -1
+            bits.push((value >> k) and 1)
+        end for
+    end sub
+
+    ' Tabelas de GF(256) com o polinômio 0x11D.
+    function galois() as object
+        exp = []
+        log = []
+        for i = 0 to 255
+            log.push(0)
+        end for
+        x = 1
+        for i = 0 to 255
+            exp.push(x)
+            if i < 255 then log[x] = i
+            x = x * 2
+            if x > 255 then x = qr.bxor(x, &h11D)
+        end for
+        return { exp: exp, log: log }
+    end function
+
+    function bxor(a as integer, b as integer) as integer
+        return (a or b) and not (a and b)
+    end function
+
+    function gfMul(a as integer, b as integer, gf as object) as integer
+        if a = 0 or b = 0 then return 0
+        return gf.exp[(gf.log[a] + gf.log[b]) mod 255]
+    end function
+
+    ' Resto da divisão de dados·x^n pelo gerador ∏(x − αⁱ), i < n.
+    function reedSolomon(data as object, n as integer, gf as object) as object
+        gen = [1]
+        for i = 0 to n - 1
+            grown = []
+            for k = 0 to gen.count()
+                grown.push(0)
+            end for
+            for k = 0 to gen.count() - 1
+                grown[k] = qr.bxor(grown[k], gen[k])
+                grown[k + 1] = qr.bxor(grown[k + 1], qr.gfMul(gen[k], gf.exp[i], gf))
+            end for
+            gen = grown
+        end for
+        msg = []
+        for each d in data
+            msg.push(d)
+        end for
+        for k = 1 to n
+            msg.push(0)
+        end for
+        for i = 0 to data.count() - 1
+            coef = msg[i]
+            if coef <> 0 then
+                for j = 0 to gen.count() - 1
+                    msg[i + j] = qr.bxor(msg[i + j], qr.gfMul(gen[j], coef, gf))
+                end for
+            end if
+        end for
+        rest = []
+        for k = data.count() to msg.count() - 1
+            rest.push(msg[k])
+        end for
+        return rest
+    end function
+
+    ' Matriz com os padrões fixos, a informação de formato e os dados com a máscara. test = true: formato todo claro
+    ' (é assim que a biblioteca mede a penalidade de cada máscara).
+    function build(version as integer, size as integer, stream as object, mask as integer, test as boolean) as object
+        cells = []
+        for r = 0 to size - 1
+            row = []
+            for c = 0 to size - 1
+                row.push(invalid)
+            end for
+            cells.push(row)
+        end for
+        qr.finder(cells, size, 0, 0)
+        qr.finder(cells, size, size - 7, 0)
+        qr.finder(cells, size, 0, size - 7)
+        if version >= 2 then
+            center = size - 7
+            for r = -2 to 2
+                for c = -2 to 2
+                    cells[center + r][center + c] = r = -2 or r = 2 or c = -2 or c = 2 or (r = 0 and c = 0)
+                end for
+            end for
+        end if
+        for i = 8 to size - 9
+            if cells[i][6] = invalid then cells[i][6] = i mod 2 = 0
+            if cells[6][i] = invalid then cells[6][i] = i mod 2 = 0
+        end for
+        ' Formato: correção M (00) e a máscara, BCH(15,5) com o XOR 0x5412.
+        data = mask
+        d = data << 10
+        for shift = 4 to 0 step -1
+            if ((d >> (shift + 10)) and 1) = 1 then d = qr.bxor(d, &h537 << shift)
+        end for
+        bits = qr.bxor((data << 10) or d, &h5412)
+        for i = 0 to 14
+            dark = not test and ((bits >> i) and 1) = 1
+            if i < 6 then
+                cells[i][8] = dark
+            else if i < 8 then
+                cells[i + 1][8] = dark
+            else
+                cells[size - 15 + i][8] = dark
+            end if
+            if i < 8 then
+                cells[8][size - i - 1] = dark
+            else if i < 9 then
+                cells[8][15 - i] = dark
+            else
+                cells[8][14 - i] = dark
+            end if
+        end for
+        cells[size - 8][8] = not test
+        ' Dados em zigue-zague de baixo para cima, duas colunas por vez (pulando a coluna 6 do timing).
+        inc = -1
+        row = size - 1
+        bitIndex = 7
+        byteIndex = 0
+        col = size - 1
+        while col > 0
+            if col = 6 then col = col - 1
+            while true
+                for c = 0 to 1
+                    if cells[row][col - c] = invalid then
+                        dark = false
+                        if byteIndex < stream.count() then dark = ((stream[byteIndex] >> bitIndex) and 1) = 1
+                        if qr.masked(mask, row, col - c) then dark = not dark
+                        cells[row][col - c] = dark
+                        bitIndex = bitIndex - 1
+                        if bitIndex = -1 then
+                            byteIndex = byteIndex + 1
+                            bitIndex = 7
+                        end if
+                    end if
+                end for
+                row = row + inc
+                if row < 0 or row >= size then
+                    row = row - inc
+                    inc = -inc
+                    exit while
+                end if
+            end while
+            col = col - 2
+        end while
+        return cells
+    end function
+
+    ' Padrão de posição 7×7 com a borda clara em volta.
+    sub finder(cells as object, size as integer, top as integer, left as integer)
+        for r = -1 to 7
+            for c = -1 to 7
+                if top + r >= 0 and top + r < size and left + c >= 0 and left + c < size then
+                    cells[top + r][left + c] = ((r >= 0 and r <= 6) and (c = 0 or c = 6)) or ((c >= 0 and c <= 6) and (r = 0 or r = 6)) or (r >= 2 and r <= 4 and c >= 2 and c <= 4)
+                end if
+            end for
+        end for
+    end sub
+
+    function masked(mask as integer, i as integer, j as integer) as boolean
+        if mask = 0 then return (i + j) mod 2 = 0
+        if mask = 1 then return i mod 2 = 0
+        if mask = 2 then return j mod 3 = 0
+        if mask = 3 then return (i + j) mod 3 = 0
+        if mask = 4 then return ((i \ 2) + (j \ 3)) mod 2 = 0
+        if mask = 5 then return (i * j) mod 2 + (i * j) mod 3 = 0
+        if mask = 6 then return ((i * j) mod 2 + (i * j) mod 3) mod 2 = 0
+        return ((i * j) mod 3 + (i + j) mod 2) mod 2 = 0
+    end function
+
+    ' Penalidade da máscara (getLostPoint do qrcode-generator).
+    function lostPoint(cells as object, n as integer) as double
+        lost = 0#
+        for row = 0 to n - 1
+            for col = 0 to n - 1
+                same = 0
+                dark = cells[row][col]
+                for r = -1 to 1
+                    if row + r >= 0 and row + r < n then
+                        for c = -1 to 1
+                            if col + c >= 0 and col + c < n and not (r = 0 and c = 0) then
+                                if cells[row + r][col + c] = dark then same = same + 1
+                            end if
+                        end for
+                    end if
+                end for
+                if same > 5 then lost = lost + 3 + same - 5
+            end for
+        end for
+        for row = 0 to n - 2
+            for col = 0 to n - 2
+                count = 0
+                if cells[row][col] then count = count + 1
+                if cells[row + 1][col] then count = count + 1
+                if cells[row][col + 1] then count = count + 1
+                if cells[row + 1][col + 1] then count = count + 1
+                if count = 0 or count = 4 then lost = lost + 3
+            end for
+        end for
+        for a = 0 to n - 1
+            for b = 0 to n - 7
+                if cells[a][b] and not cells[a][b + 1] and cells[a][b + 2] and cells[a][b + 3] and cells[a][b + 4] and not cells[a][b + 5] and cells[a][b + 6] then lost = lost + 40
+                if cells[b][a] and not cells[b + 1][a] and cells[b + 2][a] and cells[b + 3][a] and cells[b + 4][a] and not cells[b + 5][a] and cells[b + 6][a] then lost = lost + 40
+            end for
+        end for
+        darkCount = 0
+        for row = 0 to n - 1
+            for col = 0 to n - 1
+                if cells[row][col] then darkCount = darkCount + 1
+            end for
+        end for
+        ratio = Abs(100# * darkCount / n / n - 50) / 5
+        return lost + ratio * 10
+    end function
+
+end namespace

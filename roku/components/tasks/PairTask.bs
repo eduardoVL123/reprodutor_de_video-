@@ -1,0 +1,21 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/pairing/pairing.bs"
+import "pkg:/source/pairing/qr.bs"
+
+sub init()
+    m.top.functionName = "runPair"
+end sub
+
+sub runPair()
+    request = m.top.request
+    transport = net.urlTransport()
+    if request.mode = "create" then
+        result = phonePairing.createSession(transport, request.base)
+        if result.error = invalid then result.qr = qr.matrix(phonePairing.pageUrl(request.base, result.code))
+    else
+        result = phonePairing.pollSession(transport, request.base, request.code, request.secret)
+    end if
+    result.mode = request.mode
+    result.run = request.run
+    m.top.result = result
+end sub

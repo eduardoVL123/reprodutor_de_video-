@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'node:fs'
-import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed } from '../scripts/roku.mjs'
+import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed, buildConfig } from '../scripts/roku.mjs'
 import { OUTPUTS, over } from '../scripts/make-roku-ui.mjs'
 
 const manifest = Object.fromEntries(
@@ -68,5 +68,13 @@ describe('app Roku — limite de tamanho do pacote', () => {
   it('aceita até 4 MB e recusa acima', () => {
     expect(checkSize(MAX_PACKAGE_BYTES)).toBe(MAX_PACKAGE_BYTES)
     expect(() => checkSize(MAX_PACKAGE_BYTES + 1)).toThrow(/limite/)
+  })
+})
+
+describe('app Roku — configuração do build (pkg:/build-config.json)', () => {
+  it('leva o endereço do pareamento sem a barra final; sem ele o pareamento fica desligado', () => {
+    expect(buildConfig({ PULSE_PAIR_BASE_URL: ' https://par.exemplo.com/ ' })).toEqual({ pairBaseUrl: 'https://par.exemplo.com' })
+    expect(buildConfig({ VITE_PAIR_BASE_URL: 'http://localhost:8788' })).toEqual({ pairBaseUrl: 'http://localhost:8788' })
+    expect(buildConfig({})).toEqual({ pairBaseUrl: '' })
   })
 })

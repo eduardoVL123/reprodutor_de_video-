@@ -2,6 +2,7 @@ import "pkg:/source/ui/ui.bs"
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/ftue/ftue.bs"
 import "pkg:/source/config.bs"
+import "pkg:/source/pairing/pairing.bs"
 import "pkg:/source/device/storage.bs"
 
 ' Medidas de src/views/FTUE.vue em px (1920×1080): painel w-[96rem] px-16 py-12, cabeçalho com ícone 80 e gap 32,
@@ -42,7 +43,7 @@ sub layout()
     y = y + noticeHeight + 32
 
     ' Grade 2×2 de cartões: cada linha tem a altura do cartão mais alto
-    terms = ftue.terms({ license: config.LICENSE_ENABLED, pairing: config.PAIRING_ENABLED })
+    terms = ftue.terms({ license: config.LICENSE_ENABLED, pairing: config.pairingEnabled() })
     cardWidth = (innerWidth - GAP) / 2
     for row = 0 to 1
         cards = []
@@ -104,7 +105,7 @@ end sub
 sub accept()
     store = storage.create()
     if store.set(ftue.STORAGE_KEY, ftue.acceptRecord(CreateObject("roDateTime").toISOString())) then
-        m.top.navigate = { action: "replace", screen: "LoginScreen" }
+        m.top.navigate = { action: "replace", screen: phonePairing.loginScreen() }
     else
         showMessage("Não foi possível salvar sua escolha. Tente novamente.", ui.ERROR)
     end if

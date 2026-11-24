@@ -1,8 +1,20 @@
-' Configuração do build (equivale às variáveis VITE_* do app web). Por enquanto fixa; quando licença (D8) e
-' pareamento (D9) entrarem, passa a ser gerada no build a partir do .env.
+import "pkg:/source/utils/types.bs"
+' Configuração do build (equivale às variáveis VITE_* do app web). A licença (D8) ainda é fixa; o endereço do
+' pareamento vem de pkg:/build-config.json, gerado no `npm run roku:build` a partir de PULSE_PAIR_BASE_URL (ou
+' VITE_PAIR_BASE_URL) — `node scripts/roku.mjs config`. Sem ele, o pareamento não existe.
 namespace config
 
     const LICENSE_ENABLED = false
-    const PAIRING_ENABLED = false
+
+    ' Endereço do serviço de pareamento sem a barra final ("" = desligado).
+    function pairBaseUrl() as string
+        data = ParseJson(ReadAsciiFile("pkg:/build-config.json"))
+        if not utils.isObject(data) then return ""
+        return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(data.pairBaseUrl, "").trim(), "")
+    end function
+
+    function pairingEnabled() as boolean
+        return config.pairBaseUrl() <> ""
+    end function
 
 end namespace

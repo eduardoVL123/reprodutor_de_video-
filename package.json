@@ -24,7 +24,7 @@
     "build:webos": "vite build && node scripts/package-tv.mjs webos",
     "icons": "node scripts/make-tv-icons.mjs",
     "desktop": "vite build && electron desktop/main.cjs",
-    "roku:build": "bsc --project bsconfig.json && node scripts/roku.mjs size",
+    "roku:build": "node scripts/roku.mjs config && bsc --project bsconfig.json && node scripts/roku.mjs size",
     "roku:lint": "bslint --project bsconfig.json",
     "roku:deploy": "npm run roku:build && node scripts/roku.mjs deploy",
     "roku:test": "bsc --project bsconfig.test.json && node scripts/roku.mjs sim",

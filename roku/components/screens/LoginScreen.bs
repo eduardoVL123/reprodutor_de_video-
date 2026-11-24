@@ -221,7 +221,8 @@ sub onLoginResult(event as object)
     result = event.getData()
     m.loading = false
     if result.ok then
-        m.top.navigate = { action: "replace", screen: "HomeScreen" }
+        ' reset: aberto por cima do painel do celular, o login não deixa o painel atrás do Início.
+        m.top.navigate = { action: "reset", screen: "HomeScreen" }
         return
     end if
     showError(result.error, result.errorDetail, loginForm.focusAfterError(result.error))

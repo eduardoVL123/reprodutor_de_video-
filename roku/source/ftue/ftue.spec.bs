@@ -41,6 +41,16 @@ namespace tests
             m.assertTrue(text.instr("Não coletamos") < 0)
         end function
 
+        @it("com o pareamento ligado, conta que a lista passa pelo serviço sem prometer cifra que a Roku não faz")
+        function _()
+            text = ftue.privacyText({ license: false, pairing: true })
+            m.assertTrue(text.instr("pelo celular") >= 0)
+            m.assertTrue(text.instr("conexão segura") >= 0)
+            m.assertTrue(text.instr("apaga assim que a TV a recebe") >= 0)
+            m.assertTrue(text.instr("passa cifrada") < 0)
+            m.assertTrue(text.instr("não consegue ler esse conteúdo") < 0)
+        end function
+
         @it("na Roku não existe Chromecast: o trecho não aparece em nenhuma variante")
         @params(false, false)
         @params(true, false)

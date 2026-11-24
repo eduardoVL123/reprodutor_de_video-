@@ -1,5 +1,12 @@
 # D9 — Pareamento pelo celular e inbox do site
 
+**Status (2026-11-24)**: passo 2 feito, sem a resposta da Roku ao passo 1 (Q3). Sessão `plain` no servidor
+(`server/pair/pair-core.mjs`, a página manda base64url pelo `PairLib.wrapPlain`); na Roku `roku/source/pairing/`
+(`pairing.bs` + `qr.bs`, QR igual ao do `qrcode-generator`), `PairTask` e `PairScreen` (primeira tela sem sessão e
+"Enviar pelo celular" no gerenciador). Liga com `PULSE_PAIR_BASE_URL` no build (`node scripts/roku.mjs config`). O
+texto de privacidade da Roku diz que a lista passa pelo serviço sem cifra de ponta a ponta. Falta: inbox do site
+(passo 3, depende da licença do D8) e testar numa Roku de verdade com o serviço em https.
+
 ## Estado atual
 - `src/composables/usePairing.js` (184): sessão nova L135, poll 2 s L16/118, até 5 falhas L17, abrir box L89.
 - `src/services/pairingApi.js` (101): `POST /v1/sessions` L76-89, `GET /v1/sessions/<code>/payload` com

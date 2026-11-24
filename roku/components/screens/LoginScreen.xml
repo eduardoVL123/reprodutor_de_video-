@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8" ?>
-<!-- Conectar ao servidor (port de src/views/Login.vue, sem pareamento: como no build sem VITE_PAIR_BASE_URL).
+<!-- Conectar ao servidor (port de src/views/Login.vue). Com o pareamento ligado, abre por cima da PairScreen ("Digitar
+     manualmente"), no lugar da coluna do formulário do web.
      Os campos abrem o StandardKeyboardDialog da Roku (certificação 4.12) no lugar do teclado na tela do web. -->
 <component name="LoginScreen" extends="Group">
     <interface>

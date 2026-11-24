@@ -1,0 +1,400 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/pairing/pairing.bs"
+
+' Medidas de PairPanel.vue no cartão do login (px-14 py-12): título text-tv-lg black, texto text-tv-sm neutral-400,
+' QR de 20rem (320) com a margem de 4 módulos, à direita o endereço (mono, accent-soft), o código (mono black, tracking)
+' e "Aguardando · válido por"; botões .tv-btn em mt-8 com gap-4.
+const CARD_W = 1120
+const PAD_X = 56
+const PAD_Y = 48
+const QR_BOX = 320
+const AMBER = "0xF59E0BFF"
+
+sub init()
+    m.base = config.pairBaseUrl()
+    m.fromList = false
+    m.run = 0
+    m.state = "idle"
+    m.buttons = []
+    m.focusIndex = 0
+    m.card = m.top.createChild("Group")
+    m.clock = CreateObject("roTimespan")
+    m.pollTimer = m.top.createChild("Timer")
+    m.pollTimer.duration = phonePairing.POLL_INTERVAL_S
+    m.pollTimer.observeField("fire", "onPollTimer")
+    m.tickTimer = m.top.createChild("Timer")
+    m.tickTimer.duration = 1
+    m.tickTimer.repeat = true
+    m.tickTimer.observeField("fire", "onTick")
+    m.top.setFocus(true)
+    m.top.observeField("focusedChild", "onFocusChanged")
+    start()
+end sub
+
+' Voltando do formulário ("Digitar manualmente"): a espera tinha parado, então pede um código novo.
+sub onFocusChanged()
+    if m.state = "away" and m.top.focusedChild <> invalid then start()
+end sub
+
+sub onParams()
+    params = m.top.params
+    m.fromList = params <> invalid and params.fromList = true
+    render()
+end sub
+
+' ---------- usePairing ----------
+
+sub stopTimers()
+    m.pollTimer.control = "stop"
+    m.tickTimer.control = "stop"
+end sub
+
+' Pede um código novo (descarta o anterior): respostas de uma sessão antiga são ignoradas pelo `run`.
+sub start()
+    m.run = m.run + 1
+    stopTimers()
+    m.code = ""
+    m.secret = ""
+    m.qrRows = invalid
+    m.list = invalid
+    m.received = invalid
+    m.failures = 0
+    m.error = ""
+    m.errorDetail = ""
+    m.errorKind = ""
+    m.state = "starting"
+    m.focusIndex = 0
+    render()
+    runTask({ mode: "create" })
+end sub
+
+sub runTask(request as object)
+    request.run = m.run
+    request.base = m.base
+    m.task = CreateObject("roSGNode", "PairTask")
+    m.task.request = request
+    m.task.observeField("result", "onTaskResult")
+    m.task.control = "run"
+end sub
+
+sub onTaskResult(event as object)
+    result = event.getData()
+    if result.run <> m.run then return
+    if result.mode = "create" then
+        if result.error <> invalid then
+            fail("unavailable", phonePairing.messageFor(result.error), "")
+            return
+        end if
+        m.code = result.code
+        m.secret = result.secret
+        m.qrRows = result.qr
+        m.expiresAt = m.clock.totalMilliseconds() + result.expiresIn * 1000
+        m.secondsLeft = result.expiresIn
+        m.state = "waiting"
+        m.focusIndex = 0
+        m.tickTimer.control = "start"
+        m.pollTimer.control = "start"
+        render()
+        return
+    end if
+    if m.state <> "waiting" then return
+    after = phonePairing.afterPoll(m.failures, result)
+    m.failures = after.failures
+    if after.state = "waiting" then
+        m.pollTimer.control = "start"
+    else if after.state = "expired" then
+        expire()
+    else if after.state = "error" then
+        fail(after.kind, after.error, "")
+    else
+        ' A sessão no servidor já foi consumida: o prazo do código não importa mais.
+        stopTimers()
+        m.list = after.list
+        m.received = after.received
+        m.state = "received"
+        m.focusIndex = 0
+        render()
+    end if
+end sub
+
+sub onPollTimer()
+    if m.state = "waiting" then runTask({ mode: "poll", code: m.code, secret: m.secret })
+end sub
+
+sub onTick()
+    if m.state <> "waiting" then return
+    left = (m.expiresAt - m.clock.totalMilliseconds() + 999) \ 1000
+    if left < 0 then left = 0
+    m.secondsLeft = left
+    if left = 0 then
+        expire()
+    else
+        m.timeLabel.text = "Aguardando · válido por " + utils.formatTime(left)
+    end if
+end sub
+
+sub expire()
+    stopTimers()
+    m.run = m.run + 1
+    m.state = "expired"
+    m.focusIndex = 0
+    render()
+end sub
+
+sub fail(kind as string, message as string, detail as string)
+    stopTimers()
+    m.run = m.run + 1
+    m.list = invalid
+    m.state = "error"
+    m.errorKind = kind
+    m.error = message
+    m.errorDetail = detail
+    m.focusIndex = 0
+    render()
+end sub
+
+' Entra na lista recebida pelo mesmo login do app (LoginTask), como o confirm do web.
+sub confirm()
+    if m.state <> "received" or m.list = invalid then return
+    m.state = "connecting"
+    render()
+    m.login = CreateObject("roSGNode", "LoginTask")
+    m.login.params = m.list
+    m.login.observeField("result", "onLoginResult")
+    m.login.control = "run"
+end sub
+
+sub onLoginResult(event as object)
+    result = event.getData()
+    m.list = invalid
+    if result.ok then
+        m.state = "done"
+        m.top.navigate = { action: "reset", screen: "HomeScreen" }
+        return
+    end if
+    fail("login", utils.textOr(result.error, ""), utils.textOr(result.errorDetail, ""))
+end sub
+
+sub manual()
+    stopTimers()
+    m.run = m.run + 1
+    m.state = "away"
+    if m.fromList then
+        m.top.navigate = { action: "back" }
+    else
+        m.top.navigate = { action: "push", screen: "LoginScreen" }
+    end if
+end sub
+
+' ---------- Tela ----------
+
+sub render()
+    m.card.removeChildrenIndex(m.card.getChildCount(), 0)
+    content = CreateObject("roSGNode", "Group")
+    width = CARD_W - 2 * PAD_X - 2
+    m.timeLabel = invalid
+
+    mark = content.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 23
+    mark.height = 24
+    mark.translation = [0, 2]
+    ui.trackedText(content, "PULSE PLAYER · CONEXÃO", ui.font(700, 20), ui.ACCENT, 31, 0, 5)
+
+    title = "Use o seu celular"
+    subtitle = "Escaneie o código, cole o link da lista e pronto. Sem digitar no controle."
+    if m.state = "received" then
+        title = "Adicionar esta lista?"
+        subtitle = "Confirme só se foi você quem enviou."
+    else if m.state = "connecting" then
+        title = "Conectando..."
+        subtitle = "Baixando a lista de " + m.received.host + ". Listas grandes podem demorar um pouco."
+    else if m.state = "expired" then
+        title = "O código expirou"
+        subtitle = "Por segurança o código vale 10 minutos. Gere outro e tente de novo."
+    else if m.state = "error" then
+        title = "Não consegui gerar o código"
+        if m.errorKind = "badData" then title = "Não deu para ler o envio"
+        if m.errorKind = "login" then title = "Não deu para abrir a lista"
+        subtitle = ""
+    end if
+    ui.text(content, title, ui.font(900, 44), ui.WHITE, 0, 40, width, 56)
+    y = 104
+    if subtitle <> "" then
+        sub1 = ui.text(content, subtitle, ui.font(400, 20), ui.NEUTRAL_400, 0, y, width, 28)
+        y = y + ui.textHeight(sub1, 28)
+    end if
+    y = y + 32
+
+    if m.state = "starting" or m.state = "waiting" then
+        y = renderWaiting(content, y, width)
+    else if m.state = "received" or m.state = "connecting" then
+        y = renderReceived(content, y, width)
+    else if m.state = "error" then
+        y = renderError(content, y, width)
+    end if
+
+    ' Botões (mt-8, gap-4): o principal do estado primeiro, como o PRIMARY_ID do web.
+    m.buttons = []
+    if m.state = "starting" or m.state = "waiting" then
+        m.buttons.push({ id: "pair-refresh", label: "Novo código", variant: "secondary" })
+        m.buttons.push({ id: "pair-manual", label: "Digitar manualmente", variant: "secondary" })
+    else if m.state = "expired" then
+        m.buttons.push({ id: "pair-refresh", label: "Gerar novo código", variant: "primary" })
+        m.buttons.push({ id: "pair-manual", label: "Digitar manualmente", variant: "secondary" })
+    else if m.state = "received" then
+        m.buttons.push({ id: "pair-accept", label: "Adicionar", variant: "primary" })
+        m.buttons.push({ id: "pair-discard", label: "Descartar", variant: "secondary" })
+    else if m.state = "connecting" then
+        m.buttons.push({ id: "pair-busy", label: "Conectando...", variant: "primary", loading: true })
+    else if m.state = "error" then
+        retry = "Enviar de novo"
+        if m.errorKind = "unavailable" then retry = "Tentar de novo"
+        m.buttons.push({ id: "pair-retry", label: retry, variant: "primary" })
+        m.buttons.push({ id: "pair-manual", label: "Digitar manualmente", variant: "secondary" })
+    end if
+    x = 0
+    for each spec in m.buttons
+        button = content.createChild("PulseButton")
+        button.variant = spec.variant
+        button.loading = spec.loading = true
+        button.text = spec.label
+        button.translation = [x, y]
+        spec.node = button
+        x = x + button.buttonWidth + 16
+    end for
+    if m.focusIndex >= m.buttons.count() then m.focusIndex = 0
+    contentHeight = y + 50
+
+    cardHeight = 2 + 2 * PAD_Y + contentHeight
+    cardX = (1920 - CARD_W) / 2
+    cardY = (1080 - cardHeight) / 2
+    ui.panel(m.card, "dialog", cardX, cardY, CARD_W, cardHeight)
+    content.translation = [cardX + 1 + PAD_X, cardY + 1 + PAD_Y]
+    m.card.appendChild(content)
+    renderFocus()
+end sub
+
+' QR (fundo branco, margem de 4 módulos) e, ao lado, o endereço, o código e o prazo.
+function renderWaiting(parent as object, y as float, width as float) as float
+    if m.qrRows <> invalid then
+        size = m.qrRows.count()
+        module = Int(QR_BOX / (size + 8))
+        side = module * (size + 8)
+        offset = Int((QR_BOX - side) / 2)
+        white = parent.createChild("Rectangle")
+        white.color = ui.WHITE
+        white.translation = [offset, y + offset]
+        white.width = side
+        white.height = side
+        ' Um retângulo por trecho escuro de cada linha (bem menos nós que um por módulo).
+        for r = 0 to size - 1
+            line = m.qrRows[r]
+            c = 0
+            while c < size
+                if Mid(line, c + 1, 1) = "1" then
+                    span = 1
+                    while c + span < size and Mid(line, c + span + 1, 1) = "1"
+                        span = span + 1
+                    end while
+                    dark = parent.createChild("Rectangle")
+                    dark.color = ui.BLACK
+                    dark.translation = [offset + (c + 4) * module, y + offset + (r + 4) * module]
+                    dark.width = span * module
+                    dark.height = module
+                    c = c + span
+                else
+                    c = c + 1
+                end if
+            end while
+        end for
+    else
+        ui.panel(parent, "card", 0, y, QR_BOX, QR_BOX)
+        if m.state = "starting" then
+            wait = ui.text(parent, "Gerando o código…", ui.font(400, 20), ui.NEUTRAL_400, 0, y + QR_BOX / 2 - 14, QR_BOX, 28)
+            wait.horizAlign = "center"
+        end if
+    end if
+    if m.code <> "" then
+        x = QR_BOX + 40
+        columnW = width - x
+        ui.text(parent, "ou abra no celular", ui.font(400, 20), ui.NEUTRAL_500, x, y + 4, columnW, 28)
+        url = ui.text(parent, phonePairing.displayUrl(m.base, m.code), ui.monoFont(28), ui.ACCENT_SOFT, x, y + 36, columnW, 36)
+        top = y + 36 + ui.textHeight(url, 36) + 24
+        ui.text(parent, "código", ui.font(400, 20), ui.NEUTRAL_500, x, top, columnW, 28)
+        ui.trackedText(parent, m.code, ui.monoFont(64), ui.WHITE, x, top + 32, 19)
+        dot = ui.panelImage(parent, "circle.png", x, top + 140, 12, 12)
+        dot.blendColor = ui.ACCENT
+        m.timeLabel = ui.text(parent, "Aguardando · válido por " + utils.formatTime(m.secondsLeft), ui.font(400, 20), ui.TEXT_COLOR, x + 20, top + 132, columnW - 20, 28)
+    end if
+    return y + QR_BOX + 32
+end function
+
+' Servidor, apelido e o selo SEM CRIPTOGRAFIA (nunca a senha nem o endereço completo).
+function renderReceived(parent as object, y as float, width as float) as float
+    frame = ui.panel(parent, "card", 0, y, width, 0)
+    ui.text(parent, "Servidor", ui.font(400, 20), ui.NEUTRAL_500, 24, y + 20, width - 48, 28)
+    host = ui.text(parent, m.received.host, ui.font(800, 36), ui.WHITE, 24, y + 50, width - 48, 44)
+    bottom = y + 50 + ui.textHeight(host, 44)
+    if m.received.label <> "" or m.received.insecure then
+        x = 24
+        if m.received.label <> "" then
+            label = ui.inlineText(parent, "Apelido: " + m.received.label, ui.font(400, 20), ui.NEUTRAL_400, x, bottom + 8, 28)
+            x = x + label.boundingRect().width + 12
+        end if
+        if m.received.insecure then
+            badge = ui.panel(parent, "badge-warn", x, bottom + 6, 10, 32)
+            letters = ui.inlineText(parent, "SEM CRIPTOGRAFIA", ui.font(700, 20), AMBER, x + 8, bottom + 8, 28)
+            badge.width = letters.boundingRect().width + 16
+        end if
+        bottom = bottom + 44
+    end if
+    frame.height = bottom + 20 - y
+    return bottom + 20 + 32
+end function
+
+' Caixa de erro do login: border-2 red-500/60, mensagem em semibold e a "Causa técnica" em mono.
+function renderError(parent as object, y as float, width as float) as float
+    bg = ui.panel(parent, "error-box", 0, y, width, 0)
+    message = ui.text(parent, m.error, ui.font(600, 20), ui.RED_300, 26, y + 18, width - 52, 28)
+    height = 2 + 16 + ui.textHeight(message, 28)
+    if m.errorDetail <> "" then
+        detail = ui.text(parent, "Causa técnica: " + m.errorDetail, ui.monoFont(20), ui.RED_300, 26, y + height + 10, width - 52, 28)
+        height = height + 10 + ui.textHeight(detail, 28)
+    end if
+    height = height + 16 + 2
+    bg.height = height
+    return y + height + 32
+end function
+
+sub renderFocus()
+    for i = 0 to m.buttons.count() - 1
+        m.buttons[i].node.focused = i = m.focusIndex
+    end for
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" then
+        ' Aberta pelo gerenciador, a cena tira a tela: a consulta para aqui. Na raiz a cena só pergunta se quer sair,
+        ' e a espera continua se a pessoa ficar.
+        if m.fromList then
+            stopTimers()
+            m.run = m.run + 1
+        end if
+        return false
+    end if
+    if key = "left" and m.focusIndex > 0 then m.focusIndex = m.focusIndex - 1
+    if key = "right" and m.focusIndex < m.buttons.count() - 1 then m.focusIndex = m.focusIndex + 1
+    renderFocus()
+    if key = "OK" and m.buttons.count() > 0 then
+        id = m.buttons[m.focusIndex].id
+        if id = "pair-refresh" or id = "pair-retry" or id = "pair-discard" then start()
+        if id = "pair-manual" then manual()
+        if id = "pair-accept" then confirm()
+    end if
+    return true
+end function

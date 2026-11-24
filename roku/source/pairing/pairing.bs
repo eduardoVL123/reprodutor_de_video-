@@ -1,0 +1,112 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/config.bs"
+' Adicionar lista pelo celular, lado da TV: port de src/services/pairingApi.js e das regras de
+' src/composables/usePairing.js (casos em phonePairing.spec.bs). A Roku não tem ECDH: a sessão é "plain" e o celular manda
+' a lista em base64url, protegida pelo TLS e pelo segredo que só esta TV conhece (docs/roku/domains/09-pareamento-inbox.md).
+' Transporte: { send(method, url, timeoutMs, headers, body) → { status, body } ou { error } } (net.urlTransport).
+namespace phonePairing
+
+    const POLL_INTERVAL_S = 2
+    const MAX_POLL_FAILURES = 5
+    const REQUEST_TIMEOUT_MS = 15000
+    const UNAVAILABLE_MESSAGE = "Não consegui falar com o serviço de pareamento. Você ainda pode digitar o endereço pelo controle."
+    const BUSY_MESSAGE = "Muitas tentativas seguidas. Aguarde um minuto e tente de novo."
+    const BAD_DATA_MESSAGE = "Não foi possível abrir os dados recebidos. Gere um novo código e envie de novo."
+
+    ' Endereço do serviço sem a barra final; vazio = o recurso não existe (o login fica só com a digitação).
+    function normalizeBase(raw as dynamic) as string
+        return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(raw, "").trim(), "")
+    end function
+
+    function pageUrl(base as string, code as string) as string
+        return base + "/" + code
+    end function
+
+    ' O mesmo endereço sem o protocolo, curto o bastante para ler na TV.
+    function displayUrl(base as string, code as string) as string
+        return CreateObject("roRegex", "^https?:\/\/", "i").replaceAll(phonePairing.pageUrl(base, code), "")
+    end function
+
+    ' Onde se entra numa lista: com o serviço configurado, o painel do celular primeiro (o foco do Login.vue é do
+    ' PairPanel); "Digitar manualmente" abre o formulário por cima.
+    function loginScreen() as string
+        if config.pairingEnabled() then return "PairScreen"
+        return "LoginScreen"
+    end function
+
+    function messageFor(code as string) as string
+        if code = "BUSY" then return phonePairing.BUSY_MESSAGE
+        if code = "EXPIRED" then return "O código expirou. Gere um novo código."
+        return phonePairing.UNAVAILABLE_MESSAGE
+    end function
+
+    ' { code, secret, expiresIn } ou { error: "UNAVAILABLE" | "BUSY" }.
+    function createSession(transport as object, base as string) as object
+        if base = "" then return { error: "UNAVAILABLE" }
+        res = transport.send("POST", base + "/v1/sessions", phonePairing.REQUEST_TIMEOUT_MS, { "Content-Type": "application/json" }, FormatJson({ plain: true }))
+        if res.error <> invalid then return { error: "UNAVAILABLE" }
+        if res.status = 429 then return { error: "BUSY" }
+        if res.status <> 201 then return { error: "UNAVAILABLE" }
+        data = ParseJson(utils.textOr(res.body, ""))
+        if not utils.isObject(data) or not utils.isString(data.code) or not utils.isString(data.secret) or not utils.isNumber(data.expiresIn) then return { error: "UNAVAILABLE" }
+        return { code: data.code, secret: data.secret, expiresIn: Int(data.expiresIn) }
+    end function
+
+    ' { status: "pending" } | { status: "ready", box } | { error: "EXPIRED" | "BUSY" | "UNAVAILABLE" }.
+    function pollSession(transport as object, base as string, code as string, secret as string) as object
+        res = transport.send("GET", base + "/v1/sessions/" + code + "/payload", phonePairing.REQUEST_TIMEOUT_MS, { "X-Pair-Secret": secret }, "")
+        if res.error <> invalid then return { error: "UNAVAILABLE" }
+        if res.status = 204 then return { status: "pending" }
+        if res.status = 404 then return { error: "EXPIRED" }
+        if res.status = 429 then return { error: "BUSY" }
+        if res.status <> 200 then return { error: "UNAVAILABLE" }
+        data = ParseJson(utils.textOr(res.body, ""))
+        if not utils.isObject(data) or not utils.isString(data.box) then return { error: "UNAVAILABLE" }
+        return { status: "ready", box: data.box }
+    end function
+
+    ' O que veio do celular: { dns, username, password, label } (textos), ou invalid se não abre.
+    function openBox(payload as string) as dynamic
+        if not CreateObject("roRegex", "^[A-Za-z0-9_-]+$", "").isMatch(payload) then return invalid
+        base64 = payload.replace("-", "+").replace("_", "/")
+        while Len(base64) mod 4 <> 0
+            base64 = base64 + "="
+        end while
+        bytes = CreateObject("roByteArray")
+        bytes.fromBase64String(base64)
+        data = ParseJson(bytes.toAsciiString())
+        if not utils.isObject(data) or not utils.isString(data.dns) then return invalid
+        return { dns: data.dns, username: utils.textOr(data.username, ""), password: utils.textOr(data.password, ""), label: utils.textOr(data.label, "") }
+    end function
+
+    ' describeList: servidor (host:porta) e se é sem criptografia, pela regra do login; invalid se o endereço não vale.
+    function describeList(dns as string) as dynamic
+        normalized = xtream.normalizeBaseUrl(dns)
+        if normalized.error <> invalid then return invalid
+        url = xtream.parseUrl(normalized.url)
+        if url = invalid then return invalid
+        host = url.hostname
+        if utils.textOr(url.port, "") <> "" then host = host + ":" + url.port
+        return { host: host, insecure: url.protocol = "http:" }
+    end function
+
+    ' pollOnce: o próximo estado depois de uma consulta. { state: "waiting" | "received" | "expired" | "error", failures,
+    ' list?, received?, error? }. Falha passageira não derruba a espera; MAX_POLL_FAILURES seguidas viram erro.
+    function afterPoll(failures as integer, result as object) as object
+        if result.error = "EXPIRED" then return { state: "expired", failures: 0 }
+        if result.error <> invalid then
+            failures = failures + 1
+            if failures >= phonePairing.MAX_POLL_FAILURES then return { state: "error", kind: "unavailable", failures: failures, error: phonePairing.messageFor(result.error) }
+            return { state: "waiting", failures: failures }
+        end if
+        if result.status <> "ready" then return { state: "waiting", failures: 0 }
+        list = phonePairing.openBox(result.box)
+        described = invalid
+        if list <> invalid then described = phonePairing.describeList(list.dns)
+        if described = invalid then return { state: "error", kind: "badData", failures: 0, error: phonePairing.BAD_DATA_MESSAGE }
+        ' A tela recebe só servidor, apelido e se é http; a senha fica na lista guardada para o login.
+        return { state: "received", failures: 0, list: list, received: { host: described.host, label: list.label, insecure: described.insecure } }
+    end function
+
+end namespace

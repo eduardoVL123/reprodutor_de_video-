@@ -10,6 +10,7 @@ import "pkg:/source/net/maskSecrets.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/device/errorLog.bs"
 import "pkg:/source/account/account.bs"
+import "pkg:/source/pairing/pairing.bs"
 import "pkg:/source/profiles/profiles.bs"
 
 sub init()
@@ -41,7 +42,7 @@ end sub
 function initialScreen() as string
     store = storage.create()
     if not ftue.isAccepted(store.get(ftue.STORAGE_KEY)) then return "FtueScreen"
-    if session.hydrate(store) = invalid then return "LoginScreen"
+    if session.hydrate(store) = invalid then return phonePairing.loginScreen()
     return "HomeScreen"
 end function
 
