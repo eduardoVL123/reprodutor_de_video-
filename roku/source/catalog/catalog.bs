@@ -19,6 +19,7 @@ namespace catalog
 
     const DEFAULT_DIR = "cachefs:/catalog"
     const CHUNK_SIZE = 500
+    const HEAD_ITEMS = 40 ' começo de cada categoria guardado no modo pelo servidor (fileiras de 15 e a 1ª página da grade)
     const ALL_CATEGORIES = "all"
     ' Sobe quando o formato dos itens salvos muda: catálogos antigos são baixados de novo.
     const CATALOG_VERSION = 4
@@ -293,6 +294,7 @@ namespace catalog
         end while
         CreateDirectory(dir)
         CreateDirectory(path)
+        if remoteOk then catalog.writeProvisional(dir, section, categories, streams)
         total = streams.count()
         chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
         free = budget
@@ -376,22 +378,24 @@ namespace catalog
     ' categoria) para a busca. A tela pede páginas como sempre: getItems busca no servidor só a categoria da página
     ' (get_*_streams&category_id) e guarda as últimas em tmp:.
 
-    sub saveRemote(dir as string, section as string, categories as object, streams as object, budget as double)
-        path = catalog.sectionDir(dir, section)
-        catalog.deleteTree(path)
-        CreateDirectory(path)
+    ' Itens por categoria e a ordem de "Todos" pelo servidor: a da lista de categorias, depois as que só aparecem nos itens.
+    ' heads: os HEAD_ITEMS primeiros itens crus de cada categoria (as fileiras e a 1ª página da grade sem ir ao servidor).
+    function remoteSummary(categories as object, streams as object) as object
         counts = {}
         counts.setModeCaseSensitive()
+        heads = {}
+        heads.setModeCaseSensitive()
         for each raw in streams
             for each cat in catalog.categoriesOf(raw)
                 if counts.doesExist(cat) then
                     counts[cat] = counts[cat] + 1
+                    if counts[cat] <= catalog.HEAD_ITEMS then heads[cat].push(raw)
                 else
                     counts[cat] = 1
+                    heads[cat] = [raw]
                 end if
             end for
         end for
-        ' A ordem de "Todos": a da lista de categorias, depois as que só aparecem nos itens.
         order = []
         seen = {}
         seen.setModeCaseSensitive()
@@ -406,6 +410,54 @@ namespace catalog
         for each id in counts
             if not seen.doesExist(id) and id <> "none" then order.push(id)
         end for
+        return { counts: counts, order: order, heads: heads }
+    end function
+
+    ' Grava o começo de cada categoria já normalizado (heads.json), para remoteItems servir sem rede.
+    function writeHeads(dir as string, section as string, heads as object) as boolean
+        packed = {}
+        for each cat in heads
+            items = []
+            for each raw in heads[cat]
+                items.push(catalog.normalizeItem(raw, section))
+            end for
+            packed[cat] = catalog.packChunk(items)
+        end for
+        return WriteAsciiFile(catalog.sectionDir(dir, section) + "/heads.json", FormatJson(packed))
+    end function
+
+    ' Itens [skip, skip+count) de uma categoria se o começo guardado cobre o pedido (ou a categoria inteira); senão invalid.
+    function headItems(heads as dynamic, section as string, cat as string, total as integer, skip as integer, count as integer) as dynamic
+        if not utils.isObject(heads) or not utils.isObject(heads[cat]) then return invalid
+        items = catalog.unpackChunk(heads[cat], section)
+        if skip + count > items.count() and items.count() < total then return invalid
+        result = []
+        for i = skip to items.count() - 1
+            if result.count() >= count then exit for
+            result.push(items[i])
+        end for
+        return result
+    end function
+
+    ' Ficha "pelo servidor" enquanto os blocos são gravados (numa lista grande, minutos): quem abrir a seção nesse tempo
+    ' (a aba Filmes) não espera o disco, busca no servidor só as categorias da tela. A ficha final a substitui no fim.
+    sub writeProvisional(dir as string, section as string, categories as object, streams as object)
+        path = catalog.sectionDir(dir, section)
+        summary = catalog.remoteSummary(categories, streams)
+        total = streams.count()
+        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: total, total: total, truncated: false, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/search.json", "[]") and catalog.writeHeads(dir, section, summary.heads)
+        if ok then WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+    end sub
+
+    sub saveRemote(dir as string, section as string, categories as object, streams as object, budget as double)
+        path = catalog.sectionDir(dir, section)
+        catalog.deleteTree(path)
+        CreateDirectory(path)
+        summary = catalog.remoteSummary(categories, streams)
+        counts = summary.counts
+        order = summary.order
+        catalog.writeHeads(dir, section, summary.heads)
 
         total = streams.count()
         free = budget
@@ -502,17 +554,23 @@ namespace catalog
             walk.push(categoryId)
         end if
         skip = start
+        heads = catalog.readJsonFile(catalog.sectionDir(ctx.dir, section) + "/heads.json")
         for each cat in walk
             n = meta.counts[cat]
             if n = invalid then n = 0
             if skip >= n then
                 skip = skip - n
             else
-                items = catalog.fetchCategory(transport, ctx, section, cat)
-                for i = skip to items.count() - 1
-                    if result.count() >= count then exit for
-                    result.push(items[i])
-                end for
+                fromHead = catalog.headItems(heads, section, cat, n, skip, count - result.count())
+                if fromHead <> invalid then
+                    result.append(fromHead)
+                else
+                    items = catalog.fetchCategory(transport, ctx, section, cat)
+                    for i = skip to items.count() - 1
+                        if result.count() >= count then exit for
+                        result.push(catalog.normalizeItem(items[i], section))
+                    end for
+                end if
                 skip = 0
                 if result.count() >= count then exit for
             end if
@@ -520,13 +578,14 @@ namespace catalog
         return result
     end function
 
-    ' Uma categoria do servidor, normalizada como o catálogo grava; as últimas ficam em tmp: (some ao fechar o app).
+    ' Uma categoria do servidor, com os itens como vieram (normalizar só a página que vai para a tela: a categoria
+    ' inteira levava ~2 s por fileira); as últimas ficam em tmp: (some ao fechar o app).
     function fetchCategory(transport as object, ctx as object, section as string, categoryId as string) as object
         cacheDir = "tmp:/pulse-remote"
         CreateDirectory(cacheDir)
         file = cacheDir + "/" + xtream.hashText(ctx.dir + "|" + section + "|" + categoryId) + ".json"
         cached = catalog.readJsonFile(file)
-        if utils.isObject(cached) then return catalog.unpackChunk(cached, section)
+        if GetInterface(cached, "ifArray") <> invalid then return cached
         names = catalog.actions(section)
         response = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: names.streams, params: { category_id: categoryId }, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
         if response.error <> invalid or GetInterface(response.data, "ifArray") = invalid then return []
@@ -537,7 +596,7 @@ namespace catalog
         for each raw in list
             for each cat in catalog.categoriesOf(raw)
                 if cat = categoryId then
-                    items.push(catalog.normalizeItem(raw, section))
+                    items.push(raw)
                     exit for
                 end if
             end for
@@ -549,7 +608,7 @@ namespace catalog
                 DeleteFile(cacheDir + "/" + name)
             end for
         end if
-        WriteAsciiFile(file, FormatJson(catalog.packChunk(items)))
+        WriteAsciiFile(file, FormatJson(items))
         return items
     end function
 
@@ -797,6 +856,10 @@ namespace catalog
         clock = CreateObject("roTimespan")
         while true
             current = m.global.getField(field)
+            ' A dona ainda grava, mas a ficha provisória já está no disco: a seção abre sem esperar (writeProvisional).
+            if current <> "" and not force and catalog.getMeta(ctx.dir, section) <> invalid then
+                return { ok: true, error: "", errorDetail: "", list: catalog.publishList(ctx.dir, section) }
+            end if
             if current <> seen then
                 seen = current
                 clock.mark()

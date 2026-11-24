@@ -192,12 +192,38 @@ namespace tests
             m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 0)
         end function
 
+        @it("ficha provisória: enquanto os blocos gravam a seção já abre pelo servidor; no fim fica a do disco")
+        function _()
+            streams = tests.numberedStreams(30)
+            categories = [{ category_id: "2", category_name: "B" }, { category_id: "1", category_name: "A" }]
+            catalog.deleteTree(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            CreateDirectory(tests.CATALOG_DIR)
+            CreateDirectory(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            catalog.writeProvisional(tests.CATALOG_DIR, "vod", categories, streams)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertTrue(catalog.isRemote(meta))
+            m.assertTrue(meta.provisional)
+            m.assertEqual(meta.order, ["2", "1"])
+            list = catalog.publishList(tests.CATALOG_DIR, "vod")
+            m.assertEqual(list[0].count, 30)
+            m.assertEqual(list[1].count, 15)
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 0)
+
+            catalog.saveSection(tests.CATALOG_DIR, "vod", categories, streams)
+            final = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertFalse(catalog.isRemote(final))
+            m.assertEqual(final.count, 30)
+            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 30)
+        end function
+
         @it("pelo servidor: a página baixa só as categorias que toca, na ordem, sem as fora da vista, e guarda em tmp:")
         function _()
             catalog.deleteTree("tmp:/pulse-remote")
             streams = tests.numberedStreams(6)
             catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
             meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            ' Sem o começo guardado (heads.json): tudo vem do servidor.
+            DeleteFile(catalog.sectionDir(tests.CATALOG_DIR, "vod") + "/heads.json")
             base = "http://srv.test/player_api.php?username=u&password=p&action=get_vod_streams&category_id="
             t = tests.fakeTransport([
                 { prefix: base + "1", response: tests.jsonResponse([{ stream_id: 1, name: "Um", category_id: "1" }, { stream_id: 3, name: "Três", category_id: "1" }, { stream_id: 5, name: "Cinco", category_id: "1" }]) },
@@ -214,6 +240,26 @@ namespace tests
             m.assertEqual(item.section, "vod")
             m.assertEqual(item.container_extension, "mp4")
             catalog.deleteTree("tmp:/pulse-remote")
+        end function
+
+        @it("pelo servidor: fileiras e 1ª página saem do começo guardado de cada categoria, sem ir ao servidor")
+        function _()
+            catalog.deleteTree("tmp:/pulse-remote")
+            streams = tests.numberedStreams(200)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            t = tests.fakeTransport([])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: "http://srv.test", credentials: { username: "u", password: "p" } }
+            ' Categoria "2" = itens pares, na ordem da lista.
+            m.assertEqual(tests.ids(catalog.remoteItems(t, ctx, "vod", "2", 0, 3, [], meta)), [2, 4, 6])
+            m.assertEqual(tests.ids(catalog.remoteItems(t, ctx, "vod", catalog.ALL_CATEGORIES, 36, 4, [], meta)), [73, 75, 77, 79])
+            item = catalog.remoteItems(t, ctx, "vod", "1", 0, 1, [], meta)[0]
+            m.assertEqual(item.section, "vod")
+            m.assertEqual(item.container_extension, "mp4")
+            m.assertEqual(t.calls.count(), 0)
+            ' Passou do começo guardado (40) numa categoria com 100: aí vai ao servidor.
+            catalog.remoteItems(t, ctx, "vod", "2", 35, 10, [], meta)
+            m.assertEqual(t.calls.count(), 1)
         end function
 
         @it("pelo servidor com espaço para a busca: o índice leve cobre a lista toda")
