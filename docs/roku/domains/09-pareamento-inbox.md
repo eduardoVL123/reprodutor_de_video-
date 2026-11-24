@@ -1,6 +1,6 @@
 # D9 — Pareamento pelo celular e inbox do site
 
-**Status (2026-11-24)**: passo 2 feito, sem a resposta da Roku ao passo 1 (Q3). Sessão `plain` no servidor
+**Status (2026-11-24)**: passo 2 feito; passo 1 (Q3) decidido: seguir sem a resposta da Roku. Sessão `plain` no servidor
 (`server/pair/pair-core.mjs`, a página manda base64url pelo `PairLib.wrapPlain`); na Roku `roku/source/pairing/`
 (`pairing.bs` + `qr.bs`, QR igual ao do `qrcode-generator`), `PairTask` e `PairScreen` (primeira tela sem sessão e
 "Enviar pelo celular" no gerenciador). Liga com `PULSE_PAIR_BASE_URL` no build (`node scripts/roku.mjs config`). O
@@ -30,6 +30,8 @@ texto de privacidade da Roku diz que a lista passa pelo serviço sem cifra de po
 ## Passos
 
 ### 1. Confirmar com a Roku (Q3)
+**Decisão do Eduardo (2026-11-24): seguir sem esperar a resposta.** Se a Roku recusar na certificação, o build da Roku
+sai sem `PULSE_PAIR_BASE_URL` e o app volta a só aceitar digitação/voz, sem mudar código.
 **Objetivo do usuário (2026-11-18): manter o envio pelo celular e a inbox do site na Roku.** Argumento para a Roku: é
 só uma forma de digitar os dados da lista (que o usuário também pode digitar na TV); não autentica conta, não ativa
 licença e não leva a pagamento. Para reforçar: a tela de pareamento não mostra preço, plano nem site de vendas, e a

@@ -98,6 +98,8 @@
       var keyRes = await fetch('/v1/sessions/' + code)
       if (!keyRes.ok) return fail(statusKey(keyRes.status))
       var session = await keyRes.json()
+      // Só a sessão com chave precisa de WebCrypto (https); a da Roku (plain) vai em base64url.
+      if (!session.plain && !canEncrypt) return fail('errCrypto')
       var list = {
         dns: link,
         username: $('user').value.trim(),
@@ -122,12 +124,8 @@
   }
 
   $('code').value = lib.normalizeCode(location.pathname.replace(/^\//, ''))
-  if (!canEncrypt) {
-    fail('errCrypto')
-    send.disabled = true
-  }
   form.addEventListener('submit', function (event) {
     event.preventDefault()
-    if (canEncrypt) submit()
+    submit()
   })
 })()
