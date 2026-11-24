@@ -43,12 +43,30 @@ namespace catalog
         }
     end function
 
+    ' Regex da busca compiladas uma vez por thread: compilar 20 por título levava minutos para gravar 30 mil filmes.
+    function textRegexes() as object
+        if m.catalogTextRegexes <> invalid then return m.catalogTextRegexes
+        accents = []
+        table = catalog.accentTable()
+        for each base in table
+            accents.push({ base: base, regex: CreateObject("roRegex", "[" + table[base] + "]", "") })
+        end for
+        m.catalogTextRegexes = {
+            accents: accents,
+            nonAscii: CreateObject("roRegex", "[^\x00-\x7F]", ""),
+            nonWord: CreateObject("roRegex", "[^0-9a-z\x{0370}-\x{1FFF}\x{2C00}-\x{D7FF}\x{F900}-\x{FDFF}]+", "")
+        }
+        return m.catalogTextRegexes
+    end function
+
     ' Remove acentos e passa para minúsculas, sem mexer na pontuação.
     function foldText(text as dynamic) as string
         folded = LCase(utils.textOr(text, ""))
-        table = catalog.accentTable()
-        for each base in table
-            folded = CreateObject("roRegex", "[" + table[base] + "]", "").replaceAll(folded, base)
+        regexes = catalog.textRegexes()
+        ' Todos os acentos da tabela estão fora do ASCII: título sem acento (a maioria) não precisa das trocas.
+        if not regexes.nonAscii.isMatch(folded) then return folded
+        for each accent in regexes.accents
+            folded = accent.regex.replaceAll(folded, accent.base)
         end for
         return folded
     end function
@@ -56,8 +74,7 @@ namespace catalog
     ' Forma canônica para busca: "Homem-Aranha: Longe de Casa" => "homem aranha longe de casa". Mantém letras
     ' latinas sem acento, dígitos e alfabetos não latinos (grego, cirílico, CJK...); o resto vira espaço.
     function normalizeText(text as dynamic) as string
-        nonWord = CreateObject("roRegex", "[^0-9a-z\x{0370}-\x{1FFF}\x{2C00}-\x{D7FF}\x{F900}-\x{FDFF}]+", "")
-        return nonWord.replaceAll(catalog.foldText(text), " ").trim()
+        return catalog.textRegexes().nonWord.replaceAll(catalog.foldText(text), " ").trim()
     end function
 
     ' ---------- Arquivos ----------
@@ -154,13 +171,13 @@ namespace catalog
                     value = item[field]
                     extras.delete(field)
                     if field = "stream_icon" and utils.isString(value) then
+                        ' Última "/" saltando de barra em barra (o Mid letra a letra pesava em 30 mil capas).
                         cut = 0
-                        for i = Len(value) to 1 step -1
-                            if Mid(value, i, 1) = "/" then
-                                cut = i
-                                exit for
-                            end if
-                        end for
+                        at = Instr(1, value, "/")
+                        while at > 0
+                            cut = at
+                            at = Instr(at + 1, value, "/")
+                        end while
                         if cut > 0 then
                             head = Left(value, cut)
                             if not prefixIndex.doesExist(head) then
