@@ -12,6 +12,11 @@ namespace tests
         return list
     end function
 
+    ' hooks.progress dos testes: guarda a fração em % inteiro (Float não compara exato).
+    sub recordProgress(fraction as float)
+        GetGlobalAA().savedProgress.push(Int(fraction * 100 + 0.5))
+    end sub
+
     function ids(items as object) as object
         result = []
         for each item in items
@@ -296,6 +301,10 @@ namespace tests
             m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 498, 10, [])), [499, 500])
             m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 500)
             m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 500)
+            ' Progresso da gravação (onProgress do saveSection web): a fração a cada bloco gravado.
+            GetGlobalAA().savedProgress = []
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, -1, false, { progress: tests.recordProgress })
+            m.assertEqual(GetGlobalAA().savedProgress, [33, 67, 100])
             ' Nem um chunk cabe: a seção fica vazia mas com o resumo (não baixa de novo em laço).
             catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, 10, false)
             m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 0)

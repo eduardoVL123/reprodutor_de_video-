@@ -78,6 +78,7 @@ end sub
 sub load(force as boolean)
     m.state = "loading"
     m.loadingStep = ""
+    m.loadingPercent = 0
     render()
     requestData({ mode: "open", force: force })
 end sub
@@ -111,6 +112,11 @@ sub onResult(event as object)
         if m.state = "loading" then renderContent()
         return
     end if
+    if data.mode = "progress" then
+        m.loadingPercent = data.percent
+        if m.state = "loading" then renderContent()
+        return
+    end if
     if data.mode = "open" then
         if not data.ok then
             m.state = "error"
@@ -125,6 +131,7 @@ sub onResult(event as object)
             m.rows = withFavoritesRow(data.rows)
             m.heroItem = data.heroItem
             m.heroInfo = invalid
+            m.notice = utils.textOr(data.notice, "")
             if not isFocusIn("cat-") then m.focusId = "cat-" + activeCategoryIndex().toStr()
         end if
         render()
@@ -305,6 +312,13 @@ sub renderContent()
         if utils.textOr(m.loadingStep, "") <> "" then loadingText = m.loadingStep
         label = ui.inlineText(m.scrollGroup, loadingText, ui.font(400, 24), NEUTRAL_300, 0, 560, 39)
         label.translation = [SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - label.boundingRect().width) / 2, label.translation[1]]
+        ' Barra da gravação (w-[30rem] h-2, bg-white/10 e o limão), 24 px abaixo do texto (gap-6).
+        if m.loadingPercent > 0 then
+            barX = SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - 480) / 2
+            ui.panel(m.scrollGroup, "loading-track", barX, 623, 480, 8)
+            fillWidth = Int(480 * m.loadingPercent / 100)
+            if fillWidth >= 8 then ui.panel(m.scrollGroup, "progress-fill", barX, 623, fillWidth, 8)
+        end if
         m.contentHeight = CONTENT_HEIGHT
         return
     end if
@@ -333,6 +347,10 @@ sub renderContent()
     if m.section <> "live" and m.heroItem <> invalid then
         renderHero()
         y = CONTENT_TOP + 448 + 16
+    end if
+    if utils.textOr(m.notice, "") <> "" then
+        ui.text(m.scrollGroup, m.notice, ui.font(400, 20), ui.NEUTRAL_400, 176, y, SECTION_RIGHT - 176 - 24, 28)
+        y = y + 28 + 24
     end if
     if m.rows.count() = 0 then
         renderEmpty(y)

@@ -290,6 +290,13 @@ namespace catalog
         notify(text)
     end sub
 
+    ' Fração gravada (0–1) a cada bloco: a barra da tela de carregamento (onProgress do saveSection web).
+    sub reportProgress(hooks as dynamic, fraction as float)
+        if hooks = invalid or hooks.progress = invalid then return
+        notify = hooks.progress
+        notify(fraction)
+    end sub
+
     sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, remoteOk = true as boolean, hooks = invalid as dynamic)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
@@ -343,6 +350,7 @@ namespace catalog
             written = last + 1
             writtenChunks = n + 1
             names.append(chunkNames)
+            catalog.reportProgress(hooks, (n + 1) / chunkCount)
         end for
 
         ' Índices só com o que coube; se ainda faltar espaço para eles, o último chunk sai e tenta de novo.
@@ -836,14 +844,19 @@ namespace catalog
     end function
 
     ' Playlist M3U: uma leitura grava as três seções (M3U não tem séries: a seção fica vazia).
-    function importM3u(transport as object, ctx as object) as dynamic
+    ' hooks vão só para a seção que a tela pediu (o progresso é por seção, como o status[section] do web).
+    function importM3u(transport as object, ctx as object, section = "" as string, hooks = invalid as dynamic) as dynamic
         fetched = xtream.fetchM3uText(transport, ctx.apiBase)
         if fetched.error <> invalid then return fetched.error
         read = xtream.readM3u(fetched.text)
         if read.error <> invalid then return read.error
         ' M3U não tem servidor por categoria: se não couber, ficam os itens que couberam.
-        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, false)
-        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, false)
+        liveHooks = invalid
+        if section = "live" then liveHooks = hooks
+        vodHooks = invalid
+        if section = "vod" then vodHooks = hooks
+        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, false, liveHooks)
+        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, false, vodHooks)
         catalog.saveSection(ctx.dir, "series", [], [])
         return invalid
     end function
@@ -899,6 +912,7 @@ namespace catalog
     ' hooks (opcional, funções chamadas na Task que carrega):
     '   parsed(section, categorias, itens crus): a lista recém-baixada, antes de gravar (o Início mostra a 1ª fileira);
     '   stage(texto): a etapa da carga (state.step do catalogStore), para a tela de carregamento;
+    '   progress(fração): quanto da seção já foi gravado (state.progress), a barra da tela de carregamento;
     '   provisional(section): a ficha provisória está no disco e a seção já abre (a aba não espera a gravação).
     function loadSection(transport as object, ctx as object, section as string, force as boolean, hooks = invalid as dynamic) as object
         meta = invalid
@@ -906,7 +920,7 @@ namespace catalog
         if meta = invalid then
             if ctx.type = "m3u" then
                 catalog.reportStage(hooks, "Baixando e processando a playlist M3U...")
-                err = catalog.importM3u(transport, ctx)
+                err = catalog.importM3u(transport, ctx, section, hooks)
                 if err <> invalid then return catalog.loadFailure(err, section)
             else
                 names = catalog.actions(section)
