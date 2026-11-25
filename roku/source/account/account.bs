@@ -33,6 +33,33 @@ namespace account
         return utils.pad2(date.getDayOfMonth()) + "/" + utils.pad2(date.getMonth()) + " " + utils.pad2(date.getHours()) + ":" + utils.pad2(date.getMinutes())
     end function
 
+    ' "dd/mm/aaaa" no fuso do aparelho (toLocaleDateString('pt-BR') do web).
+    function dateText(ms as dynamic) as string
+        date = CreateObject("roDateTime")
+        date.fromSeconds(Int(ms / 1000))
+        date.toLocalTime()
+        return utils.pad2(date.getDayOfMonth()) + "/" + utils.pad2(date.getMonth()) + "/" + date.getYear().toStr()
+    end function
+
+    ' Linha de status da Assinatura (status do AccountScreen.vue): { text, detail, ok }. state = licensing.loadSaved.
+    function licenseStatus(state as object) as object
+        access = utils.textOr(state.access, "")
+        if access = "trial" then
+            detail = ""
+            if state.trialEndsAt <> invalid and state.trialEndsAt > 0 then detail = "até " + account.dateText(state.trialEndsAt)
+            return { text: "Teste grátis", detail: detail, ok: true }
+        end if
+        if access = "activated" then
+            detail = "sem data de fim"
+            if state.activationEndsAt <> invalid then detail = "até " + account.dateText(state.activationEndsAt)
+            return { text: "Ativado", detail: detail, ok: true }
+        end if
+        if access = "partner" then return { text: "Liberado", detail: "", ok: true }
+        ' Na Roku a saída é assinar pelo Roku Pay; o web diz "ative o aparelho para voltar a assistir".
+        if access = "blocked" or access = "suspended" then return { text: "Bloqueado", detail: "assine para voltar a assistir", ok: false }
+        return { text: "Ainda não verificado", detail: "abra uma lista com internet", ok: false }
+    end function
+
     ' Parágrafos do diálogo: aviso, código e plataforma, e os últimos erros (já limpos pelo errorLog).
     function diagnosticsLines(errors as object, code as string, platform as string) as object
         if code = "" then code = "—"

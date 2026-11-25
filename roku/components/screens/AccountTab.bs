@@ -5,6 +5,9 @@ import "pkg:/source/account/account.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/device/device.bs"
+import "pkg:/source/license/licensing.bs"
 
 ' Medidas do AccountScreen.vue em px (1920×1080): coluna de 704 em x 664 (max-w-[56rem] centrado, px-24), linhas
 ' (.acc-row) de 72 com 1 px de borda do cartão, ícone em 24 e texto em 70 dentro da linha.
@@ -58,23 +61,52 @@ sub render()
     name.wrap = false
     addButton("acc-profile", "Trocar", 1253, 162, 90, 46)
 
-    heading("CONTEÚDO", 668, 262)
-    ui.panel(m.top, "acc-card", COL_X, 302, COL_W, 147)
-    addRow("acc-favorites", "icon-acc-heart", "Favoritos", 303, ui.WHITE, "")
+    ' Seções de baixo descem o que a Assinatura ocupar.
+    top = 262
+    if config.licenseEnabled() then top = renderLicense(top)
+
+    heading("CONTEÚDO", 668, top)
+    ui.panel(m.top, "acc-card", COL_X, top + 40, COL_W, 147)
+    addRow("acc-favorites", "icon-acc-heart", "Favoritos", top + 41, ui.WHITE, "")
     divider = m.top.createChild("Rectangle")
     divider.color = "0xFFFFFF12"
-    divider.translation = [681, 375]
+    divider.translation = [681, top + 113]
     divider.width = 670
     divider.height = 1
-    addRow("acc-lists", "icon-acc-lists", "Minhas listas", 376, ui.WHITE, m.listLabel)
+    addRow("acc-lists", "icon-acc-lists", "Minhas listas", top + 114, ui.WHITE, m.listLabel)
 
-    ui.panel(m.top, "acc-card", COL_X, 473, COL_W, 74)
-    addRow("acc-diagnostics", "icon-acc-info", "Diagnóstico", 474, ui.WHITE, "")
+    ui.panel(m.top, "acc-card", COL_X, top + 211, COL_W, 74)
+    addRow("acc-diagnostics", "icon-acc-info", "Diagnóstico", top + 212, ui.WHITE, "")
 
     ' A Roku deixa o app se fechar (canExitApp do web).
-    ui.panel(m.top, "acc-card", COL_X, 571, COL_W, 74)
-    addRow("acc-exit", "icon-acc-exit", "Sair do app", 572, EXIT_RED, "")
+    ui.panel(m.top, "acc-card", COL_X, top + 309, COL_W, 74)
+    addRow("acc-exit", "icon-acc-exit", "Sair do app", top + 310, EXIT_RED, "")
 end sub
+
+' Assinatura (AccountScreen.vue): ponto verde/vermelho, status com a data e o código do aparelho. Sem o botão de
+' renovar (o web também só o mostra no celular). Devolve o y da próxima seção.
+function renderLicense(top as float) as float
+    store = storage.create()
+    state = licensing.loadSaved(store, device.getDeviceKey(store))
+    status = account.licenseStatus(state)
+    heading("ASSINATURA", 668, top)
+    cardTop = top + 40
+    height = 20 + 36 + 20
+    if state.code <> "" then height = height + 12 + 36
+    ui.panel(m.top, "acc-card", COL_X, cardTop, COL_W, height)
+    dotImage = "badge-red"
+    if status.ok then dotImage = "badge-lime"
+    ui.panel(m.top, dotImage, 689, cardTop + 33, 10, 10)
+    label = ui.inlineText(m.top, status.text, ui.font(700, 24), ui.WHITE, 709, cardTop + 20, 36)
+    if status.detail <> "" then ui.inlineText(m.top, status.detail, ui.font(400, 20), ui.NEUTRAL_400, 709 + label.boundingRect().width + 8, cardTop + 23, 30)
+    if state.code <> "" then
+        codeTop = cardTop + 20 + 36 + 12
+        ui.text(m.top, "Código do aparelho", ui.font(400, 20), ui.NEUTRAL_400, 689, codeTop + 3, 320, 30)
+        code = ui.text(m.top, state.code, ui.monoFont(24), ui.WHITE, 1009, codeTop, 334, 36)
+        code.horizAlign = "right"
+    end if
+    return cardTop + height + 24
+end function
 
 ' .acc-title: uppercase, tracking 0.08em, 20 px bold.
 sub heading(value as string, x as float, y as float)

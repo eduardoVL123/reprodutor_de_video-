@@ -81,6 +81,22 @@ namespace tests
             m.assertTrue(CreateObject("roRegex", "^15/01 \d\d:\d\d$", "").isMatch(account.stamp(1800014400000&)))
         end function
 
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Assinatura")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("status como o AccountScreen.vue: teste e ativado com a data de fim, liberado, bloqueado e sem resposta")
+        function _()
+            m.assertEqual(account.licenseStatus({ access: "trial", trialEndsAt: 1800014400000&, activationEndsAt: invalid }), { text: "Teste grátis", detail: "até 15/01/2027", ok: true })
+            m.assertEqual(account.licenseStatus({ access: "activated", trialEndsAt: 0, activationEndsAt: 1800014400000& }), { text: "Ativado", detail: "até 15/01/2027", ok: true })
+            m.assertEqual(account.licenseStatus({ access: "activated", trialEndsAt: 0, activationEndsAt: invalid }), { text: "Ativado", detail: "sem data de fim", ok: true })
+            m.assertEqual(account.licenseStatus({ access: "partner", trialEndsAt: 0, activationEndsAt: invalid }), { text: "Liberado", detail: "", ok: true })
+            ' Na Roku a saída é assinar pelo Roku Pay (o web diz "ative o aparelho").
+            m.assertEqual(account.licenseStatus({ access: "blocked", trialEndsAt: 0, activationEndsAt: invalid }), { text: "Bloqueado", detail: "assine para voltar a assistir", ok: false })
+            m.assertEqual(account.licenseStatus({ access: "suspended", trialEndsAt: 0, activationEndsAt: invalid }).text, "Bloqueado")
+            m.assertEqual(account.licenseStatus({ access: "", trialEndsAt: 0, activationEndsAt: invalid }), { text: "Ainda não verificado", detail: "abra uma lista com internet", ok: false })
+        end function
+
     end class
 
 end namespace

@@ -13,6 +13,8 @@ import "pkg:/source/device/errorLog.bs"
 import "pkg:/source/account/account.bs"
 import "pkg:/source/pairing/pairing.bs"
 import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/device/device.bs"
+import "pkg:/source/license/licensing.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
@@ -166,7 +168,7 @@ sub onExitButton(event as object)
 end sub
 
 ' Diagnóstico (DiagnosticsDialog.vue): código do aparelho, plataforma e os últimos erros guardados só aqui.
-' Sem licença (D8) o código fica "—".
+' Sem licença confirmada o código fica "—".
 sub showDiagnostics()
     errors = errorLog.read(storage.create())
     dialog = m.top.dialog
@@ -176,7 +178,8 @@ sub showDiagnostics()
         dialog.observeField("buttonSelected", "onDiagnosticsButton")
         dialog.observeField("wasClosed", "onDialogClosed")
     end if
-    dialog.message = account.diagnosticsLines(errors, "", "roku")
+    store = storage.create()
+    dialog.message = account.diagnosticsLines(errors, licensing.loadSaved(store, device.getDeviceKey(store)).code, "roku")
     dialog.buttons = account.diagnosticsButtons(errors.count())
     m.top.dialog = dialog
 end sub
