@@ -10,9 +10,18 @@ namespace xtream
     ' fora do plano básico — ids de grupo/URL com emoji não batem com os do app web (ids são locais, não sincronizam).
     function hashText(text as string) as string
         h& = 5381
-        for i = 1 to Len(text)
-            h& = (h& * 33 + Asc(Mid(text, i, 1))) mod 4294967296&
-        end for
+        ' Sem acento (URLs, quase sempre) os bytes UTF-8 são os próprios códigos: lê de uma vez, sem Mid letra a letra.
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(text)
+        if bytes.count() = Len(text) then
+            for each code in bytes
+                h& = (h& * 33 + code) mod 4294967296&
+            end for
+        else
+            for i = 1 to Len(text)
+                h& = (h& * 33 + Asc(Mid(text, i, 1))) mod 4294967296&
+            end for
+        end if
         digits = "0123456789abcdefghijklmnopqrstuvwxyz"
         if h& = 0 then return "0"
         result = ""
@@ -25,18 +34,20 @@ namespace xtream
 
     ' Primeira vírgula fora de aspas: `tvg-name="Ação, HD" group-title="Filmes, Ação",Rambo` separa antes de "Rambo".
     ' Devolve a posição base 1 (0 = não achou).
+    ' Pula de aspa em aspa com Instr (nativo): letra a letra era metade do tempo de ler uma lista grande.
     function nameCommaIndex(line as string) as integer
-        quote = ""
-        for i = 9 to Len(line)
-            ch = Mid(line, i, 1)
-            if quote <> "" then
-                if ch = quote then quote = ""
-            else if ch = Chr(34) or ch = "'" then
-                quote = ch
-            else if ch = "," then
-                return i
-            end if
-        end for
+        start = 9
+        while true
+            comma = Instr(start, line, ",")
+            if comma = 0 then return 0
+            opening = Instr(start, line, Chr(34))
+            single = Instr(start, line, "'")
+            if single > 0 and (opening = 0 or single < opening) then opening = single
+            if opening = 0 or comma < opening then return comma
+            closing = Instr(opening + 1, line, Mid(line, opening, 1))
+            if closing = 0 then return 0
+            start = closing + 1
+        end while
         return 0
     end function
 

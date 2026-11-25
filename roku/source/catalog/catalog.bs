@@ -351,39 +351,33 @@ namespace catalog
             catalog.reportProgress(hooks, (n + 1) / chunkCount)
         end for
 
-        ' Índices só com o que coube; se ainda faltar espaço para eles, o último chunk sai e tenta de novo.
-        while true
-            index = {}
-            index.setModeCaseSensitive()
-            for p = 0 to written - 1
-                for each cat in catalog.categoriesOf(streams[p])
-                    if not index.doesExist(cat) then index[cat] = []
-                    index[cat].push(p)
-                end for
+        ' Não coube inteira: vem pelo servidor (os índices do que coube nem são montados).
+        if written < total then
+            catalog.saveRemote(dir, section, categories, streams, budget)
+            return
+        end if
+        index = {}
+        index.setModeCaseSensitive()
+        for p = 0 to written - 1
+            for each cat in catalog.categoriesOf(streams[p])
+                if not index.doesExist(cat) then index[cat] = []
+                index[cat].push(p)
             end for
-            counts = {}
-            counts.setModeCaseSensitive()
-            for each cat in index
-                counts[cat] = index[cat].count()
-            end for
-            ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index))
-            if ok then
-                ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
-                if not WriteAsciiFile(path + "/search.json", FormatJson(names)) then DeleteFile(path + "/search.json")
-                meta = { version: catalog.CATALOG_VERSION, count: written, total: total, truncated: written < total, chunkSize: catalog.CHUNK_SIZE, chunkCount: writtenChunks, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
-                ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
-            end if
-            if ok or writtenChunks = 0 then exit while
-            writtenChunks = writtenChunks - 1
-            DeleteFile(path + "/chunk-" + writtenChunks.toStr() + ".json")
-            written = writtenChunks * catalog.CHUNK_SIZE
-            if written > total then written = total
-            names = []
-            for p = 0 to written - 1
-                names.push(catalog.normalizeText(streams[p].name))
-            end for
-        end while
-        if written < total then catalog.saveRemote(dir, section, categories, streams, budget)
+        end for
+        counts = {}
+        counts.setModeCaseSensitive()
+        for each cat in index
+            counts[cat] = index[cat].count()
+        end for
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index))
+        if ok then
+            ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
+            if not WriteAsciiFile(path + "/search.json", FormatJson(names)) then DeleteFile(path + "/search.json")
+            meta = { version: catalog.CATALOG_VERSION, count: written, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: writtenChunks, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
+            ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        end if
+        ' Sem espaço nem para os índices: também vem pelo servidor.
+        if not ok then catalog.saveRemote(dir, section, categories, streams, budget)
     end sub
 
     ' ---------- Seção pelo servidor (não coube no disco) ----------
@@ -458,7 +452,7 @@ namespace catalog
         path = catalog.sectionDir(dir, section)
         summary = catalog.remoteSummary(categories, streams)
         total = streams.count()
-        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: total, total: total, truncated: false, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
+        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
         ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/search.json", "[]") and catalog.writeHeads(dir, section, summary.heads)
         if ok then WriteAsciiFile(path + "/meta.json", FormatJson(meta))
     end sub
@@ -515,7 +509,7 @@ namespace catalog
             written = last + 1
             chunks = n + 1
         end for
-        meta = { version: catalog.CATALOG_VERSION, remote: true, count: total, total: total, truncated: false, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
+        meta = { version: catalog.CATALOG_VERSION, remote: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
         ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index)) and WriteAsciiFile(path + "/search.json", FormatJson(names))
         if ok then ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
         if not ok then
@@ -855,6 +849,12 @@ namespace catalog
         if fetched.error <> invalid then return fetched.error
         read = xtream.readM3u(fetched.text)
         if read.error <> invalid then return read.error
+        ' Prévia das duas seções antes de gravar (o Início mostra as fileiras já, como na Xtream).
+        if hooks <> invalid and hooks.parsed <> invalid then
+            parsed = hooks.parsed
+            parsed("vod", read.parsed.vodCategories, read.parsed.vodStreams)
+            parsed("live", read.parsed.liveCategories, read.parsed.liveStreams)
+        end if
         liveHooks = invalid
         if section = "live" then liveHooks = hooks
         vodHooks = invalid

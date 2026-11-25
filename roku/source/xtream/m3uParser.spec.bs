@@ -32,6 +32,18 @@ namespace tests
             m.assertEqual(xtream.hashText(String(200, "x")), "dxg8g5")
         end function
 
+        @it("vírgula do nome: a primeira fora de aspas (duplas ou simples); aspa sem fechar = sem nome")
+        function _()
+            q = Chr(34)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1,Canal"), 11)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1,D'Artagnan, o filme"), 11)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 tvg-name=" + q + "A, B" + q + ",X"), 27)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x='a,b' y=" + q + "c,d" + q + ",N"), 27)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x=" + q + "it's" + q + ",N"), 20)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x=" + q + "a,b"), 0)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1"), 0)
+        end function
+
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
         @describe("filme ou canal ao vivo")
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

@@ -17,6 +17,11 @@ namespace tests
         GetGlobalAA().savedProgress.push(Int(fraction * 100 + 0.5))
     end sub
 
+    ' hooks.parsed dos testes: guarda "seção:itens" de cada prévia.
+    sub recordParsed(section as string, categories as object, streams as object)
+        GetGlobalAA().savedParsed.push(section + ":" + streams.count().toStr())
+    end sub
+
     function ids(items as object) as object
         result = []
         for each item in items
@@ -481,6 +486,10 @@ namespace tests
             catalog.loadSection(t, ctx, "live", false)
             catalog.loadSection(t, ctx, "vod", false)
             m.assertEqual(t.calls.count(), 1)
+            ' Prévia (o Início mostra as fileiras antes de gravar): as duas seções da leitura, Filmes primeiro.
+            GetGlobalAA().savedParsed = []
+            m.assertTrue(catalog.loadSection(t, ctx, "vod", true, { parsed: tests.recordParsed }).ok)
+            m.assertEqual(GetGlobalAA().savedParsed, ["vod:1", "live:2"])
         end function
 
         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
