@@ -1,0 +1,163 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/api.bs"
+' Licença na Roku (docs/roku/domains/08-licenca-roku-pay.md): port das regras de src/stores/licenseStore.js e da
+' conferência de src/services/licenseSignature.js (casos em licensing.spec.bs, de tests/licenseClient.test.js).
+' A cobrança é só pelo Roku Pay: o servidor transforma a compra em ativação (server/license/license-roku.mjs) e assina
+' a resposta em RSA (sigRsa), que o roRSA confere com a chave pública do pacote (pkg:/license-rsa.pem).
+' Datas em milissegundos como LongInteger: passam de 32 bits, e Double guardado num mapa vira roFloat no simulador
+' (perde os milissegundos).
+namespace licensing
+
+    const STATE_KEY = "license:state"
+    const LAST_SEEN_KEY = "license:lastSeen" ' maior horário já visto: relógio voltado para trás não reabre a carência
+    const OFFLINE_GRACE_MS = 604800000 ' 7 dias sem o serviço
+    const CLOCK_SKEW_MS = 86400000 ' 24 h de acerto de relógio; mais que isso conta como manipulação
+    const PEM_PATH = "pkg:/license-rsa.pem"
+
+    function nowMs() as longinteger
+        dt = CreateObject("roDateTime")
+        return licensing.number(dt.asSeconds() * 1000# + dt.getMilliseconds())
+    end function
+
+    function number(value as dynamic) as longinteger
+        whole = CreateObject("roLongInteger")
+        if utils.isNumber(value) then whole.setLongInt(value)
+        return whole.getLongInt()
+    end function
+
+    function isBlocking(access as dynamic) as boolean
+        return access = "blocked" or access = "suspended"
+    end function
+
+    ' Estado vazio: nenhuma resposta do serviço para nenhuma lista.
+    function emptyState() as object
+        zero = licensing.number(0)
+        return { code: "", access: "", host: "", trialEndsAt: zero, activationEndsAt: invalid, serverTime: zero, checkedAt: zero, offline: false, lastSeen: zero }
+    end function
+
+    ' blockReason do licenseStore: "" (libera), "checking" (esta lista ainda sem resposta), "offline" (sem confirmação
+    ' recente: conecte e tente de novo) ou o acesso salvo que bloqueia ("blocked"/"suspended").
+    function blockReason(state as object, sessionHost as string, demo as boolean, nowValue as dynamic, enabled as boolean) as string
+        now = licensing.number(nowValue)
+        if not enabled or demo then return ""
+        checkedAt = licensing.number(state.checkedAt)
+        confirmed = checkedAt > 0 and utils.textOr(state.host, "") = sessionHost
+        if state.offline <> true then
+            if not confirmed then return "checking"
+            if licensing.isBlocking(state.access) then return state.access
+            return ""
+        end if
+        if not confirmed then return "offline"
+        lastSeen = licensing.number(state.lastSeen)
+        if now < lastSeen - licensing.CLOCK_SKEW_MS then return "offline" ' relógio voltado para trás depois de ter andado
+        latest = now
+        if lastSeen > latest then latest = lastSeen
+        elapsed = latest - checkedAt
+        if elapsed < -licensing.CLOCK_SKEW_MS or elapsed > licensing.OFFLINE_GRACE_MS then return "offline"
+        if licensing.isBlocking(state.access) then return state.access
+        ' Hora do servidor estimada: o teste ou a ativação podem ter vencido enquanto a TV estava sem o serviço.
+        serverNow = licensing.number(state.serverTime)
+        if serverNow = 0 then serverNow = checkedAt
+        if elapsed > 0 then serverNow = serverNow + elapsed
+        if state.access = "trial" and serverNow >= licensing.number(state.trialEndsAt) then return "offline"
+        if state.access = "activated" and utils.isNumber(state.activationEndsAt) and serverNow >= licensing.number(state.activationEndsAt) then return "offline"
+        return ""
+    end function
+
+    ' apply do licenseStore: a resposta conferida vira o estado. checkedAt não é assinado: não passa da hora do servidor
+    ' (assinada) + 24 h, senão editar o registro reabriria a carência.
+    function stateFrom(saved as object) as object
+        state = licensing.emptyState()
+        state.code = utils.textOr(saved.code, "")
+        state.access = utils.textOr(saved.access, "")
+        state.host = utils.textOr(saved.host, "")
+        state.trialEndsAt = licensing.number(saved.trialEndsAt)
+        if utils.isNumber(saved.activationEndsAt) then state.activationEndsAt = licensing.number(saved.activationEndsAt)
+        state.serverTime = licensing.number(saved.serverTime)
+        checkedAt = licensing.number(saved.checkedAt)
+        if state.serverTime > 0 and checkedAt > state.serverTime + licensing.CLOCK_SKEW_MS then checkedAt = licensing.number(state.serverTime + licensing.CLOCK_SKEW_MS)
+        state.checkedAt = checkedAt
+        return state
+    end function
+
+    ' Texto que o servidor assina (licenseSignedText de server/license/license-rules.mjs), igual byte a byte ao
+    ' JSON.stringify: montado à mão porque o FormatJson escreve número grande e acento de outro jeito.
+    function signedText(fields as object) as string
+        parts = [licensing.jsonText("pulse-license-v1"), licensing.jsonText(fields.deviceKey), licensing.jsonText(utils.textOr(fields.host, "")), licensing.jsonText(utils.textOr(fields.access, "")), licensing.jsonText(utils.textOr(fields.code, "")), licensing.jsonNumber(fields.trialEndsAt), licensing.jsonNumber(fields.activationEndsAt), licensing.jsonNumber(fields.serverTime)]
+        nonce = utils.textOr(fields.nonce, "")
+        if nonce <> "" then parts.push(licensing.jsonText(nonce))
+        return "[" + parts.join(",") + "]"
+    end function
+
+    function jsonText(value as dynamic) as string
+        text = utils.textOr(value, "")
+        return Chr(34) + text.replace("\", "\\").replace(Chr(34), "\" + Chr(34)) + Chr(34)
+    end function
+
+    function jsonNumber(value as dynamic) as string
+        if not utils.isNumber(value) then return "null"
+        whole = CreateObject("roLongInteger")
+        whole.setLongInt(value)
+        return whole.toStr()
+    end function
+
+    ' Assinatura exigida só com a chave pública no pacote (como o VITE_LICENSE_PUBLIC_KEY do web).
+    function isSignatureRequired() as boolean
+        return ReadAsciiFile(licensing.PEM_PATH).trim() <> ""
+    end function
+
+    function fromBase64Url(text as string) as object
+        base64 = text.replace("-", "+").replace("_", "/")
+        while Len(base64) mod 4 <> 0
+            base64 = base64 + "="
+        end while
+        bytes = CreateObject("roByteArray")
+        bytes.fromBase64String(base64)
+        return bytes
+    end function
+
+    ' verifyLicense: true se a sigRsa confere para este aparelho e esta lista (ou se a assinatura não é exigida).
+    ' UNVERIFIED: roRSA.Verify com sha256 só é confiável no aparelho (no simulador o roRSA é imitado).
+    function verify(state as object, deviceKey as string, host as string) as boolean
+        if not licensing.isSignatureRequired() then return true
+        if not utils.isString(state.sigRsa) or state.sigRsa = "" then return false
+        fields = {}
+        fields.append(state)
+        fields.deviceKey = deviceKey
+        fields.host = host
+        message = CreateObject("roByteArray")
+        message.fromAsciiString(licensing.signedText(fields))
+        digest = CreateObject("roEVPDigest")
+        digest.setup("sha256")
+        hash = CreateObject("roByteArray")
+        hash.fromHexString(digest.process(message))
+        rsa = CreateObject("roRSA")
+        if rsa.setPublicKey(licensing.PEM_PATH) <> 1 then return false
+        rsa.setDigestAlgorithm("sha256")
+        return rsa.verify(hash, licensing.fromBase64Url(state.sigRsa)) = 1
+    end function
+
+    ' Aleatório por consulta: o servidor assina junto e uma resposta gravada não serve de novo.
+    function newNonce() as string
+        return CreateObject("roDeviceInfo").getRandomUUID().replace("-", "")
+    end function
+
+    ' Domínio da lista que vai ao serviço (normalizeHost do servidor): só o nome, sem porta nem usuário, em minúsculas;
+    ' nome sem ponto (servidor:8080) vira "" (o serviço trata como sem lista).
+    function listHost(active as dynamic) as string
+        if not utils.isObject(active) then return ""
+        raw = utils.textOr(active.baseUrl, "").trim()
+        if raw = "" then return ""
+        if Instr(1, raw, "://") = 0 then raw = "http://" + raw
+        url = xtream.parseUrl(raw)
+        if url = invalid or Instr(1, url.hostname, ".") = 0 then return ""
+        return url.hostname
+    end function
+
+    ' A lista de demonstração dos revisores nunca bloqueia (isDemoSession do web): só a URL exata do build.
+    function isDemo(active as dynamic, demoUrl as string) as boolean
+        if demoUrl = "" or not utils.isObject(active) or active.type <> "m3u" then return false
+        return utils.textOr(active.resolvedUrl, "") = demoUrl or utils.textOr(active.baseUrl, "") = demoUrl
+    end function
+
+end namespace
