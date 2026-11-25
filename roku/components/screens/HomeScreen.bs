@@ -119,13 +119,18 @@ sub onLicense(event as object)
         showActivation(reason)
         return
     end if
-    ' Entrada (R4): lista de parceiro aberta por mais de 10 s; uma por abertura.
-    if state.access = "partner" and m.entryTimer = invalid then
-        m.entryTimer = m.top.createChild("Timer")
-        m.entryTimer.duration = licensing.ENTRY_DELAY_S
-        m.entryTimer.observeField("fire", "sendEntry")
-        m.entryTimer.control = "start"
-    end if
+    m.licensePartner = state.access = "partner"
+    scheduleEntry()
+end sub
+
+' Entrada (R4): lista de parceiro aberta por mais de 10 s, uma por abertura, e só com a lista carregada (alguma seção
+' chegou), para o parceiro não pagar por quem só viu erro (useLicenseWatch do web).
+sub scheduleEntry()
+    if m.licensePartner <> true or m.listLoaded <> true or m.entryTimer <> invalid then return
+    m.entryTimer = m.top.createChild("Timer")
+    m.entryTimer.duration = licensing.ENTRY_DELAY_S
+    m.entryTimer.observeField("fire", "sendEntry")
+    m.entryTimer.control = "start"
 end sub
 
 sub sendEntry()
@@ -270,6 +275,8 @@ sub onRail(event as object)
         renderRails()
         return
     end if
+    m.listLoaded = true
+    scheduleEntry()
     if data.items.count() = 0 then return
     items = []
     items.append(data.items)
