@@ -9,6 +9,7 @@ import "pkg:/source/search/searchScreen.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/player/playerState.bs"
+import "pkg:/source/parental/parental.bs"
 
 ' Medidas do SearchScreen.vue em px (1920×1080): teclado de x 176 a 720 (w-[34rem]); campo em y 56 (64 de altura);
 ' teclas de 72 com gap 10; painel da direita em x 760: sugestões com 352 e resultados de x 1144 a 1824 (4 colunas).
@@ -61,6 +62,8 @@ sub init()
     if m.ctx <> invalid then
         m.task = CreateObject("roSGNode", "SearchTask")
         m.task.ctx = m.ctx
+        ' Categorias escondidas ou bloqueadas ficam fora dos resultados (catalogSearch.js do web).
+        m.task.parental = parental.activeContext(storage.create())
         m.task.observeField("result", "onResult")
         m.task.control = "run"
         for each section in m.sections

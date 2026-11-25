@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed, buildConfig } from '../scripts/roku.mjs'
 import { OUTPUTS, over } from '../scripts/make-roku-ui.mjs'
 
@@ -107,5 +107,26 @@ describe('app Roku — tela de bloqueio só com o Roku Pay (D8)', () => {
       expect(texts).not.toMatch(banned)
     }
     expect(texts).toMatch(/Assinar/)
+  })
+})
+
+describe('app Roku — controle parental chega a toda Task que filtra', () => {
+  it('quem cria uma Task com o campo "parental" preenche esse campo (senão nada é filtrado)', () => {
+    const dir = 'roku/components'
+    const tasks = readdirSync(`${dir}/tasks`)
+      .filter((file) => file.endsWith('.xml') && /<field id="parental"/.test(readFileSync(`${dir}/tasks/${file}`, 'utf8')))
+      .map((file) => file.replace('.xml', ''))
+    expect(tasks.length).toBeGreaterThan(0)
+    const screens = readdirSync(`${dir}/screens`).filter((file) => file.endsWith('.bs'))
+    const missing = []
+    for (const task of tasks) {
+      for (const file of screens) {
+        const code = readFileSync(`${dir}/screens/${file}`, 'utf8')
+        for (const created of code.matchAll(new RegExp(String.raw`(\S+) = CreateObject\("roSGNode", "${task}"\)`, 'g'))) {
+          if (!code.includes(`${created[1]}.parental =`)) missing.push(`${file} → ${task}`)
+        }
+      }
+    }
+    expect(missing).toEqual([])
   })
 })
