@@ -291,7 +291,7 @@ sub renderSeries()
         addFocusable(season.id, "series-seasons", "media-details", [x, 733, width, 46], group, ring, 1.02, true)
         x = x + width + 12
     end for
-    episodes = mediaDetails.episodeCards(m.seriesData, m.activeSeason, utils.textOr(m.info.poster, ""))
+    episodes = mediaDetails.episodeCards(m.seriesData, m.activeSeason, utils.textOr(m.info.poster, ""), loadHistory())
     if view.seasons.count() > 0 then ui.inlineText(m.body, mediaDetails.episodeCountText(episodes.count()), ui.font(500, 20), ui.NEUTRAL_400, x + 8, 742, 28)
 
     if episodes.count() = 0 then
@@ -332,6 +332,19 @@ sub renderEpisode(ep as object, index as integer)
     badge = ui.panel(group, "badge", 12, 12, 10, 30)
     badgeText = ui.inlineText(group, ep.badge, ui.font(800, 20), ui.WHITE, 21, 13, 28)
     badge.width = badgeText.boundingRect().width + 18
+    ' Episódio começado: .tv-progress no pé da miniatura (h-1, white/25 com o limão), como no Início.
+    if ep.progress > 0 then
+        track = group.createChild("Rectangle")
+        track.color = "0xFFFFFF40"
+        track.translation = [1, 148]
+        track.width = EPISODE_WIDTH - 2
+        track.height = 4
+        fill = group.createChild("Rectangle")
+        fill.color = ui.ACCENT
+        fill.translation = [1, 148]
+        fill.width = (EPISODE_WIDTH - 2) * ep.progress / 100
+        fill.height = 4
+    end if
     title = ui.text(group, ep.title, ui.font(700, 20), ui.WHITE, 0, 163, EPISODE_WIDTH, 28)
     title.wrap = false
     subtitle = ui.text(group, ep.subtitle, ui.font(400, 20), META_COLOR, 0, 193, EPISODE_WIDTH, 28)

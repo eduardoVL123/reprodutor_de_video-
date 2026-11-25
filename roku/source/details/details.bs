@@ -77,15 +77,37 @@ namespace mediaDetails
     end function
 
     ' Cartões de episódio da temporada: selo E<n>, título sem o prefixo S01E02 e a duração.
-    function episodeCards(data as dynamic, seasonKey as string, poster = "" as string) as object
+    ' history = o "Continuar assistindo" do perfil: episódio começado ganha a barra (progress, 0–100) e "faltam N min"
+    ' no lugar da duração (episodeProgressPct/episodeRemainingText do MediaDetailsModal.vue).
+    function episodeCards(data as dynamic, seasonKey as string, poster = "" as string, history = [] as object) as object
         cards = []
+        started = {}
+        for each entry in history
+            if utils.isObject(entry) and entry.section = "series" and utils.isNumber(entry.currentTime) and entry.currentTime > 0 then started[utils.textOr(entry.stream_id, "")] = entry
+        end for
         episodes = seriesPlaylist.episodesOf(data, seasonKey)
         for i = 0 to episodes.count() - 1
             ep = episodes[i]
             image = ""
             if utils.isObject(ep.info) then image = utils.textOr(ep.info.movie_image, "")
             if image = "" then image = poster
-            cards.push({ id: "episode-card-" + i.toStr(), badge: "E" + utils.textOr(ep.episode_num, ""), title: seriesPlaylist.episodeTitle(ep), subtitle: mediaDetails.episodeDuration(ep), image: image })
+            subtitle = mediaDetails.episodeDuration(ep)
+            progress = 0
+            entry = started[utils.textOr(ep.id, "")]
+            if entry <> invalid then
+                if utils.isNumber(entry.progressPct) then progress = entry.progressPct
+                if progress > 100 then progress = 100
+                secs = 0
+                if utils.isObject(ep.info) then secs = Val(utils.textOr(ep.info.duration_secs, "0"))
+                if secs > 0 then
+                    remaining = secs - entry.currentTime
+                    if remaining < 0 then remaining = 0
+                    minutes = Int(remaining / 60)
+                    if minutes * 60 < remaining then minutes = minutes + 1
+                    subtitle = "faltam " + minutes.toStr() + " min"
+                end if
+            end if
+            cards.push({ id: "episode-card-" + i.toStr(), badge: "E" + utils.textOr(ep.episode_num, ""), title: seriesPlaylist.episodeTitle(ep), subtitle: subtitle, image: image, progress: progress })
         end for
         return cards
     end function

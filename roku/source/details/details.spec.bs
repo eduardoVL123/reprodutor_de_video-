@@ -42,9 +42,21 @@ namespace tests
             m.assertEqual(view.seasons, [{ key: "1", number: 1, id: "season-tab-1", label: "Temporada 1" }, { key: "2", number: 2, id: "season-tab-2", label: "Temporada 2" }])
             episodes = mediaDetails.episodeCards(data, "1")
             m.assertEqual(episodes.count(), 2)
-            m.assertEqual(episodes[0], { id: "episode-card-0", badge: "E1", title: "O Começo", subtitle: "48 min", image: "" })
+            m.assertEqual(episodes[0], { id: "episode-card-0", badge: "E1", title: "O Começo", subtitle: "48 min", image: "", progress: 0 })
             m.assertEqual(mediaDetails.episodeCountText(episodes.count()), "2 episódios")
             m.assertEqual(mediaDetails.episodeCountText(1), "1 episódio")
+        end function
+
+        @it("episódio começado: barra com o progresso e 'faltam N min' no lugar da duração")
+        function _()
+            history = [{ stream_id: "1002", section: "series", currentTime: 1250, duration: 3000, progressPct: 42 }, { stream_id: 1001, section: "vod", currentTime: 600, progressPct: 20 }]
+            episodes = mediaDetails.episodeCards(tests.seriesInfoMock(), "1", "", history)
+            ' 3000 - 1250 = 1750 s → 29,2 min → faltam 30 (Math.ceil do web).
+            m.assertEqual(episodes[1].subtitle, "faltam 30 min")
+            m.assertEqual(episodes[1].progress, 42)
+            ' Filme com o mesmo id não conta: só o histórico de série.
+            m.assertEqual(episodes[0].subtitle, "48 min")
+            m.assertEqual(episodes[0].progress, 0)
         end function
 
         @it("ao trocar de temporada, a fileira de episódios volta para o primeiro episódio")
