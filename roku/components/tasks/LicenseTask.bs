@@ -1,0 +1,20 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/license/licensing.bs"
+
+sub init()
+    m.top.functionName = "runLicense"
+end sub
+
+sub runLicense()
+    request = m.top.request
+    store = storage.create()
+    active = session.hydrate(store)
+    if request.mode = "entry" then
+        licensing.sendEntry(net.urlTransport(), store, request.base, active)
+        return
+    end if
+    state = licensing.refresh(net.urlTransport(), store, request.base, active, utils.textOr(request.transactionId, ""), licensing.nowMs())
+    m.top.result = { state: state }
+end sub

@@ -1,0 +1,269 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/license/licensing.bs"
+
+' Medidas de ActivationRequired.vue (px-24 py-14, max-w-[48rem]): marca, título text-tv-xl, texto text-tv-sm
+' neutral-300, botões .tv-btn min-w-[16rem] em mt-8 e a linha de status text-tv-meta. Sem o QR do web.
+const CONTENT_W = 768
+const CONTENT_X = 576
+
+sub init()
+    m.reason = "checking"
+    m.busy = ""
+    m.checked = false
+    m.products = []
+    m.message = ""
+    m.focusIndex = 0
+    m.buttons = []
+    bg = m.top.createChild("Rectangle")
+    bg.width = 1920
+    bg.height = 1080
+    bg.color = ui.DEEP
+    m.content = m.top.createChild("Group")
+    ' Roku Pay: planos, compra e compras já feitas. invalid onde não existe (simulador): a tela avisa.
+    m.channelStore = CreateObject("roSGNode", "ChannelStore")
+    if m.channelStore <> invalid then
+        m.channelStore.observeField("catalog", "onCatalog")
+        m.channelStore.observeField("purchases", "onPurchases")
+        m.channelStore.observeField("orderStatus", "onOrderStatus")
+        m.channelStore.command = "getCatalog"
+    end if
+    ' getAllPurchases sem resposta não pode deixar a tela parada em "Verificando".
+    m.purchasesTimer = m.top.createChild("Timer")
+    m.purchasesTimer.duration = 10
+    m.purchasesTimer.observeField("fire", "onPurchasesTimeout")
+    m.top.setFocus(true)
+    render()
+end sub
+
+sub onParams()
+    params = m.top.params
+    if params <> invalid and utils.isString(params.reason) and params.reason <> "" then m.reason = params.reason
+    check()
+end sub
+
+' ---------- Licença ----------
+
+' Verificar: as compras do Roku Pay primeiro (a assinatura de outro aparelho da conta também vale), depois o serviço.
+sub check()
+    if m.busy <> "" then return
+    m.busy = "checking"
+    m.message = ""
+    render()
+    if m.channelStore <> invalid then
+        m.purchasesTimer.control = "start"
+        m.channelStore.command = "getAllPurchases"
+    else
+        runLicense("")
+    end if
+end sub
+
+sub onPurchases()
+    if m.busy <> "checking" or m.licenseTask <> invalid then return
+    m.purchasesTimer.control = "stop"
+    runLicense(licensing.activePurchaseId(nodeChildren(m.channelStore.purchases)))
+end sub
+
+sub onPurchasesTimeout()
+    if m.busy = "checking" and m.licenseTask = invalid then runLicense("")
+end sub
+
+sub runLicense(transactionId as string)
+    m.licenseTask = CreateObject("roSGNode", "LicenseTask")
+    m.licenseTask.request = { mode: "refresh", base: config.licenseBaseUrl(), transactionId: transactionId }
+    m.licenseTask.observeField("result", "onLicense")
+    m.licenseTask.control = "run"
+end sub
+
+sub onLicense(event as object)
+    state = event.getData().state
+    m.licenseTask = invalid
+    m.busy = ""
+    m.checked = true
+    active = session.hydrate(storage.create())
+    reason = licensing.blockReason(state, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), config.licenseEnabled())
+    if reason = "" then
+        m.top.navigate = { action: "back" }
+        return
+    end if
+    m.reason = reason
+    render()
+end sub
+
+' ---------- Roku Pay ----------
+
+function nodeChildren(node as dynamic) as object
+    list = []
+    if node = invalid then return list
+    for i = 0 to node.getChildCount() - 1
+        list.push(node.getChild(i).getFields())
+    end for
+    return list
+end function
+
+sub onCatalog()
+    m.products = []
+    for each product in nodeChildren(m.channelStore.catalog)
+        if utils.textOr(product.code, "") <> "" then m.products.push(product)
+    end for
+    render()
+end sub
+
+sub buy(code as string)
+    if m.channelStore = invalid or m.busy <> "" then return
+    m.busy = "buying"
+    m.message = ""
+    order = CreateObject("roSGNode", "ContentNode")
+    item = order.createChild("ContentNode")
+    item.addFields({ code: code, qty: 1 })
+    m.channelStore.order = order
+    m.channelStore.command = "doOrder"
+    render()
+end sub
+
+' Compra concluída (status 1): a compra nova vai direto ao serviço. Cancelada ou recusada: a tela continua.
+sub onOrderStatus()
+    if m.busy <> "buying" then return
+    status = m.channelStore.orderStatus
+    if status <> invalid and status.status = 1 then
+        bought = nodeChildren(status)
+        transactionId = ""
+        if bought.count() > 0 then transactionId = utils.textOr(bought[0].purchaseId, "")
+        m.busy = "checking"
+        render()
+        runLicense(transactionId)
+        return
+    end if
+    m.busy = ""
+    m.message = "A compra não foi concluída."
+    render()
+end sub
+
+' ---------- Outras saídas ----------
+
+sub tryDemo()
+    if m.busy <> "" then return
+    m.busy = "demo"
+    render()
+    m.login = CreateObject("roSGNode", "LoginTask")
+    m.login.params = { dns: config.demoPlaylistUrl(), username: "", password: "", label: "" }
+    m.login.observeField("result", "onDemoLogin")
+    m.login.control = "run"
+end sub
+
+sub onDemoLogin(event as object)
+    result = event.getData()
+    m.busy = ""
+    if result.ok then
+        m.top.navigate = { action: "reset", screen: "HomeScreen" }
+        return
+    end if
+    m.message = utils.textOr(result.error, "Não foi possível abrir a demonstração.")
+    render()
+end sub
+
+' ---------- Tela ----------
+
+sub render()
+    m.content.removeChildrenIndex(m.content.getChildCount(), 0)
+    title = "Assine para continuar"
+    text = "O período de teste de 7 dias terminou. Para continuar com esta lista, assine o Pulse Player."
+    if m.reason = "checking" then
+        title = "Verificando a licença"
+        text = "Um instante, estamos confirmando este aparelho."
+    else if m.reason = "offline" then
+        title = "Verifique a conexão"
+        text = "Não foi possível confirmar a licença deste aparelho. Confira se a TV está conectada à internet e tente de novo."
+    else if m.reason = "suspended" then
+        title = "Aparelho suspenso"
+        text = "O acesso deste aparelho foi suspenso."
+    else if m.channelStore = invalid then
+        text = text + " A assinatura não está disponível neste aparelho."
+    end if
+
+    mark = m.content.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 38
+    mark.height = 40
+    mark.translation = [CONTENT_X, 300]
+    titleLabel = ui.text(m.content, title, ui.font(700, 48), ui.WHITE, CONTENT_X, 360, CONTENT_W, 60)
+    y = 360 + ui.textHeight(titleLabel, 60) + 12
+    body = ui.text(m.content, text, ui.font(400, 24), "0xD4D4D4FF", CONTENT_X, y, CONTENT_W, 36)
+    y = y + ui.textHeight(body, 36) + 32
+
+    m.buttons = []
+    blocked = m.reason = "blocked"
+    if blocked and m.busy = "" then
+        for each product in m.products
+            label = "Assinar · " + utils.textOr(product.name, "Pulse Player")
+            if utils.textOr(product.cost, "") <> "" then label = label + " · " + product.cost
+            m.buttons.push({ id: "activation-buy", code: product.code, label: label, variant: "primary" })
+        end for
+    end if
+    checkLabel = "Verificar assinatura"
+    if m.reason = "offline" or m.reason = "checking" then checkLabel = "Tentar de novo"
+    if m.busy = "checking" then checkLabel = "Verificando..."
+    if m.busy = "buying" then checkLabel = "Concluindo a compra..."
+    checkVariant = "secondary"
+    if m.buttons.count() = 0 then checkVariant = "primary"
+    m.buttons.push({ id: "activation-retry", label: checkLabel, variant: checkVariant, loading: m.busy = "checking" or m.busy = "buying" })
+    m.buttons.push({ id: "activation-lists", label: "Usar outra lista", variant: "secondary" })
+    if config.demoPlaylistUrl() <> "" then
+        demoLabel = "Experimentar demonstração"
+        if m.busy = "demo" then demoLabel = "Abrindo demonstração..."
+        m.buttons.push({ id: "activation-demo", label: demoLabel, variant: "secondary" })
+    end if
+    ' Uma coluna (os planos podem ter nomes longos): min-w-[16rem].
+    for each spec in m.buttons
+        button = m.content.createChild("PulseButton")
+        button.variant = spec.variant
+        button.loading = spec.loading = true
+        button.fixedWidth = 480
+        button.text = spec.label
+        button.translation = [CONTENT_X, y]
+        spec.node = button
+        y = y + 50 + 16
+    end for
+    if m.focusIndex >= m.buttons.count() then m.focusIndex = 0
+
+    status = m.message
+    if status = "" and m.checked and m.busy = "" then
+        status = "Ainda não foi possível confirmar a assinatura. "
+        if m.reason = "offline" then
+            status = status + "Confira a internet do aparelho e tente de novo."
+        else
+            status = status + "Se você acabou de assinar, aguarde alguns minutos e verifique de novo."
+        end if
+    end if
+    if status <> "" then ui.text(m.content, status, ui.font(400, 20), ui.TEXT_COLOR, CONTENT_X, y + 4, CONTENT_W, 28)
+    renderFocus()
+end sub
+
+sub renderFocus()
+    for i = 0 to m.buttons.count() - 1
+        m.buttons[i].node.focused = i = m.focusIndex
+    end for
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" then
+        ' Sem licença não há para onde voltar: o Voltar só oferece sair do app.
+        m.top.navigate = { action: "askExit" }
+        return true
+    end if
+    if key = "up" and m.focusIndex > 0 then m.focusIndex = m.focusIndex - 1
+    if key = "down" and m.focusIndex < m.buttons.count() - 1 then m.focusIndex = m.focusIndex + 1
+    renderFocus()
+    if key = "OK" and m.buttons.count() > 0 then
+        spec = m.buttons[m.focusIndex]
+        if spec.id = "activation-buy" then buy(spec.code)
+        if spec.id = "activation-retry" then check()
+        if spec.id = "activation-lists" then m.top.navigate = { action: "push", screen: "ListManagerScreen" }
+        if spec.id = "activation-demo" then tryDemo()
+    end if
+    return true
+end function

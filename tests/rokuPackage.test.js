@@ -97,3 +97,15 @@ describe('app Roku — chave pública RSA da licença (pkg:/license-rsa.pem)', (
     expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: 'não é pem' })).toBe('')
   })
 })
+
+describe('app Roku — tela de bloqueio só com o Roku Pay (D8)', () => {
+  it('nenhum texto da tela cita site, QR, código de ativação, preço de fora ou outra forma de pagar', () => {
+    const source = readFileSync('roku/components/screens/ActivationScreen.bs', 'utf8')
+    // Só os textos entre aspas: comentários podem explicar a regra.
+    const texts = [...source.matchAll(/"([^"\n]*)"/g)].map((m) => m[1]).join(' | ')
+    for (const banned of [/qr/i, /site/i, /c[óo]digo/i, /https?:/i, /pix/i, /cart[ãa]o/i, /mercado ?pago/i, /\bR\$/]) {
+      expect(texts).not.toMatch(banned)
+    }
+    expect(texts).toMatch(/Assinar/)
+  })
+})

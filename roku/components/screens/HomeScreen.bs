@@ -10,6 +10,9 @@ import "pkg:/source/profiles/profiles.bs"
 import "pkg:/source/favorites/favorites.bs"
 import "pkg:/source/parental/parental.bs"
 import "pkg:/source/player/playerState.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/device/device.bs"
+import "pkg:/source/license/licensing.bs"
 
 ' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
 ' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
@@ -64,6 +67,85 @@ sub init()
     spatial.remember(m.nav, m.focusId)
     m.top.setFocus(true)
     startLoading()
+    startLicense()
+end sub
+
+' ---------- Licença (useLicenseWatch do web) ----------
+
+' Abrir o Início decide pelo estado salvo: bloqueia (ou nunca foi confirmado para esta lista) → tela de bloqueio, que
+' confere sozinha com a compra do Roku Pay; libera → confirma em segundo plano e de novo a cada 6 h.
+' shortcut: aqui a consulta vai sem a compra do Roku Pay; quando o período pago vence, o servidor bloqueia, a tela de
+' bloqueio manda a compra e a renovação libera na hora. Buscar as compras aqui se esse vaivém incomodar.
+sub startLicense()
+    if not config.licenseEnabled() then return
+    store = storage.create()
+    active = session.hydrate(store)
+    if active = invalid then return
+    saved = licensing.loadSaved(store, device.getDeviceKey(store))
+    reason = licensing.blockReason(saved, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), true)
+    m.licenseTimer = m.top.createChild("Timer")
+    m.licenseTimer.duration = licensing.RECHECK_S
+    m.licenseTimer.repeat = true
+    m.licenseTimer.observeField("fire", "refreshLicense")
+    m.licenseTimer.control = "start"
+    if reason <> "" then
+        ' Ainda no init: a cena só ouve o navigate depois que a tela entra na pilha.
+        m.pendingActivation = reason
+        m.activationTimer = m.top.createChild("Timer")
+        m.activationTimer.duration = 0.1
+        m.activationTimer.observeField("fire", "onActivationTimer")
+        m.activationTimer.control = "start"
+    else
+        refreshLicense()
+    end if
+end sub
+
+sub onActivationTimer()
+    if utils.textOr(m.pendingActivation, "") <> "" then showActivation(m.pendingActivation)
+end sub
+
+sub refreshLicense()
+    m.licenseTask = CreateObject("roSGNode", "LicenseTask")
+    m.licenseTask.request = { mode: "refresh", base: config.licenseBaseUrl(), transactionId: "" }
+    m.licenseTask.observeField("result", "onLicense")
+    m.licenseTask.control = "run"
+end sub
+
+sub onLicense(event as object)
+    state = event.getData().state
+    active = session.hydrate(storage.create())
+    reason = licensing.blockReason(state, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), true)
+    if reason <> "" then
+        showActivation(reason)
+        return
+    end if
+    ' Entrada (R4): lista de parceiro aberta por mais de 10 s; uma por abertura.
+    if state.access = "partner" and m.entryTimer = invalid then
+        m.entryTimer = m.top.createChild("Timer")
+        m.entryTimer.duration = licensing.ENTRY_DELAY_S
+        m.entryTimer.observeField("fire", "sendEntry")
+        m.entryTimer.control = "start"
+    end if
+end sub
+
+sub sendEntry()
+    task = CreateObject("roSGNode", "LicenseTask")
+    task.request = { mode: "entry", base: config.licenseBaseUrl() }
+    task.control = "run"
+    m.entryTask = task
+end sub
+
+' Abre por cima do Início quando ele está na frente: no init a cena ainda não ouve o navigate, e com outra tela na
+' frente (detalhes, player) fica pendente até voltar.
+sub showActivation(reason as string)
+    if m.activationShown = true then return
+    if m.top.focusedChild = invalid then
+        m.pendingActivation = reason
+        return
+    end if
+    m.pendingActivation = ""
+    m.activationShown = true
+    m.top.navigate = { action: "push", screen: "ActivationScreen", params: { reason: reason } }
 end sub
 
 ' ---------- Dados ----------
@@ -921,6 +1003,9 @@ end sub
 sub onFocusChanged()
     ' Voltando do player ou dos detalhes para o Início: o "Continuar assistindo" pode ter mudado.
     hasFocus = m.top.focusedChild <> invalid
+    ' A tela de bloqueio fechou (licença liberada): a próxima consulta pode abri-la de novo.
+    if hasFocus then m.activationShown = false
+    if hasFocus and utils.textOr(m.pendingActivation, "") <> "" then showActivation(m.pendingActivation)
     if hasFocus and m.hadFocus = false and m.tab = "home" then loadHistory()
     m.hadFocus = hasFocus
     if m.focusId <> "tab" or m.catalogTab = invalid or m.top.focusedChild = invalid then return

@@ -208,6 +208,19 @@ namespace tests
             m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000000000#, true), "offline")
         end function
 
+        @it("compra que vai ao serviço: a assinatura válida mais recente; sem nenhuma, vazio")
+        function _()
+            purchases = [
+                { purchaseId: "tx-antiga", status: "Valid", purchaseDate: "2026-01-10T10:00:00" },
+                { purchaseId: "tx-cancelada", status: "Invalid", purchaseDate: "2026-11-01T10:00:00" },
+                { purchaseId: "tx-nova", status: "Valid", purchaseDate: "2026-10-01T10:00:00" },
+                { purchaseId: "", status: "Valid", purchaseDate: "2026-12-01T10:00:00" }
+            ]
+            m.assertEqual(licensing.activePurchaseId(purchases), "tx-nova")
+            m.assertEqual(licensing.activePurchaseId([]), "")
+            m.assertEqual(licensing.activePurchaseId([{ purchaseId: "tx-sem-status" }]), "tx-sem-status")
+        end function
+
         @it("sem a chave pública no pacote a assinatura não é exigida (como sem VITE_LICENSE_PUBLIC_KEY)")
         function _()
             m.assertTrue(licensing.verify({ access: "activated" }, "abc", "lista.com"))

@@ -1,5 +1,12 @@
 # D8 — Licença na Roku com Roku Pay
 
+**Status (2026-11-25)**: passos 1, 2 e 4 feitos no código; passo 3 (compra real) espera os produtos no Developer
+Dashboard. `roku/source/license/licensing.bs` (regras, texto assinado, roRSA), `LicenseTask`, `ActivationScreen`
+(planos do ChannelStore, "Assinar", "Verificar assinatura", outra lista, demonstração) e o Início abrindo a tela.
+Liga com `PULSE_LICENSE_BASE_URL` no build; a assinatura RSA é exigida com `PULSE_LICENSE_RSA_PUBLIC_KEY`.
+Conferido no simulador: a consulta registra o aparelho como `roku`. NÃO conferido: a tela de bloqueio desenhada, o
+ChannelStore (compra, planos, compras) e o roRSA, que só existem de verdade no aparelho.
+
 ## Estado atual
 - `src/stores/licenseStore.js` (206): `blockReason` L165-182, carência offline 7 dias e tolerância de relógio 24 h
   L29-32, `checkedAt` limitado L86, nonce L24-28, `entry` para `partner` após 10 s L187-198, lista demo nunca bloqueia

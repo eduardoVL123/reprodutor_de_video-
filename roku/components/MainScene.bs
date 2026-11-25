@@ -99,6 +99,9 @@ sub onNavigate(event as object)
         askProfile()
     else if request.action = "diagnostics" then
         showDiagnostics()
+    else if request.action = "askExit" then
+        ' Tela que não pode voltar (bloqueio da licença): o Voltar só oferece sair do app.
+        askExit()
     end if
 end sub
 

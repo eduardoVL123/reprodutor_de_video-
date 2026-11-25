@@ -164,6 +164,23 @@ namespace licensing
         return utils.textOr(active.resolvedUrl, "") = demoUrl or utils.textOr(active.baseUrl, "") = demoUrl
     end function
 
+    ' Compra do Roku Pay que vai ao serviço: a assinatura válida mais recente (getAllPurchases do ChannelStore, cada uma
+    ' com purchaseId, status e purchaseDate). "" sem nenhuma.
+    function activePurchaseId(purchases as object) as string
+        best = ""
+        bestDate = ""
+        for each p in purchases
+            if utils.isObject(p) and utils.textOr(p.purchaseId, "") <> "" and LCase(utils.textOr(p.status, "valid")) = "valid" then
+                date = utils.textOr(p.purchaseDate, "")
+                if best = "" or date > bestDate then
+                    best = p.purchaseId
+                    bestDate = date
+                end if
+            end if
+        end for
+        return best
+    end function
+
     ' ---------- Consulta ao serviço (refresh do licenseStore) ----------
 
     ' Estado salvo só vale se a assinatura conferir para ESTE aparelho (editar o registro não libera nada).
