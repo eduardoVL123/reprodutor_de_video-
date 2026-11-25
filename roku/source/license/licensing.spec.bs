@@ -8,6 +8,36 @@ namespace tests
         return state
     end function
 
+    ' Armazenamento em memória (o storage.create real grava no registro).
+    function memoryStore() as object
+        return {
+            data: {},
+            get: function(key as string) as dynamic
+                return m.data[key]
+            end function,
+            set: function(key as string, value as dynamic) as boolean
+                m.data[key] = value
+                return true
+            end function,
+            remove: function(key as string) as boolean
+                m.data.delete(key)
+                return true
+            end function
+        }
+    end function
+
+    ' Serviço de licença falso: guarda os pedidos e devolve `response` ({ status, body } ou { error }).
+    function licenseTransport(response as object) as object
+        return {
+            response: response,
+            calls: [],
+            send: function(method as string, url as string, _timeoutMs as integer, headers as object, body as string) as object
+                m.calls.push({ method: method, url: url, body: ParseJson(body) })
+                return m.response
+            end function
+        }
+    end function
+
     @suite("licensing")
     class LicensingTests extends rooibos.BaseTestSuite
 
@@ -121,6 +151,61 @@ namespace tests
             m.assertFalse(licensing.isDemo({ type: "m3u", baseUrl: "https://exemplo.com/outra.m3u" }, demo))
             m.assertFalse(licensing.isDemo({ type: "xtream", baseUrl: demo }, demo))
             m.assertFalse(licensing.isDemo({ type: "m3u", baseUrl: demo }, ""))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("consulta ao serviço (refresh)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o corpo leva só chave do aparelho, plataforma roku, domínio, nonce e a compra do Roku Pay")
+        function _()
+            t = tests.licenseTransport({ status: 200, body: FormatJson({ access: "trial", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: invalid, serverTime: 1764000000000# }) })
+            licensing.refresh(t, tests.memoryStore(), "https://lic.test", { baseUrl: "http://Lista.com:8080/get.php", username: "u", password: "segredo" }, "tx-123456789", 1764000000000#)
+            m.assertEqual(t.calls[0].url, "https://lic.test/v1/access")
+            body = t.calls[0].body
+            m.assertEqual(body.platform, "roku")
+            m.assertEqual(body.host, "lista.com")
+            m.assertEqual(body.transactionId, "tx-123456789")
+            m.assertEqual(Len(body.deviceKey), 64)
+            m.assertTrue(Len(body.nonce) >= 16)
+            m.assertInvalid(body.username)
+            m.assertInvalid(body.password)
+            sem = tests.licenseTransport({ status: 200, body: "{}" })
+            licensing.refresh(sem, tests.memoryStore(), "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertInvalid(sem.calls[0].body.transactionId)
+        end function
+
+        @it("resposta do serviço vira o estado salvo; reabrir o app lê o mesmo estado")
+        function _()
+            store = tests.memoryStore()
+            t = tests.licenseTransport({ status: 200, body: FormatJson({ access: "activated", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: 1767225600000#, serverTime: 1764000000000# }) })
+            state = licensing.refresh(t, store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertFalse(state.offline)
+            m.assertEqual(state.access, "activated")
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000001000#, true), "")
+            again = licensing.loadSaved(store, device.getDeviceKey(store))
+            m.assertEqual(again.access, "activated")
+            m.assertEqual(again.host, "lista.com")
+            m.assertEqual(again.activationEndsAt, licensing.number(1767225600000#))
+        end function
+
+        @it("rede fora ou erro do serviço: estado salvo continua, marcado sem serviço (vale a carência)")
+        function _()
+            store = tests.memoryStore()
+            ok = tests.licenseTransport({ status: 200, body: FormatJson({ access: "activated", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: 1767225600000#, serverTime: 1764000000000# }) })
+            licensing.refresh(ok, store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            for each response in [{ error: "rede" }, { status: 500, body: "" }, { status: 200, body: "não é json" }]
+                state = licensing.refresh(tests.licenseTransport(response), store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000060000#)
+                m.assertTrue(state.offline)
+                m.assertEqual(state.access, "activated")
+                m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000060000#, true), "")
+            end for
+        end function
+
+        @it("lista nova sem serviço: pede conexão (não libera sem nenhuma resposta)")
+        function _()
+            state = licensing.refresh(tests.licenseTransport({ error: "rede" }), tests.memoryStore(), "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000000000#, true), "offline")
         end function
 
         @it("sem a chave pública no pacote a assinatura não é exigida (como sem VITE_LICENSE_PUBLIC_KEY)")

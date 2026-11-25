@@ -16,8 +16,9 @@ namespace ftue
     ' Diferente do web: na Roku o pareamento não tem cifra de ponta a ponta (sem ECDH; sessão "plain", só TLS + o
     ' segredo da TV), então o texto não promete que o serviço não lê (docs/roku/domains/09-pareamento-inbox.md).
     const PAIRING_TEXT = "Se você adicionar a lista pelo celular, ela passa por conexão segura, por no máximo 10 minutos, pelo serviço de pareamento do desenvolvedor, que a apaga assim que a TV a recebe. "
-    ' TODO(D8): com Roku Pay o teste grátis passa a ser da Roku; revisar este trecho junto com a licença.
-    const LICENSE_TEXT = "O app tem um teste grátis de 7 dias. Para controlar o teste e a ativação, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Se você enviar a lista pelo site, ela passa cifrada pelo serviço do desenvolvedor, que não consegue lê-la, por até 7 dias, e é apagada quando a TV recebe. Capas e logotipos vêm dos endereços da sua lista."
+    ' Diferente do web: a assinatura é pelo Roku Pay (o número da compra vai ao serviço para conferir com a Roku) e a
+    ' Roku ainda não recebe a lista pelo site (D9 passo 3): o trecho do site sai até existir.
+    const LICENSE_TEXT = "O app tem um teste grátis de 7 dias. Para controlar o teste e a assinatura, ele envia ao serviço de licença do desenvolvedor um código do aparelho (cifrado) e o domínio da lista em uso, com as datas de uso, e, se você assinar pelo Roku Pay, o número da compra para conferir a assinatura com a Roku; nunca usuário, senha ou o endereço completo. Usuário e senha ficam só neste aparelho (a senha é cifrada) e são usados apenas para falar com o servidor que você informou. Capas e logotipos vêm dos endereços da sua lista."
 
     ' A promessa de privacidade tem que ser verdadeira para o build: flags = { license, pairing }.
     function privacyText(flags as object) as string

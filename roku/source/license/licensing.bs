@@ -1,5 +1,6 @@
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/xtream/api.bs"
+import "pkg:/source/device/device.bs"
 ' Licença na Roku (docs/roku/domains/08-licenca-roku-pay.md): port das regras de src/stores/licenseStore.js e da
 ' conferência de src/services/licenseSignature.js (casos em licensing.spec.bs, de tests/licenseClient.test.js).
 ' A cobrança é só pelo Roku Pay: o servidor transforma a compra em ativação (server/license/license-roku.mjs) e assina
@@ -13,6 +14,9 @@ namespace licensing
     const OFFLINE_GRACE_MS = 604800000 ' 7 dias sem o serviço
     const CLOCK_SKEW_MS = 86400000 ' 24 h de acerto de relógio; mais que isso conta como manipulação
     const PEM_PATH = "pkg:/license-rsa.pem"
+    const REQUEST_TIMEOUT_MS = 8000
+    const RECHECK_S = 21600 ' TV que fica ligada: consulta de novo a cada 6 h (useLicenseWatch)
+    const ENTRY_DELAY_S = 10
 
     function nowMs() as longinteger
         dt = CreateObject("roDateTime")
@@ -159,5 +163,60 @@ namespace licensing
         if demoUrl = "" or not utils.isObject(active) or active.type <> "m3u" then return false
         return utils.textOr(active.resolvedUrl, "") = demoUrl or utils.textOr(active.baseUrl, "") = demoUrl
     end function
+
+    ' ---------- Consulta ao serviço (refresh do licenseStore) ----------
+
+    ' Estado salvo só vale se a assinatura conferir para ESTE aparelho (editar o registro não libera nada).
+    function loadSaved(store as object, deviceKey as string) as object
+        saved = store.get(licensing.STATE_KEY)
+        state = licensing.emptyState()
+        if utils.isObject(saved) and licensing.verify(saved, deviceKey, utils.textOr(saved.host, "")) then state = licensing.stateFrom(saved)
+        state.lastSeen = licensing.number(store.get(licensing.LAST_SEEN_KEY))
+        return state
+    end function
+
+    ' Pergunta ao serviço sobre a lista; resposta sem assinatura válida (proxy, hosts falso, replay) ou rede fora vale
+    ' como "sem serviço" e o estado salvo continua (com offline = true). transactionId = compra do Roku Pay ("" sem).
+    ' Transporte: { send(method, url, timeoutMs, headers, body) } (net.urlTransport).
+    function refresh(transport as object, store as object, base as string, active as dynamic, transactionId as string, now as dynamic) as object
+        deviceKey = device.getDeviceKey(store)
+        state = licensing.loadSaved(store, deviceKey)
+        at = licensing.number(now)
+        if at > state.lastSeen then
+            state.lastSeen = at
+            store.set(licensing.LAST_SEEN_KEY, at)
+        end if
+        host = licensing.listHost(active)
+        nonce = licensing.newNonce()
+        body = { deviceKey: deviceKey, platform: "roku", host: host, nonce: nonce }
+        if transactionId <> "" then body.transactionId = transactionId
+        res = transport.send("POST", base + "/v1/access", licensing.REQUEST_TIMEOUT_MS, { "Content-Type": "application/json" }, FormatJson(body))
+        reply = invalid
+        if res.error = invalid and res.status = 200 then reply = ParseJson(utils.textOr(res.body, ""))
+        if utils.isObject(reply) and utils.isString(reply.access) then
+            reply.nonce = nonce
+            if not licensing.verify(reply, deviceKey, host) then reply = invalid
+        else
+            reply = invalid
+        end if
+        if reply = invalid then
+            state.offline = true
+            return state
+        end if
+        saved = { code: reply.code, access: reply.access, host: host, trialEndsAt: reply.trialEndsAt, activationEndsAt: reply.activationEndsAt, serverTime: reply.serverTime, sigRsa: reply.sigRsa, nonce: nonce, checkedAt: at }
+        store.set(licensing.STATE_KEY, saved)
+        ' O serviço confirmou agora: um relógio que já esteve adiantado não tira a carência para sempre.
+        store.set(licensing.LAST_SEEN_KEY, at)
+        state = licensing.stateFrom(saved)
+        state.lastSeen = at
+        state.offline = false
+        return state
+    end function
+
+    ' Entrada (R4): lista de parceiro aberta por mais de 10 s conta para o parceiro.
+    sub sendEntry(transport as object, store as object, base as string, active as dynamic)
+        body = { deviceKey: device.getDeviceKey(store), platform: "roku", host: licensing.listHost(active) }
+        transport.send("POST", base + "/v1/entry", licensing.REQUEST_TIMEOUT_MS, { "Content-Type": "application/json" }, FormatJson(body))
+    end sub
 
 end namespace

@@ -75,7 +75,8 @@ describe('app Roku — configuração do build (pkg:/build-config.json)', () => 
   it('leva o endereço do pareamento sem a barra final; sem ele o pareamento fica desligado', () => {
     expect(buildConfig({ PULSE_PAIR_BASE_URL: ' https://par.exemplo.com/ ' }).pairBaseUrl).toBe('https://par.exemplo.com')
     expect(buildConfig({ VITE_PAIR_BASE_URL: 'http://localhost:8788' }).pairBaseUrl).toBe('http://localhost:8788')
-    expect(buildConfig({})).toEqual({ pairBaseUrl: '', demoPlaylistUrl: '' })
+    expect(buildConfig({})).toEqual({ pairBaseUrl: '', demoPlaylistUrl: '', licenseBaseUrl: '' })
+    expect(buildConfig({ PULSE_LICENSE_BASE_URL: 'https://pulseplayer.com.br/' }).licenseBaseUrl).toBe('https://pulseplayer.com.br')
   })
 
   it('leva a lista de demonstração dos revisores (PULSE_DEMO_PLAYLIST_URL do CI ou VITE_ do web)', () => {

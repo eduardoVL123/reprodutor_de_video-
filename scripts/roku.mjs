@@ -28,7 +28,8 @@ export function rooibosPassed(output) {
 export function buildConfig(env) {
   const pairBaseUrl = String(env.PULSE_PAIR_BASE_URL || env.VITE_PAIR_BASE_URL || '').trim().replace(/\/+$/, '')
   const demoPlaylistUrl = String(env.PULSE_DEMO_PLAYLIST_URL || env.VITE_DEMO_PLAYLIST_URL || '').trim()
-  return { pairBaseUrl, demoPlaylistUrl }
+  const licenseBaseUrl = String(env.PULSE_LICENSE_BASE_URL || env.VITE_LICENSE_BASE_URL || '').trim().replace(/\/+$/, '')
+  return { pairBaseUrl, demoPlaylistUrl, licenseBaseUrl }
 }
 
 /** PEM da chave pública RSA da licença (scripts/make-license-keys.mjs --rsa); vazio = Roku sem conferir sigRsa. */
@@ -103,6 +104,7 @@ async function main(command) {
     writeFileSync(`${OUT_DIR}/config/license-rsa.pem`, licenseRsaPem(process.env))
     console.log(`[roku] pareamento ${data.pairBaseUrl ? `em ${data.pairBaseUrl}` : 'desligado (sem PULSE_PAIR_BASE_URL)'}`)
     console.log(`[roku] lista de demonstração ${data.demoPlaylistUrl ? 'ligada' : 'desligada (sem PULSE_DEMO_PLAYLIST_URL)'}`)
+    console.log(`[roku] licença ${data.licenseBaseUrl ? `em ${data.licenseBaseUrl}` : 'desligada (sem PULSE_LICENSE_BASE_URL)'}`)
     return
   }
   if (command === 'size') {

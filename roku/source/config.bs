@@ -1,10 +1,8 @@
 import "pkg:/source/utils/types.bs"
-' Configuração do build (equivale às variáveis VITE_* do app web). A licença (D8) ainda é fixa; o endereço do
-' pareamento vem de pkg:/build-config.json, gerado no `npm run roku:build` a partir de PULSE_PAIR_BASE_URL (ou
-' VITE_PAIR_BASE_URL) — `node scripts/roku.mjs config`. Sem ele, o pareamento não existe.
+' Configuração do build (equivale às variáveis VITE_* do app web): pkg:/build-config.json, gerado no
+' `npm run roku:build` a partir de PULSE_PAIR_BASE_URL, PULSE_DEMO_PLAYLIST_URL e PULSE_LICENSE_BASE_URL (ou as VITE_)
+' — `node scripts/roku.mjs config`. Endereço vazio = o recurso não existe neste build.
 namespace config
-
-    const LICENSE_ENABLED = false
 
     function buildConfig() as object
         data = ParseJson(ReadAsciiFile("pkg:/build-config.json"))
@@ -15,6 +13,15 @@ namespace config
     ' Endereço do serviço de pareamento sem a barra final ("" = desligado).
     function pairBaseUrl() as string
         return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(config.buildConfig().pairBaseUrl, "").trim(), "")
+    end function
+
+    ' Serviço de licença (VITE_LICENSE_BASE_URL do web) sem a barra final; vazio = licença desligada.
+    function licenseBaseUrl() as string
+        return CreateObject("roRegex", "\/+$", "").replaceAll(utils.textOr(config.buildConfig().licenseBaseUrl, "").trim(), "")
+    end function
+
+    function licenseEnabled() as boolean
+        return config.licenseBaseUrl() <> ""
     end function
 
     ' Lista de demonstração para os revisores das lojas (VITE_DEMO_PLAYLIST_URL do web; "" = sem o botão).
