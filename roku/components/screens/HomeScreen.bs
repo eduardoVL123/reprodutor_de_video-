@@ -862,20 +862,30 @@ function onSelect() as boolean
         playFromAll(section, item, index)
         return true
     end if
-    if section = "vod" or section = "series" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: section } }
+    if section = "vod" or section = "series" then
+        params = { item: item, section: section }
+        ' Filme de uma fileira: "Assistir" nos detalhes segue a fileira (a de "Todos") com Anterior/Próximo.
+        if section = "vod" and Left(m.focusId, Len("vod-card-")) = "vod-card-" then params.play = allRequest(section, item, index)
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: params }
+    end if
     return true
 end function
 
 '' playFromCatalog em "Todos": a fileira são os primeiros itens, então a posição nela é a posição na categoria
 ' (CH+/CH- certos).
 sub playFromAll(section as string, item as object, index as integer)
+    request = allRequest(section, item, index)
+    if request <> invalid then m.top.navigate = request
+end sub
+
+function allRequest(section as string, item as object, index as integer) as dynamic
     store = storage.create()
     active = session.hydrate(store)
-    if active = invalid then return
+    if active = invalid then return invalid
     dir = catalog.contextFor(active).dir
     hidden = parental.hiddenMap(parental.activeContext(store), dir)[section]
-    m.top.navigate = playerState.catalogRequest(dir, section, catalog.ALL_CATEGORIES, item, index, invalid, hidden)
-end sub
+    return playerState.catalogRequest(dir, section, catalog.ALL_CATEGORIES, item, index, invalid, hidden)
+end function
 
 ' focusEl do web: lembra o foco, desliza a fileira até o cartão e rola o conteúdo (o destaque volta ao topo).
 sub focusOn(id as string)

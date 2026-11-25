@@ -831,12 +831,16 @@ end function
 
 '' playFromCatalog: a fila é a janela da categoria em volta do item (total = a contagem já sem o que está fora da vista).
 sub playFrom(categoryId as string, item as object, index as integer)
+    m.top.navigate = catalogPlay(categoryId, item, index)
+end sub
+
+function catalogPlay(categoryId as string, item as object, index as integer) as object
     total = 1
     for each cat in m.categories
         if cat.category_id = categoryId and cat.count <> invalid then total = cat.count
     end for
-    m.top.navigate = playerState.catalogRequest(m.ctx.dir, m.section, categoryId, item, index, total, m.hidden)
-end sub
+    return playerState.catalogRequest(m.ctx.dir, m.section, categoryId, item, index, total, m.hidden)
+end function
 
 ' ---------- Controle parental ----------
 
@@ -921,6 +925,21 @@ function onSelect() as boolean
         end if
         return true
     end if
-    if item <> invalid and m.section <> "live" then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: item, section: m.section } }
+    if item <> invalid and m.section <> "live" then
+        params = { item: item, section: m.section }
+        ' Filme: "Assistir" nos detalhes toca com a fila da categoria (playFromCatalog do MediaDetailsModal.vue).
+        if m.section = "vod" then
+            if m.focusId = "catalog-hero-info" then
+                params.play = catalogPlay(m.activeCategory, item, 0)
+            else if entry <> invalid and entry.categoryId <> "favorites" then
+                categoryId = m.activeCategory
+                if entry.categoryId <> invalid then categoryId = entry.categoryId
+                index = gridIndexOf(m.focusId)
+                if entry.index <> invalid then index = entry.index
+                if index >= 0 then params.play = catalogPlay(categoryId, item, index)
+            end if
+        end if
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: params }
+    end if
     return true
 end function

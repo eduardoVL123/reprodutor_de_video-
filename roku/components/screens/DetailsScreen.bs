@@ -104,7 +104,13 @@ sub onResult(event as object)
     m.loading = false
     if m.section = "series" then
         seasons = seriesPlaylist.seasonsOf(m.seriesData)
-        if seasons.count() > 0 then m.activeSeason = seasons[0].key
+        ' Abre na temporada do episódio em andamento (MediaDetailsModal.vue), senão na primeira.
+        resume = playerState.seriesResume(loadHistory(), m.seriesData)
+        if resume <> invalid then
+            m.activeSeason = resume.seasonKey
+        else if seasons.count() > 0 then
+            m.activeSeason = seasons[0].key
+        end if
     end if
     render()
 end sub
@@ -297,6 +303,10 @@ sub renderSeries()
     track.translation = [PAD_X, EPISODES_TOP]
     track.clippingRect = [-12, -16, RAIL_VIEW + 24, 221 + 40]
     m.episodeStrip = track.createChild("Group")
+    ' Baixo entra no episódio em andamento desta temporada (activeEpisodeIndex do web), senão no E1.
+    m.activeEpisode = 0
+    resume = playerState.seriesResume(loadHistory(), m.seriesData)
+    if resume <> invalid and resume.seasonKey = m.activeSeason then m.activeEpisode = resume.episodeIndex
     for i = 0 to episodes.count() - 1
         renderEpisode(episodes[i], i)
     end for
@@ -329,7 +339,7 @@ sub renderEpisode(ep as object, index as integer)
     group.scaleRotateCenter = [EPISODE_WIDTH / 2, 76]
     item = addFocusable("episode-card-" + index.toStr(), "rail-episode-card", "series-episodes", [0, EPISODES_TOP, EPISODE_WIDTH, 221], group, ring, 1.08, true)
     item.index = index
-    item.active = index = 0
+    item.active = index = m.activeEpisode
 end sub
 
 ' Botões h-[3.4rem]: primário branco (px-8, bold) e os de vidro (px-7, medium), ícone w-4 e gap-3.
@@ -393,6 +403,13 @@ sub playMovie()
     movie.append(m.item)
     movie.section = "vod"
     if utils.textOr(movie.container_extension, "") = "" then movie.container_extension = utils.textOr(m.info.container_extension, "mp4")
+    ' Aberto de uma categoria: toca com a fila dela (Anterior/Próximo e o próximo automático).
+    play = m.top.params.play
+    if utils.isObject(play) then
+        play.params.catalog.item = movie
+        m.top.navigate = play
+        return
+    end if
     m.top.navigate = playerState.openRequest(playerState.forItem(movie))
 end sub
 
