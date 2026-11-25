@@ -7,7 +7,8 @@
     "images/**/*",
     "fonts/*.ttf",
     "!**/*.spec.bs",
-    { "src": "../build/roku/config/build-config.json", "dest": "build-config.json" }
+    { "src": "../build/roku/config/build-config.json", "dest": "build-config.json" },
+    { "src": "../build/roku/config/license-rsa.pem", "dest": "license-rsa.pem" }
   ],
   "stagingFolderPath": "build/roku/staging",
   "outFile": "build/roku/pulse-roku.zip",

@@ -63,12 +63,12 @@ async function sendWeb(res, webRes) {
   res.end(webRes.body ? Buffer.from(await webRes.arrayBuffer()) : undefined)
 }
 
-export function createLicenseServer({ dbPath, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
+export function createLicenseServer({ dbPath, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', now = Date.now, publicDir = PUBLIC_DIR, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '', rokuApiKey = '', rsaKey = '' } = {}) {
   const db = openSqlite(dbPath)
   const purge = () => purgeExpired(db, now()).catch((err) => console.warn('[license] Limpeza falhou:', err && err.message))
   const ready = migrate(db).then(purge)
   setInterval(purge, PURGE_EVERY_MS).unref()
-  const handle = createLicenseHandler({ db, now, adminToken, reportToken, contactUrl, playUrl, mp, mpWebhookSecret, mpPublicKey, signingKey })
+  const handle = createLicenseHandler({ db, now, adminToken, reportToken, contactUrl, playUrl, mp, mpWebhookSecret, mpPublicKey, signingKey, rokuApiKey, rsaKey })
   setInterval(handle.sweep, 60 * 1000).unref()
   // Como o cron do Worker: estorno cujo webhook se perdeu.
   setInterval(() => handle.recheckRefunds().then(handle.warnStuckOrders).catch((err) => console.warn('[license] Rotina de pagamentos falhou:', err && err.message)), 3600 * 1000).unref()
@@ -115,7 +115,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] || '').href) {
   const mpWebhookSecret = process.env.MP_WEBHOOK_SECRET || ''
   const mpPublicKey = process.env.MP_PUBLIC_KEY || ''
   const signingKey = process.env.LICENSE_SIGNING_KEY || ''
-  createLicenseServer({ dbPath, adminToken, reportToken: process.env.LICENSE_REPORT_TOKEN || '', contactUrl: process.env.LICENSE_CONTACT_URL || '', playUrl: process.env.PLAY_URL || '', mp, mpWebhookSecret, mpPublicKey, signingKey }).listen(port, host, () => {
+  const rokuApiKey = process.env.ROKU_API_KEY || ''
+  const rsaKey = process.env.LICENSE_RSA_KEY || ''
+  createLicenseServer({ dbPath, adminToken, reportToken: process.env.LICENSE_REPORT_TOKEN || '', contactUrl: process.env.LICENSE_CONTACT_URL || '', playUrl: process.env.PLAY_URL || '', mp, mpWebhookSecret, mpPublicKey, signingKey, rokuApiKey, rsaKey }).listen(port, host, () => {
     console.log(`[license] http://${host}:${port} · banco ${dbPath}`)
     if (!adminToken) console.warn('[license] LICENSE_ADMIN_TOKEN vazio: o painel /admin/ fica fechado.')
   })

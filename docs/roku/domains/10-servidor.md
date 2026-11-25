@@ -1,5 +1,11 @@
 # DS — Servidor (licença e pareamento) para a Roku
 
+**Status (2026-11-25)**: passos 1 a 3 feitos em `server/license/license-roku.mjs` (testes em `tests/licenseRoku.test.js`)
+e pareamento `plain` publicado. Segredos novos do Worker, ainda não gravados: `ROKU_API_KEY` (chave de parceiro do
+Developer Dashboard) e `LICENSE_RSA_KEY` (`node scripts/make-license-keys.mjs --rsa`; a pública vai em
+`PULSE_LICENSE_RSA_PUBLIC_KEY` no build da Roku). UNVERIFIED: formato exato da resposta do validate-transaction
+(conferir com a conta de teste). Teto de 10 aparelhos por compra (`ROKU_MAX_DEVICES`).
+
 ## Estado atual
 - `server/license/license-core.mjs`: `PLATFORMS` L22 (sem `roku`; outro valor vira `web` L115); `/v1/access` L149-155;
   regex de `deviceKey` L39; assinatura com `LICENSE_SIGNING_KEY` (`server/license/license-sign.mjs:29-53`, ECDSA P-256).

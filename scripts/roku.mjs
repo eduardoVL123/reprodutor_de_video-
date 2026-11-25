@@ -31,6 +31,13 @@ export function buildConfig(env) {
   return { pairBaseUrl, demoPlaylistUrl }
 }
 
+/** PEM da chave pública RSA da licença (scripts/make-license-keys.mjs --rsa); vazio = Roku sem conferir sigRsa. */
+export function licenseRsaPem(env) {
+  // No CI a variável pode vir numa linha só, com "\n" escrito no lugar das quebras.
+  const pem = String(env.PULSE_LICENSE_RSA_PUBLIC_KEY || '').replace(/\\n/g, '\n').trim()
+  return pem.startsWith('-----BEGIN PUBLIC KEY-----') ? `${pem}\n` : ''
+}
+
 const SIM_TIMEOUT_MS = 5 * 60 * 1000
 
 /** Sobe o mock com catálogo pequeno e espera ele responder; devolve o processo para encerrar depois. */
@@ -92,6 +99,8 @@ async function main(command) {
     mkdirSync(`${OUT_DIR}/config`, { recursive: true })
     const data = buildConfig(process.env)
     writeFileSync(`${OUT_DIR}/config/build-config.json`, JSON.stringify(data))
+    // O roRSA lê a chave de um arquivo PEM do pacote (pkg:/license-rsa.pem).
+    writeFileSync(`${OUT_DIR}/config/license-rsa.pem`, licenseRsaPem(process.env))
     console.log(`[roku] pareamento ${data.pairBaseUrl ? `em ${data.pairBaseUrl}` : 'desligado (sem PULSE_PAIR_BASE_URL)'}`)
     console.log(`[roku] lista de demonstração ${data.demoPlaylistUrl ? 'ligada' : 'desligada (sem PULSE_DEMO_PLAYLIST_URL)'}`)
     return

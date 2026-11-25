@@ -83,3 +83,16 @@ describe('app Roku — configuração do build (pkg:/build-config.json)', () => 
     expect(buildConfig({ VITE_DEMO_PLAYLIST_URL: 'https://exemplo.com/d.m3u' }).demoPlaylistUrl).toBe('https://exemplo.com/d.m3u')
   })
 })
+
+describe('app Roku — chave pública RSA da licença (pkg:/license-rsa.pem)', () => {
+  it('o par do make-license-keys --rsa sai em PEM e o build aceita, inclusive com \n escrito numa linha só (CI)', async () => {
+    const { rsaPair } = await import('../scripts/make-license-keys.mjs')
+    const { licenseRsaPem } = await import('../scripts/roku.mjs')
+    const { publicPem, privateJwk } = await rsaPair()
+    expect(JSON.parse(privateJwk).kty).toBe('RSA')
+    expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: publicPem })).toBe(publicPem)
+    expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: publicPem.trim().replace(/\n/g, '\n') })).toBe(publicPem)
+    expect(licenseRsaPem({})).toBe('')
+    expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: 'não é pem' })).toBe('')
+  })
+})
