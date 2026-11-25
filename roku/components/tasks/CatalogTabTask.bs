@@ -97,8 +97,7 @@ function openResult(ctx as object, section as string, list as object) as object
     end for
     heroItem = invalid
     if section <> "live" and rows.count() > 0 then heroItem = rows[0].items[0]
-    notice = catalogTab.truncatedNotice(catalog.getMeta(ctx.dir, section))
-    return { mode: "open", ok: true, error: "", categories: categories, rows: rows, heroItem: heroItem, hidden: sectionHidden, allCategories: loaded.list, notice: notice }
+    return { mode: "open", ok: true, error: "", categories: categories, rows: rows, heroItem: heroItem, hidden: sectionHidden, allCategories: loaded.list }
 end function
 
 sub heroDetails(transport as object, ctx as object, section as string, heroItem as dynamic)

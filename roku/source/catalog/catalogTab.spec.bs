@@ -78,14 +78,6 @@ namespace tests
             m.assertEqual(texts.synopsis, "Uma trama.")
         end function
 
-        @it("lista M3U cortada por falta de espaço avisa quantos itens ficaram; inteira ou pelo servidor não avisa")
-        function _()
-            m.assertEqual(catalogTab.truncatedNotice({ truncated: true, count: 12500, total: 45210 }), "Esta lista não coube inteira nesta TV: mostrando 12.500 de 45.210 itens.")
-            m.assertEqual(catalogTab.truncatedNotice({ truncated: true, count: 500, total: 1200 }), "Esta lista não coube inteira nesta TV: mostrando 500 de 1.200 itens.")
-            m.assertEqual(catalogTab.truncatedNotice({ truncated: false, count: 30, total: 30 }), "")
-            m.assertEqual(catalogTab.truncatedNotice(invalid), "")
-        end function
-
     end class
 
 end namespace

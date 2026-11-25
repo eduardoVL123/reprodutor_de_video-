@@ -281,8 +281,8 @@ namespace catalog
     ' Grava a seção em pedaços, com o índice por categoria e o de busca. Substitui o que havia.
     ' Nunca enche o disco: antes de cada chunk confere o espaço livre (deixando DISK_RESERVE_BYTES e o que os índices
     ' vão ocupar). Se a seção não couber inteira, passa a vir do servidor por categoria (saveRemote): a lista aparece
-    ' toda, carregada por partes. Sem servidor para isso (M3U, remoteOk = false), ficam os itens que couberam
-    ' (meta.truncated). budget = limite de bytes para os testes (-1: o espaço livre do volume).
+    ' toda, carregada por partes (M3U: relendo a lista, ver fetchCategory). budget = limite de bytes para os testes
+    ' (-1: o espaço livre do volume).
     ' Chamada como função solta (sem o hooks na frente): senão o m dela seria o próprio hooks, não o da Task.
     sub reportStage(hooks as dynamic, text as string)
         if hooks = invalid or hooks.stage = invalid then return
@@ -297,7 +297,7 @@ namespace catalog
         notify(fraction)
     end sub
 
-    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, remoteOk = true as boolean, hooks = invalid as dynamic)
+    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, hooks = invalid as dynamic)
         path = catalog.sectionDir(dir, section)
         catalog.deleteTree(path)
         ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
@@ -308,12 +308,10 @@ namespace catalog
         end while
         CreateDirectory(dir)
         CreateDirectory(path)
-        if remoteOk then
-            catalog.writeProvisional(dir, section, categories, streams)
-            if hooks <> invalid and hooks.provisional <> invalid then
-                ready = hooks.provisional
-                ready(section)
-            end if
+        catalog.writeProvisional(dir, section, categories, streams)
+        if hooks <> invalid and hooks.provisional <> invalid then
+            ready = hooks.provisional
+            ready(section)
         end if
         total = streams.count()
         chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
@@ -385,13 +383,7 @@ namespace catalog
                 names.push(catalog.normalizeText(streams[p].name))
             end for
         end while
-        if written < total then
-            if remoteOk then
-                catalog.saveRemote(dir, section, categories, streams, budget)
-                return
-            end if
-            print "[catalog] Seção "; section; " grande demais para o disco: guardados "; written; " de "; total; " itens."
-        end if
+        if written < total then catalog.saveRemote(dir, section, categories, streams, budget)
     end sub
 
     ' ---------- Seção pelo servidor (não coube no disco) ----------
@@ -607,11 +599,24 @@ namespace catalog
         file = cacheDir + "/" + xtream.hashText(ctx.dir + "|" + section + "|" + categoryId) + ".json"
         cached = catalog.readJsonFile(file)
         if GetInterface(cached, "ifArray") <> invalid then return cached
-        names = catalog.actions(section)
-        response = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: names.streams, params: { category_id: categoryId }, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
-        if response.error <> invalid or GetInterface(response.data, "ifArray") = invalid then return []
-        list = response.data
-        if section = "series" then list = catalog.remapSeries(list)
+        if ctx.type = "m3u" then
+            ' M3U não tem consulta por categoria: baixa e lê a lista de novo e fica só com esta categoria.
+            ' shortcut: uma leitura da lista inteira por categoria aberta; guardar o byte de cada categoria e pedir só o
+            ' trecho (HTTP Range) se a espera incomodar e o servidor aceitar.
+            fetched = xtream.fetchM3uText(transport, ctx.apiBase)
+            if fetched.error <> invalid then return []
+            read = xtream.readM3u(fetched.text)
+            fetched = invalid
+            if read.error <> invalid then return []
+            list = read.parsed[section + "Streams"]
+            if list = invalid then return []
+        else
+            names = catalog.actions(section)
+            response = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: names.streams, params: { category_id: categoryId }, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
+            if response.error <> invalid or GetInterface(response.data, "ifArray") = invalid then return []
+            list = response.data
+            if section = "series" then list = catalog.remapSeries(list)
+        end if
         ' Servidor que ignora o category_id devolve a lista toda: fica só o que é desta categoria.
         items = []
         for each raw in list
@@ -850,13 +855,12 @@ namespace catalog
         if fetched.error <> invalid then return fetched.error
         read = xtream.readM3u(fetched.text)
         if read.error <> invalid then return read.error
-        ' M3U não tem servidor por categoria: se não couber, ficam os itens que couberam.
         liveHooks = invalid
         if section = "live" then liveHooks = hooks
         vodHooks = invalid
         if section = "vod" then vodHooks = hooks
-        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, false, liveHooks)
-        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, false, vodHooks)
+        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, liveHooks)
+        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, vodHooks)
         catalog.saveSection(ctx.dir, "series", [], [])
         return invalid
     end function
@@ -937,7 +941,7 @@ namespace catalog
                     parsed(section, cats.list, list)
                 end if
                 catalog.reportStage(hooks, "Salvando no dispositivo...")
-                catalog.saveSection(ctx.dir, section, cats.list, list, -1, true, hooks)
+                catalog.saveSection(ctx.dir, section, cats.list, list, -1, hooks)
             end if
         end if
         return { ok: true, error: "", errorDetail: "", list: catalog.publishList(ctx.dir, section) }

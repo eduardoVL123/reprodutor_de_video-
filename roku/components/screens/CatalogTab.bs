@@ -131,7 +131,6 @@ sub onResult(event as object)
             m.rows = withFavoritesRow(data.rows)
             m.heroItem = data.heroItem
             m.heroInfo = invalid
-            m.notice = utils.textOr(data.notice, "")
             if not isFocusIn("cat-") then m.focusId = "cat-" + activeCategoryIndex().toStr()
         end if
         render()
@@ -347,10 +346,6 @@ sub renderContent()
     if m.section <> "live" and m.heroItem <> invalid then
         renderHero()
         y = CONTENT_TOP + 448 + 16
-    end if
-    if utils.textOr(m.notice, "") <> "" then
-        ui.text(m.scrollGroup, m.notice, ui.font(400, 20), ui.NEUTRAL_400, 176, y, SECTION_RIGHT - 176 - 24, 28)
-        y = y + 28 + 24
     end if
     if m.rows.count() = 0 then
         renderEmpty(y)

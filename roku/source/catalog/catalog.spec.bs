@@ -287,27 +287,40 @@ namespace tests
             m.assertEqual(found.name, "Item 1200")
         end function
 
-        @it("M3U sem espaço para tudo (sem servidor por categoria): guarda os primeiros itens que couberem")
+        @it("M3U sem espaço: vem pelo servidor como a Xtream; a categoria que não coube vem relendo a lista")
         function _()
-            streams = tests.numberedStreams(1200)
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
-            oneChunk = Len(ReadAsciiFile(tests.CATALOG_DIR + "/vod/chunk-0.json"))
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, oneChunk + 600 * catalog.INDEX_BYTES_PER_ITEM, false)
+            catalog.deleteTree("tmp:/pulse-remote")
+            q = Chr(34)
+            m3uText = "#EXTM3U" + Chr(10)
+            for each film in [["Filmes", "Filme A"], ["Filmes Ação", "Ação 1"], ["Filmes", "Filme B"], ["Filmes Ação", "Ação 2"]]
+                m3uText = m3uText + "#EXTINF:-1 group-title=" + q + film[0] + q + "," + film[1] + Chr(10) + "http://srv.test/movie/" + film[1].replace(" ", "") + ".mp4" + Chr(10)
+            end for
+            parsed = xtream.readM3u(m3uText).parsed
+            catalog.saveSection(tests.CATALOG_DIR, "vod", parsed.vodCategories, parsed.vodStreams, 10)
             meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
-            m.assertNotInvalid(meta)
-            m.assertTrue(meta.truncated)
-            m.assertEqual(meta.count, 500)
-            m.assertEqual(meta.total, 1200)
-            m.assertEqual(tests.ids(catalog.getItems(tests.CATALOG_DIR, "vod", catalog.ALL_CATEGORIES, 498, 10, [])), [499, 500])
-            m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 500)
-            m.assertEqual(catalog.getSearchIndex(tests.CATALOG_DIR, "vod").count(), 500)
-            ' Progresso da gravação (onProgress do saveSection web): a fração a cada bloco gravado.
+            m.assertTrue(catalog.isRemote(meta))
+            m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 4)
+            ' Sem o começo guardado (heads.json): a categoria vem da lista baixada de novo.
+            DeleteFile(catalog.sectionDir(tests.CATALOG_DIR, "vod") + "/heads.json")
+            t = tests.fakeTransport([{ prefix: "http://srv.test/lista.m3u", response: tests.textResponse(m3uText) }])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: "http://srv.test/lista.m3u", credentials: { username: "M3U Playlist", password: "" }, type: "m3u" }
+            action = parsed.vodCategories[1].category_id
+            items = catalog.remoteItems(t, ctx, "vod", action, 0, 10, [], meta)
+            m.assertEqual(items.count(), 2)
+            m.assertEqual(items[0].name, "Ação 1")
+            m.assertEqual(items[1].directUrl, "http://srv.test/movie/Ação2.mp4")
+            m.assertEqual(items[1].stream_id, parsed.vodStreams[3].stream_id)
+            ' Já baixada: a mesma categoria sai do tmp:, sem baixar de novo.
+            catalog.remoteItems(t, ctx, "vod", action, 0, 10, [], meta)
+            m.assertEqual(t.calls.count(), 1)
+            catalog.deleteTree("tmp:/pulse-remote")
+        end function
+
+        @it("progresso da gravação (onProgress do saveSection web): a fração a cada bloco gravado")
+        function _()
             GetGlobalAA().savedProgress = []
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, -1, false, { progress: tests.recordProgress })
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], tests.numberedStreams(1200), -1, { progress: tests.recordProgress })
             m.assertEqual(GetGlobalAA().savedProgress, [33, 67, 100])
-            ' Nem um chunk cabe: a seção fica vazia mas com o resumo (não baixa de novo em laço).
-            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams, 10, false)
-            m.assertEqual(catalog.getMeta(tests.CATALOG_DIR, "vod").count, 0)
         end function
 
         @it("só a lista ativa fica no disco: o Início apaga o catálogo das outras listas ao começar")

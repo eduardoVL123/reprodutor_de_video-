@@ -83,22 +83,4 @@ namespace catalogTab
         return { badge: badge, title: name, rating: ratingText, year: year, duration: duration, genre: genre, synopsis: plot }
     end function
 
-    ' Lista M3U que não coube no disco (meta.truncated: M3U não tem servidor por categoria): diz quantos itens ficaram.
-    ' Sem par no web, onde o IndexedDB guarda a lista inteira.
-    function truncatedNotice(meta as dynamic) as string
-        if not utils.isObject(meta) or meta.truncated <> true then return ""
-        return "Esta lista não coube inteira nesta TV: mostrando " + catalogTab.thousands(meta.count) + " de " + catalogTab.thousands(meta.total) + " itens."
-    end function
-
-    ' 45210 → "45.210" (pt-BR).
-    function thousands(value as dynamic) as string
-        digits = Int(value).toStr()
-        text = ""
-        while Len(digits) > 3
-            text = "." + Right(digits, 3) + text
-            digits = Left(digits, Len(digits) - 3)
-        end while
-        return digits + text
-    end function
-
 end namespace
