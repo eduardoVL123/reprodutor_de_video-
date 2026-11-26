@@ -93,6 +93,32 @@ describe('Roku Pay — /v1/access', () => {
     expect(reply.activationEndsAt).toBeNull()
   })
 
+  it('aparelho Roku revogado no painel continua revogado (auditoria 2026-11-26, item 2)', async () => {
+    let clock = NOW
+    const h = createLicenseHandler({ db, now: () => clock, adminToken: 'x', rokuApiKey: 'chave-parceiro', rokuFetch })
+    const first = await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    expect(first.access).toBe('activated')
+    const res = await h(new Request(`http://license.test/admin/api/devices/${first.code}/revoke`, { method: 'POST', headers: { Authorization: 'Bearer x', 'Content-Type': 'application/json' }, body: '{}' }), '10.0.0.1')
+    expect(res.status).toBe(200)
+    clock = NOW + 11 * 60 * 1000 // passou o cache: a Roku ainda diz que a assinatura vale
+    const after = await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    expect(after.access).not.toBe('activated')
+    expect(after.activationEndsAt).toBeNull()
+  })
+
+  it('cancelada pela Roku e depois assinada de novo com a mesma compra: volta a ativar', async () => {
+    let clock = NOW
+    const h = createLicenseHandler({ db, now: () => clock, rokuApiKey: 'chave-parceiro', rokuFetch })
+    await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    clock = NOW + 11 * 60 * 1000
+    rokuReply = { body: { status: 'Success', isEntitled: false, expirationDate: new Date(NOW).toISOString() } }
+    await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    clock = NOW + 22 * 60 * 1000
+    rokuReply = { body: { status: 'Success', isEntitled: true, expirationDate: new Date(NOW + 60 * DAY).toISOString() } }
+    const back = await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    expect(back.access).toBe('activated')
+  })
+
   it('Roku fora do ar ou resposta estranha não muda nada (o estado anterior vale)', async () => {
     const h = createLicenseHandler({ db, now: () => NOW, rokuApiKey: 'chave-parceiro', rokuFetch })
     await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })

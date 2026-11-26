@@ -92,6 +92,15 @@ export async function applyRokuPay(db, { deviceKey, transactionId, result, now }
     }
     return 'activated'
   }
+  // Revogada pelo dono no painel (evento 'revoke' no mesmo instante): a Roku não recria. A revogação da própria Roku
+  // (cancelada) não grava evento, então uma nova assinatura da mesma compra volta a ativar (auditoria 2026-11-26, item 2).
+  const revokedByOwner = await db
+    .prepare(
+      "SELECT 1 FROM activations a JOIN device_events e ON e.device_key = a.device_key AND e.action = 'revoke' AND e.created_at = a.revoked_at WHERE a.device_key = ? AND a.source = ? AND a.note = ? LIMIT 1",
+    )
+    .bind(deviceKey, ROKU_SOURCE, transactionId)
+    .first()
+  if (revokedByOwner) return 'unchanged'
   const others = await db
     .prepare('SELECT COUNT(DISTINCT device_key) AS n FROM activations WHERE source = ? AND note = ? AND revoked_at IS NULL')
     .bind(ROKU_SOURCE, transactionId)
