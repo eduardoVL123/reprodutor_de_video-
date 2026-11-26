@@ -684,9 +684,10 @@ namespace catalog
     end function
 
     ' Posições bloqueadas pelas categorias fora da vista; invalid = nada escondido.
-    function blockedPositions(dir as string, section as string, hidden as object) as dynamic
+    ' index: o índice já lido por quem chama (getItems), para não ler index.json duas vezes por página.
+    function blockedPositions(dir as string, section as string, hidden as object, index = invalid as dynamic) as dynamic
         if hidden.count() = 0 then return invalid
-        index = catalog.getIndex(dir, section)
+        if index = invalid then index = catalog.getIndex(dir, section)
         blocked = {}
         for each id in hidden
             positions = index[utils.textOr(id, "")]
@@ -744,11 +745,13 @@ namespace catalog
         meta = catalog.getMeta(dir, section)
         if meta = invalid or count <= 0 then return []
         if catalog.isRemote(meta) then return catalog.remoteItems(net.urlTransport(), catalog.remoteContext(dir), section, categoryId, start, count, hidden, meta)
-        blocked = catalog.blockedPositions(dir, section, hidden)
+        index = invalid
+        if hidden.count() > 0 or categoryId <> catalog.ALL_CATEGORIES then index = catalog.getIndex(dir, section)
+        blocked = catalog.blockedPositions(dir, section, hidden, index)
         if categoryId = catalog.ALL_CATEGORIES then
             candidates = invalid ' todas as posições, em ordem
         else
-            candidates = catalog.getIndex(dir, section)[categoryId]
+            candidates = index[categoryId]
             if candidates = invalid then return []
         end if
         positions = []
