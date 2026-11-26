@@ -27,6 +27,8 @@ sub init()
     m.global.addFields({ profile: profiles.active(state.list, state.activeId) })
     ' Controle parental desta abertura (parental.bs): categorias desbloqueadas com o PIN e a trava de 5 erros.
     m.global.addFields({ parental: { owner: "", unlocked: {}, rev: 0 }, parentalGuard: { fails: 0, lockedUntil: 0 } })
+    ' Lista de parceiro cuja entrada (R4) já foi contada nesta abertura: recriar o Início não conta de novo.
+    m.global.addFields({ entrySentHost: "" })
     m.profileAsked = false
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
