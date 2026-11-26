@@ -57,6 +57,21 @@ describe('painel — lista de aparelhos', () => {
     }
   })
 
+  it('pagina de 50 em 50, mais novos primeiro, com o status e a ativação de cada linha (auditoria 2026-11-26, item 19)', async () => {
+    for (let n = 0; n < 52; n++) {
+      await db.prepare('INSERT INTO devices (device_key, code, platform, first_seen_at, trial_ends_at) VALUES (?, ?, ?, ?, ?)').bind(`k${n}`, `C${String(n).padStart(5, '0')}`, 'web', clock - n * 1000, clock - 1).run()
+    }
+    await db.prepare("INSERT INTO activations (device_key, starts_at, ends_at, source) VALUES ('k51', ?, ?, 'manual')").bind(clock, clock + 1000).run()
+    const first = (await call('GET', '/admin/api/devices')).body
+    expect(first.items).toHaveLength(50)
+    expect(first.items[0].code).toBe('C00000')
+    expect(first.nextPage).toBe(1)
+    const second = (await call('GET', '/admin/api/devices?page=1')).body
+    expect(second.items.map((x) => x.code)).toEqual(['C00050', 'C00051'])
+    expect(second.items[1]).toMatchObject({ status: 'activated', activationEndsAt: clock + 1000 })
+    expect(second.nextPage).toBeNull()
+  })
+
   it('busca por parte do código ou da observação', async () => {
     const a = await access(1)
     await access(2)
