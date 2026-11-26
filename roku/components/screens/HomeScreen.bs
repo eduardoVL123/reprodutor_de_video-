@@ -356,7 +356,9 @@ sub renderHero()
     m.heroButtons = []
     x = 174
     x = addHeroButton("hero-play", "icon-play", texts.playText, true, x) + 12
-    x = addHeroButton("hero-info", "icon-info", "Mais informações", false, x) + 12
+    infoText = "Mais informações"
+    if utils.isObject(m.heroItem) and m.heroItem.section = "series" then infoText = "Episódios"
+    x = addHeroButton("hero-info", "icon-info", infoText, false, x) + 12
     ' isHeroBookmarked do Dashboard.vue: coração cheio em limão e "Nos favoritos".
     if heroSaved() then
         addHeroButton("hero-mylist", "icon-heart-filled", "Nos favoritos", false, x, ui.ACCENT)
@@ -858,6 +860,15 @@ function onSelect() as boolean
             item = rail.items[index]
         end if
     end for
+    ' handleHeroInfo do web: sem filme nem série no destaque, "Mais informações" abre Minhas listas.
+    if m.focusId = "hero-info" then
+        heroSection = ""
+        if utils.isObject(item) then heroSection = utils.textOr(item.section, "")
+        if heroSection <> "vod" and heroSection <> "series" then
+            m.top.navigate = { action: "push", screen: "ListManagerScreen" }
+            return true
+        end if
+    end if
     if not utils.isObject(item) then return true
     ' Cartão "Ver todos os filmes / Ver todas as séries / Explorar canais" no fim da fileira: a aba da seção.
     if item.isSeeAll = true then

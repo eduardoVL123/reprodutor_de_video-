@@ -149,7 +149,7 @@ sub tryDemo()
     m.busy = "demo"
     render()
     m.login = CreateObject("roSGNode", "LoginTask")
-    m.login.params = { dns: config.demoPlaylistUrl(), username: "", password: "", label: "" }
+    m.login.params = { dns: config.demoPlaylistUrl(), username: "", password: "", label: "Demonstração" }
     m.login.observeField("result", "onDemoLogin")
     m.login.control = "run"
 end sub

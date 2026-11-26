@@ -154,7 +154,9 @@ namespace home
             list.push(home.vitrineItem(button.id, "hero-actions", [button.x, p.heroY - p.scroll, button.width, 52], false))
         end for
         for each rail in p.rails
-            list.push(home.vitrineItem("home-see-all-" + rail.section, "header-" + rail.section, [p.headerRight - rail.seeAllWidth, rail.top - 12 - p.scroll, rail.seeAllWidth, 52], false))
+            ' Só o "Limpar histórico" recebe foco: o "Ver todos ›" do título tem tabindex -1 no web (o cartão no fim da
+            ' fileira faz o mesmo).
+            if rail.section = "history" then list.push(home.vitrineItem("home-see-all-" + rail.section, "header-" + rail.section, [p.headerRight - rail.seeAllWidth, rail.top - 12 - p.scroll, rail.seeAllWidth, 52], false))
             for i = 0 to rail.count - 1
                 x = p.railX + i * (rail.cardWidth + p.gap) + rail.offset
                 list.push(home.vitrineItem(rail.section + "-card-" + i.toStr(), "rail-" + rail.section + "-card", [x, rail.top + 56 - p.scroll, rail.cardWidth, rail.cardHeight], true))

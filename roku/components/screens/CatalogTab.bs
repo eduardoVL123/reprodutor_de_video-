@@ -399,6 +399,20 @@ sub renderEmpty(y as float)
         detail = ui.text(m.scrollGroup, message.detail, ui.font(400, 20), ui.NEUTRAL_400, SECTION_LEFT + 24, y + 131, SECTION_RIGHT - SECTION_LEFT - 48, 28)
         detail.horizAlign = "center"
     end if
+    ' Numa categoria vazia, "Ver todas as categorias" (tv-btn-primary mt-4) volta para Todos.
+    if m.activeCategory <> catalog.ALL_CATEGORIES then
+        group = m.scrollGroup.createChild("Group")
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 62)
+        bg = ui.panel(group, "btn-primary", 0, 0, 10, 52)
+        label = ui.inlineText(group, "Ver todas as categorias", ui.font(600, 20), ui.BLACK, 28, 12, 28)
+        width = label.boundingRect().width + 56
+        bg.width = width
+        ring.width = width + 10
+        x = SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - width) / 2
+        top = y + 80 + 39 + 16
+        group.translation = [x, top]
+        addFocusable("catalog-all-categories", "content", "empty", "catalog-content", [x, top, width, 52], group, ring, 1.02)
+    end if
     m.contentHeight = CONTENT_HEIGHT
 end sub
 
@@ -897,6 +911,10 @@ function onSelect() as boolean
     end if
     if m.focusId = "catalog-refresh" or m.focusId = "catalog-retry" then
         load(true)
+        return true
+    end if
+    if m.focusId = "catalog-all-categories" then
+        chooseCategory(catalog.ALL_CATEGORIES)
         return true
     end if
     if m.focusId = "catalog-hero-mylist" then

@@ -605,7 +605,14 @@ sub renderQueue()
     border.translation = [1280, 0]
     border.width = 2
     border.height = 1080
-    ui.text(m.queueLayer, "Fila de Reprodução", ui.font(700, 32), ui.WHITE, 1312, 56, 512, 44).wrap = false
+    ui.text(m.queueLayer, "Fila de Reprodução", ui.font(700, 32), ui.WHITE, 1312, 56, 450, 44).wrap = false
+    ' drawer-close do web (✕, tv-btn !px-4 !py-2): Cima na primeira linha chega nele (queueIndex -1).
+    close = m.queueLayer.createChild("Group")
+    close.translation = [1778, 60]
+    closeRing = ui.panel(close, "focus-ring", -5, -5, 56, 56)
+    closeRing.visible = m.queueIndex = -1
+    ui.panel(close, "btn", 0, 0, 46, 46)
+    ui.panelImage(close, "icon-close-20.png", 13, 13, 20, 20).blendColor = ui.WHITE
     subtitle = "Vídeos"
     if isLive() then subtitle = "Canais"
     ui.text(m.queueLayer, subtitle, ui.font(400, 20), ui.MUTED, 1312, 100, 512, 28)
@@ -655,7 +662,11 @@ sub queueKey(key as string)
         return
     end if
     count = m.state.items.count()
-    if key = "up" and m.queueIndex > 0 then m.queueIndex = m.queueIndex - 1
+    if key = "OK" and m.queueIndex = -1 then
+        queueKey("back")
+        return
+    end if
+    if key = "up" and m.queueIndex > -1 then m.queueIndex = m.queueIndex - 1
     if key = "down" and m.queueIndex < count - 1 then m.queueIndex = m.queueIndex + 1
     if key = "OK" then
         ' playAt: pula para o item na fila atual (a janela da categoria não muda).
@@ -671,7 +682,7 @@ sub queueKey(key as string)
         renderFocus()
         return
     end if
-    m.queueTop = playerView.listTop(m.queueIndex, m.queueTop, QUEUE_ROWS, count)
+    if m.queueIndex >= 0 then m.queueTop = playerView.listTop(m.queueIndex, m.queueTop, QUEUE_ROWS, count)
     renderQueue()
 end sub
 

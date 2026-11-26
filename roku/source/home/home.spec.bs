@@ -200,11 +200,13 @@ namespace tests
             m.assertEqual(spatial.navigate(state, "vod-card-0", "down"), "series-card-4")
         end function
 
-        @it("Cima do último cartão de uma fileira no fim vai para o Ver todos")
+        @it("o Ver todos do título da fileira não recebe foco (tabindex -1 no web): Cima não para nele")
         function _()
-            ' Fileira de 21 cartões deslizada até o fim (−2200): o cartão final fica em x 1656.
+            ' Fileira de 21 cartões deslizada até o fim (−2200): o cartão final fica em x 1656, embaixo do Ver todos.
             state = tests.homeSpatial(-2200)
-            m.assertEqual(spatial.navigate(state, "vod-card-20", "up"), "home-see-all-vod")
+            target = spatial.navigate(state, "vod-card-20", "up")
+            m.assertNotEqual(target, "home-see-all-vod")
+            m.assertNotEqual(target, "")
         end function
 
         @it("Voltar e OK não mexem no foco")
