@@ -22,7 +22,8 @@ const PAGE = `<!doctype html>
 <title>Pulse Player — Roku (simulador)</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
-  #display { display: block; width: 100vw; height: 100vh; object-fit: contain; }
+  /* O motor grava width/height de 1920x1080 px no canvas: sem !important a TV passava da janela e só um canto aparecia. */
+  #display { display: block; width: 100vw !important; height: 100vh !important; object-fit: contain; }
   #player { display: none; }
 </style>
 </head>
