@@ -954,6 +954,9 @@ namespace catalog
     function loadSection(transport as object, ctx as object, section as string, force as boolean, hooks = invalid as dynamic) as object
         meta = invalid
         if not force then meta = catalog.getMeta(ctx.dir, section)
+        ' Quem chega aqui tem a vez de gravar: uma ficha provisória é de uma gravação interrompida (app fechado no meio).
+        ' Sem isto ela ficava para sempre, sem busca e relendo a M3U a cada categoria (auditoria 2026-11-26, item 8).
+        if meta <> invalid and meta.provisional = true then meta = invalid
         if meta = invalid then
             if ctx.type = "m3u" then
                 catalog.reportStage(hooks, "Baixando e processando a playlist M3U...")

@@ -456,6 +456,26 @@ namespace tests
             m.assertEqual(t.calls.count(), 2)
         end function
 
+        @it("ficha provisória de uma gravação interrompida não fica: a seção é baixada de novo (auditoria 2026-11-26, item 8)")
+        function _()
+            base = "http://srv.test"
+            catalog.deleteTree(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            CreateDirectory(tests.CATALOG_DIR)
+            CreateDirectory(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            ' O app fechou no meio da gravação: só a ficha provisória ficou no disco.
+            catalog.writeProvisional(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "Ação" }], tests.numberedStreams(3))
+            t = tests.fakeTransport([
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_categories", response: tests.jsonResponse([{ category_id: "1", category_name: "Ação" }]) },
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_streams", response: tests.jsonResponse(tests.numberedStreams(3)) }
+            ])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: base, credentials: { username: "u", password: "p" }, type: "xtream" }
+            m.assertTrue(catalog.loadSection(t, ctx, "vod", false).ok)
+            m.assertEqual(t.calls.count(), 2)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertFalse(meta.provisional = true)
+            m.assertFalse(catalog.isRemote(meta))
+        end function
+
         @it("loadShared: dona que sumiu perde a vez pelo prazo; baixa uma vez e libera a seção")
         function _()
             if not m.global.hasField("catalogLoad_vod") then m.global.addFields({ catalogLoad_vod: "" })
