@@ -98,9 +98,10 @@ export function createReportRoutes({ db, now, json, reportToken = '' }) {
     if (!reportToken) return json(503, { error: 'Relatórios desligados: defina LICENSE_REPORT_TOKEN.' })
     const at = now()
     const failKey = { bucket: 'reportFail', key: ip, limit: REPORT_FAIL_LIMIT, windowMs: REPORT_FAIL_WINDOW_MS }
-    const locked = await lockedFor(db, { ...failKey, now: at })
-    if (locked) return json(429, { error: 'Muitas tentativas com chave inválida. Aguarde.' }, { 'Retry-After': String(locked) })
     if (!timingSafeEqualStr(request.headers.get('Authorization') || '', `Bearer ${reportToken}`)) {
+      // A trava só barra quem erra (como a API das revendas): o sócio passa mesmo com o IP da operadora travado.
+      const locked = await lockedFor(db, { ...failKey, now: at })
+      if (locked) return json(429, { error: 'Muitas tentativas com chave inválida. Aguarde.' }, { 'Retry-After': String(locked) })
       await hitLimit(db, { ...failKey, now: at })
       return json(401, { error: 'Chave inválida.' })
     }

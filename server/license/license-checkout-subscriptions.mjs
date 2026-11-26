@@ -65,6 +65,17 @@ export function createSubscriptionFlow({ db, now, mp, startFailed, declineChecks
       ? await db.prepare("SELECT * FROM orders WHERE id = ? AND kind = 'device_annual' AND method = 'card'").bind(String(pre.external_reference)).first()
       : null
     if (!order) return null
+    // Aviso de uma adesão que deu timeout, cuja reserva já foi apagada, e o aparelho assinou de novo depois: adotar esta
+    // cobraria duas vezes por ano. Cancela no Mercado Pago e fica com a outra (auditoria 2026-11-26, item 1).
+    const other = await db
+      .prepare("SELECT id FROM subscriptions WHERE device_code = ? AND id <> ? AND status <> 'cancelled'")
+      .bind(order.device_code, order.id)
+      .first()
+    if (other) {
+      if (pre.status !== 'cancelled') await mp.cancelPreapproval(String(pre.id))
+      console.warn(`[checkout] assinatura ${pre.id}: aparelho já tem a ${other.id}; cancelada para não cobrar duas vezes`)
+      return null
+    }
     // A reserva da adesão (subscribe) ganha o id de verdade; sem reserva, a linha é criada.
     await db.prepare("UPDATE subscriptions SET mp_preapproval_id = ?, status = ? WHERE id = ? AND status = 'creating'").bind(String(pre.id), String(pre.status || 'pending'), order.id).run()
     await db
@@ -126,7 +137,8 @@ export function createSubscriptionFlow({ db, now, mp, startFailed, declineChecks
           .bind(device.device_key, at, endsAt, 'subscription', sub.id, DELIVERED_BY),
         // 1ª parcela: o pedido de adesão vira entregue (as seguintes não mexem nele).
         db
-          .prepare("UPDATE orders SET status = 'delivered', paid_at = ?, delivery = ? WHERE id = ? AND status IN ('pending', 'expired')")
+          // 'failed' também: a adesão pode ter sido dada como falha antes de o Mercado Pago aprovar (auditoria 2026-11-26, item 13).
+          .prepare("UPDATE orders SET status = 'delivered', paid_at = ?, delivery = ? WHERE id = ? AND status IN ('pending', 'expired', 'failed')")
           .bind(at, JSON.stringify({ activationEndsAt: endsAt }), sub.id),
       ])
     } catch (err) {

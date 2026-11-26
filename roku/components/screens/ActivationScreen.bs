@@ -36,7 +36,23 @@ sub init()
     m.purchasesTimer.duration = 10
     m.purchasesTimer.observeField("fire", "onPurchasesTimeout")
     m.top.setFocus(true)
+    ' Licença liberada com outra tela por cima ("Usar outra lista"): fecha só quando esta voltar a aparecer.
+    m.top.observeField("visible", "onVisible")
     render()
+end sub
+
+sub onVisible()
+    if m.top.visible and m.closePending = true then close()
+end sub
+
+' Fecha a tela de bloqueio; escondida, o "voltar" fecharia a tela de cima (auditoria 2026-11-26, item 14).
+sub close()
+    if not m.top.visible then
+        m.closePending = true
+        return
+    end if
+    m.closePending = false
+    m.top.navigate = { action: "back" }
 end sub
 
 sub onParams()
@@ -86,7 +102,7 @@ sub onLicense(event as object)
     active = session.hydrate(storage.create())
     reason = licensing.blockReason(state, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), config.licenseEnabled())
     if reason = "" then
-        m.top.navigate = { action: "back" }
+        close()
         return
     end if
     m.reason = reason

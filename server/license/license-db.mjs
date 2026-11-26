@@ -149,6 +149,8 @@ export const COLUMN_MIGRATIONS = [
   'CREATE INDEX IF NOT EXISTS activations_reseller ON activations (reseller_id, id)',
   'CREATE INDEX IF NOT EXISTS subscriptions_device ON subscriptions (device_code)',
   'CREATE INDEX IF NOT EXISTS partner_cycle_entries_partner ON partner_cycle_entries (partner_id, cycle_start)',
+  // Último acesso (no máximo 1 gravação por dia): a guarda de 24 meses conta a partir dele (auditoria 2026-11-26, item 12).
+  'ALTER TABLE devices ADD COLUMN last_seen_at INTEGER',
 ]
 
 /**
@@ -273,7 +275,7 @@ export async function purgeExpired(db, now) {
   const cutoff = now - RETENTION_MS
   await db.prepare('DELETE FROM inbox WHERE expires_at <= ?').bind(now).run()
   await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(now - 2 * 24 * 3600 * 1000).run()
-  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout.mjs, KEY_VISIBLE_MS).
+  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout-orders.mjs, KEY_VISIBLE_MS).
   await db
     .prepare("UPDATE orders SET delivery = json_remove(delivery, '$.resellerKey', '$.keyUntil') WHERE json_extract(delivery, '$.keyUntil') < ?")
     .bind(now)
@@ -286,7 +288,7 @@ export async function purgeExpired(db, now) {
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db
     .prepare(
-      `DELETE FROM devices WHERE first_seen_at < ?
+      `DELETE FROM devices WHERE COALESCE(last_seen_at, first_seen_at) < ? -- parado há 24 meses, não "criado há".
        AND blocked_at IS NULL -- suspenso fica: apagado, voltaria sem bloqueio e com teste novo (auditoria RFC-025, item 4)
        AND device_key NOT IN (SELECT device_key FROM activations)
        AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)

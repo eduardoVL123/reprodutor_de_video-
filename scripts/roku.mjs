@@ -39,6 +39,16 @@ export function licenseRsaPem(env) {
   return pem.startsWith('-----BEGIN PUBLIC KEY-----') ? `${pem}\n` : ''
 }
 
+/**
+ * Licença ligada sem a chave pública RSA = o app aceita qualquer resposta (licensing.verify libera sem PEM): o build
+ * para. O servidor local do simulador (localhost) passa sem chave.
+ */
+export function checkLicenseKey(config, pem) {
+  if (!config.licenseBaseUrl || pem) return
+  if (/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(config.licenseBaseUrl)) return
+  throw new Error('Licença ligada sem PULSE_LICENSE_RSA_PUBLIC_KEY (ou com o PEM mal formado): o app aceitaria qualquer resposta de licença')
+}
+
 const SIM_TIMEOUT_MS = 5 * 60 * 1000
 
 /** Sobe o mock com catálogo pequeno e espera ele responder; devolve o processo para encerrar depois. */
@@ -99,9 +109,11 @@ async function main(command) {
     if (existsSync('.env')) process.loadEnvFile('.env')
     mkdirSync(`${OUT_DIR}/config`, { recursive: true })
     const data = buildConfig(process.env)
+    const pem = licenseRsaPem(process.env)
+    checkLicenseKey(data, pem)
     writeFileSync(`${OUT_DIR}/config/build-config.json`, JSON.stringify(data))
     // O roRSA lê a chave de um arquivo PEM do pacote (pkg:/license-rsa.pem).
-    writeFileSync(`${OUT_DIR}/config/license-rsa.pem`, licenseRsaPem(process.env))
+    writeFileSync(`${OUT_DIR}/config/license-rsa.pem`, pem)
     console.log(`[roku] pareamento ${data.pairBaseUrl ? `em ${data.pairBaseUrl}` : 'desligado (sem PULSE_PAIR_BASE_URL)'}`)
     console.log(`[roku] lista de demonstração ${data.demoPlaylistUrl ? 'ligada' : 'desligada (sem PULSE_DEMO_PLAYLIST_URL)'}`)
     console.log(`[roku] licença ${data.licenseBaseUrl ? `em ${data.licenseBaseUrl}` : 'desligada (sem PULSE_LICENSE_BASE_URL)'}`)

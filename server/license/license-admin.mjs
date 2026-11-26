@@ -150,24 +150,22 @@ async function listDevices(db, url, at) {
   const status = url.searchParams.get('status')
   const q = String(url.searchParams.get('q') || '').trim().toLowerCase()
   const page = Math.max(0, Number(url.searchParams.get('page')) || 0)
-  const where = []
-  const args = [at, at]
-  if (DEVICE_STATUSES.includes(status)) {
-    where.push('status = ?')
-    args.push(status)
-  }
-  if (q) {
-    where.push("(LOWER(code) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)")
-    args.push(`%${q}%`, `%${q}%`)
-  }
+  const byStatus = DEVICE_STATUSES.includes(status)
+  const search = q ? "WHERE (LOWER(code) LIKE ? OR LOWER(COALESCE(note, '')) LIKE ?)" : ''
+  const searchArgs = q ? [`%${q}%`, `%${q}%`] : []
+  const page_ = [DEVICE_PAGE + 1, page * DEVICE_PAGE]
+  // Sem filtro de status, pagina a tabela de aparelhos antes e calcula ativação e status só das linhas da página:
+  // o status calculado impede índice e a lista lia todos os aparelhos a cada página (auditoria 2026-11-26, item 19).
+  const source = byStatus ? `(SELECT * FROM devices ${search})` : `(SELECT * FROM devices ${search} ORDER BY first_seen_at DESC, code LIMIT ? OFFSET ?)`
   const sql = `SELECT * FROM (
       SELECT d.code, d.platform, d.first_seen_at, d.trial_ends_at, d.blocked_at, d.note, act_end,
              ${DEVICE_STATUS_SQL.split(':now').join('?')} AS status
       FROM (SELECT d.*, (SELECT MAX(ends_at) FROM activations a WHERE a.device_key = d.device_key AND a.revoked_at IS NULL) AS act_end
-            FROM devices d) d
-    ) ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
-    ORDER BY first_seen_at DESC, code LIMIT ? OFFSET ?`
-  const rows = (await db.prepare(sql).bind(...args, DEVICE_PAGE + 1, page * DEVICE_PAGE).all()).results
+            FROM ${source} d) d
+    ) ${byStatus ? 'WHERE status = ?' : ''}
+    ORDER BY first_seen_at DESC, code ${byStatus ? 'LIMIT ? OFFSET ?' : ''}`
+  const args = byStatus ? [at, at, ...searchArgs, status, ...page_] : [at, at, ...searchArgs, ...page_]
+  const rows = (await db.prepare(sql).bind(...args).all()).results
   return {
     items: rows.slice(0, DEVICE_PAGE).map((r) => ({
       code: r.code,

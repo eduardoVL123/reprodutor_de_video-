@@ -272,6 +272,22 @@ namespace tests
             m.assertEqual(t.calls.count(), 1)
         end function
 
+        @it("pelo servidor com item em duas categorias: o total de Todos bate com o que ele percorre (auditoria 2026-11-26, item 16)")
+        function _()
+            catalog.deleteTree("tmp:/pulse-remote")
+            streams = tests.numberedStreams(4)
+            streams.push({ stream_id: 5, name: "Duplo", category_id: "1", category_ids: ["1", "2"] })
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertTrue(catalog.isRemote(meta))
+            ' Categoria 1: 1, 3 e 5; categoria 2: 2, 4 e 5. Todos percorre as duas: 6 posições.
+            m.assertEqual(catalog.publishList(tests.CATALOG_DIR, "vod")[0].count, 6)
+            ctx = { dir: tests.CATALOG_DIR, apiBase: "http://srv.test", credentials: { username: "u", password: "p" } }
+            m.assertEqual(catalog.remoteItems(tests.fakeTransport([]), ctx, "vod", catalog.ALL_CATEGORIES, 0, 10, [], meta).count(), 6)
+            ' Escondendo a categoria 2 sobram as 3 da categoria 1.
+            m.assertEqual(catalog.visibleCount(tests.CATALOG_DIR, "vod", ["2"]), 3)
+        end function
+
         @it("pelo servidor com espaço para a busca: o índice leve cobre a lista toda")
         function _()
             streams = tests.numberedStreams(1200)
@@ -329,6 +345,9 @@ namespace tests
             m.assertEqual(found.name, "Item 1150")
             m.assertEqual(found.section, "vod")
             m.assertInvalid(catalog.findItem(tests.CATALOG_DIR, "vod", "99999"))
+            ' Painel que numera a partir de 0: o id 0 também é achado.
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], [{ stream_id: 0, name: "Canal Zero", category_id: "1" }, { stream_id: 1, name: "Canal Um", category_id: "1" }])
+            m.assertEqual(catalog.findItem(tests.CATALOG_DIR, "live", "0").name, "Canal Zero")
             ' Pelo servidor (não coube): o 3 está no começo da categoria 1; o 1199 não (só os 40 primeiros ficam).
             catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
             m.assertEqual(catalog.findItem(tests.CATALOG_DIR, "vod", "3").name, "Item 3")
@@ -454,6 +473,26 @@ namespace tests
             m.assertEqual(t.calls.count(), 2)
             catalog.loadSection(t, ctx, "vod", false)
             m.assertEqual(t.calls.count(), 2)
+        end function
+
+        @it("ficha provisória de uma gravação interrompida não fica: a seção é baixada de novo (auditoria 2026-11-26, item 8)")
+        function _()
+            base = "http://srv.test"
+            catalog.deleteTree(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            CreateDirectory(tests.CATALOG_DIR)
+            CreateDirectory(catalog.sectionDir(tests.CATALOG_DIR, "vod"))
+            ' O app fechou no meio da gravação: só a ficha provisória ficou no disco.
+            catalog.writeProvisional(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "Ação" }], tests.numberedStreams(3))
+            t = tests.fakeTransport([
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_categories", response: tests.jsonResponse([{ category_id: "1", category_name: "Ação" }]) },
+                { prefix: base + "/player_api.php?username=u&password=p&action=get_vod_streams", response: tests.jsonResponse(tests.numberedStreams(3)) }
+            ])
+            ctx = { dir: tests.CATALOG_DIR, apiBase: base, credentials: { username: "u", password: "p" }, type: "xtream" }
+            m.assertTrue(catalog.loadSection(t, ctx, "vod", false).ok)
+            m.assertEqual(t.calls.count(), 2)
+            meta = catalog.getMeta(tests.CATALOG_DIR, "vod")
+            m.assertFalse(meta.provisional = true)
+            m.assertFalse(catalog.isRemote(meta))
         end function
 
         @it("loadShared: dona que sumiu perde a vez pelo prazo; baixa uma vez e libera a seção")

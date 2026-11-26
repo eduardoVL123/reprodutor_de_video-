@@ -6,6 +6,7 @@
 
 export const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789' // 31 caracteres (sem 0/O/1/I/L)
 export const CODE_LENGTH = 6
+const SWEEP_EVERY_MS = 60 * 1000
 export const DEFAULT_TTL_MS = 10 * 60 * 1000
 export const DEFAULT_DELIVERY_TTL_MS = 60 * 1000
 // Uma sessão ocupa poucas centenas de bytes: 100 mil cabem folgado na memória do Durable Object.
@@ -228,8 +229,10 @@ export function createPairCore(options = {}) {
   const sessions = new Map() // code -> { pub, plain, secret, box, expiresAt }
   const limiter = createLimiter(now)
 
+  let lastSweep = -Infinity
   function sweep() {
     const t = now()
+    lastSweep = t
     for (const [code, s] of sessions) {
       if (s.expiresAt <= t) sessions.delete(code)
     }
@@ -299,7 +302,9 @@ export function createPairCore(options = {}) {
     const plain = body.plain === true && body.pub === undefined
     if (!plain && !isOpaqueText(body.pub, MAX_PUB_CHARS)) return fail(400, 'Chave pública inválida.')
 
-    sweep()
+    // Varrer o Map inteiro a cada sessão pesava perto do teto (100 mil): no máximo 1 vez por minuto ou quando enche
+    // (auditoria 2026-11-26, item 18). Vencida nunca é usada: liveSession confere o prazo de cada uma.
+    if (sessions.size >= maxSessions || now() - lastSweep >= SWEEP_EVERY_MS) sweep()
     if (sessions.size >= maxSessions) return fail(503, 'Serviço ocupado. Tente em instantes.')
 
     const code = generateCode(sessions)

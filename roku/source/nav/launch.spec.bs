@@ -59,6 +59,25 @@ namespace tests
             m.assertInvalid(launch.deepLink(invalid))
         end function
 
+        @it("termos, login ou bloqueio em qualquer lugar da pilha recusam o deep link (auditoria 2026-11-26, item 3)")
+        function _()
+            m.assertTrue(launch.deepLinkAllowed(["HomeScreen", "CatalogTab"]))
+            m.assertTrue(launch.deepLinkAllowed(["HomeScreen", "ProfileScreen"]))
+            ' Bloqueado e foi para "Usar outra lista": o bloqueio está embaixo, não no topo.
+            m.assertFalse(launch.deepLinkAllowed(["HomeScreen", "ActivationScreen", "ListManagerScreen"]))
+            m.assertFalse(launch.deepLinkAllowed(["FtueScreen"]))
+            m.assertFalse(launch.deepLinkAllowed(["LoginScreen", "PairScreen"]))
+        end function
+
+        @it("item de categoria escondida ou bloqueada pelo controle parental não abre pelo deep link (item 4)")
+        function _()
+            m.assertTrue(launch.parentalAllows(["5"], ["9"]))
+            m.assertFalse(launch.parentalAllows(["5"], ["5", "9"]))
+            ' Item em duas categorias: basta uma bloqueada.
+            m.assertFalse(launch.parentalAllows(["1", "9"], ["9"]))
+            m.assertTrue(launch.parentalAllows(["1"], []))
+        end function
+
     end class
 
 end namespace

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync } from 'node:fs'
-import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed, buildConfig } from '../scripts/roku.mjs'
+import { checkSize, MAX_PACKAGE_BYTES, rooibosPassed, buildConfig, checkLicenseKey } from '../scripts/roku.mjs'
 import { OUTPUTS, over } from '../scripts/make-roku-ui.mjs'
 
 const manifest = Object.fromEntries(
@@ -95,6 +95,18 @@ describe('app Roku — chave pública RSA da licença (pkg:/license-rsa.pem)', (
     expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: publicPem.trim().replace(/\n/g, '\n') })).toBe(publicPem)
     expect(licenseRsaPem({})).toBe('')
     expect(licenseRsaPem({ PULSE_LICENSE_RSA_PUBLIC_KEY: 'não é pem' })).toBe('')
+  })
+})
+
+describe('app Roku — licença ligada exige a chave RSA (auditoria 2026-11-26, item 5)', () => {
+  const PEM = '-----BEGIN PUBLIC KEY-----\nMIIB\n-----END PUBLIC KEY-----\n'
+  it('sem a chave o build falha: o app aceitaria qualquer resposta de licença', () => {
+    expect(() => checkLicenseKey({ licenseBaseUrl: 'https://pulseplayer.com.br' }, '')).toThrow(/PULSE_LICENSE_RSA_PUBLIC_KEY/)
+  })
+  it('com a chave, sem licença ou com o servidor local do simulador, segue', () => {
+    expect(() => checkLicenseKey({ licenseBaseUrl: 'https://pulseplayer.com.br' }, PEM)).not.toThrow()
+    expect(() => checkLicenseKey({ licenseBaseUrl: '' }, '')).not.toThrow()
+    expect(() => checkLicenseKey({ licenseBaseUrl: 'http://localhost:8789' }, '')).not.toThrow()
   })
 })
 

@@ -2,6 +2,8 @@ import "pkg:/source/net/transport.bs"
 import "pkg:/source/device/storage.bs"
 import "pkg:/source/session/session.bs"
 import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/parental/parental.bs"
+import "pkg:/source/nav/launch.bs"
 
 sub init()
     m.top.functionName = "runDeepLink"
@@ -9,7 +11,8 @@ end sub
 
 sub runDeepLink()
     link = m.top.link
-    current = session.hydrate(storage.create())
+    store = storage.create()
+    current = session.hydrate(store)
     if current = invalid then
         m.top.result = { section: link.section, item: invalid }
         return
@@ -18,5 +21,10 @@ sub runDeepLink()
     loaded = catalog.loadShared(net.urlTransport(), ctx, link.section, false)
     item = invalid
     if loaded.ok then item = catalog.findItem(ctx.dir, link.section, link.id)
+    ' Controle parental: categoria escondida ou bloqueada pelo PIN não abre por fora do app.
+    if item <> invalid then
+        hidden = parental.hiddenMap(parental.activeContext(store), ctx.dir)[link.section]
+        if not launch.parentalAllows(catalog.categoriesOf(item), hidden) then item = invalid
+    end if
     m.top.result = { section: link.section, item: item }
 end sub

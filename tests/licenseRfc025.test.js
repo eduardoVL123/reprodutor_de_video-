@@ -254,9 +254,10 @@ describe('relatórios do sócio — GET /api/v1/reports/* (§7)', () => {
     expect(await month('2028-11')).toMatchObject({ revenueCents: 0, renewals: { count: 0, cents: 0 } })
   })
 
-  it('10 chaves erradas travam a rede', async () => {
+  it('10 chaves erradas travam quem erra; a chave certa do sócio passa na mesma rede (auditoria 2026-11-26, item 11)', async () => {
     for (let n = 0; n < 10; n++) expect((await req('GET', '/api/v1/reports/summary', { token: `errada${n}` })).status).toBe(401)
-    expect((await req('GET', '/api/v1/reports/summary', { token: REPORT })).status).toBe(429)
+    expect((await req('GET', '/api/v1/reports/summary', { token: 'errada-de-novo' })).status).toBe(429)
+    expect((await req('GET', '/api/v1/reports/summary', { token: REPORT })).status).toBe(200)
   })
 })
 

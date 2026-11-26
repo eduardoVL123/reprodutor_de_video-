@@ -127,13 +127,22 @@ end sub
 ' chegou), para o parceiro não pagar por quem só viu erro (useLicenseWatch do web).
 sub scheduleEntry()
     if m.licensePartner <> true or m.listLoaded <> true or m.entryTimer <> invalid then return
+    ' Uma por abertura e por lista, mesmo com o Início recriado (trocar de lista no gerenciador).
+    if m.global.entrySentHost = entryHost() then return
     m.entryTimer = m.top.createChild("Timer")
     m.entryTimer.duration = licensing.ENTRY_DELAY_S
     m.entryTimer.observeField("fire", "sendEntry")
     m.entryTimer.control = "start"
 end sub
 
+function entryHost() as string
+    return licensing.listHost(session.hydrate(storage.create()))
+end function
+
 sub sendEntry()
+    host = entryHost()
+    if m.global.entrySentHost = host then return
+    m.global.entrySentHost = host
     task = CreateObject("roSGNode", "LicenseTask")
     task.request = { mode: "entry", base: config.licenseBaseUrl() }
     task.control = "run"

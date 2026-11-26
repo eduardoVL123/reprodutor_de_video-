@@ -297,6 +297,9 @@ sub runQueue(request as object)
 end sub
 
 sub onQueueResult(event as object)
+    ' Só a busca mais recente: duas trocas rápidas na borda da janela faziam o mesmo canal tocar duas vezes
+    ' (auditoria 2026-11-26, item 15).
+    if m.queueTask = invalid or not event.getRoSGNode().isSameNode(m.queueTask) then return
     data = event.getData()
     if data.mode = "open" then
         ' Mesmo item: troca só a fila, sem reiniciar o vídeo; se a posição não confere, fica sem "próximo".

@@ -1,6 +1,7 @@
 import "pkg:/source/utils/types.bs"
 import "pkg:/source/utils/formatTime.bs"
 import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/net/maskSecrets.bs"
 ' Port de src/services/xtreamApi.js + readJson de xtreamTransport.js (casos em tests/xtreamApi.test.js e
 ' roku/source/xtream/api.spec.bs). Roda num Task node.
 '
@@ -141,7 +142,7 @@ namespace xtream
         ' um 4xx (credenciais recusadas) não pode reenviar usuário e senha em texto puro.
         if CreateObject("roRegex", "^https:\/\/", "i").isMatch(baseUrl) and xtream.isTransportFailure(result.error) then
             httpBase = CreateObject("roRegex", "^https:\/\/", "i").replaceAll(baseUrl, "http://")
-            print "[xtream] Chamada em "; baseUrl; " falhou. Tentando fallback em http://..."
+            print "[xtream] Chamada em "; net.maskSecrets(baseUrl); " falhou. Tentando fallback em http://..."
             retry = xtream.apiExecute(transport, httpBase, request, timeoutMs)
             if retry.error <> invalid then return result ' se ambos falharem, vale o erro original
             ' A base http vira o endereço da lista: senão os vídeos iam para o https quebrado.

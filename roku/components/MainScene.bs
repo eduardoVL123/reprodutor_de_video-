@@ -27,6 +27,8 @@ sub init()
     m.global.addFields({ profile: profiles.active(state.list, state.activeId) })
     ' Controle parental desta abertura (parental.bs): categorias desbloqueadas com o PIN e a trava de 5 erros.
     m.global.addFields({ parental: { owner: "", unlocked: {}, rev: 0 }, parentalGuard: { fails: 0, lockedUntil: 0 } })
+    ' Lista de parceiro cuja entrada (R4) já foi contada nesta abertura: recriar o Início não conta de novo.
+    m.global.addFields({ entrySentHost: "" })
     m.profileAsked = false
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
@@ -111,8 +113,12 @@ sub onDeepLinkResult(event as object)
     m.deepLinkTask = invalid
     if not utils.isObject(result.item) then return
     current = topScreen()
-    ' Termos, login e bloqueio da licença continuam na frente: o deep link não passa por cima deles.
-    if current <> invalid and current.subtype() <> "ProfileScreen" and launch.isDialogScreen(current.subtype()) then return
+    ' Termos, login e bloqueio da licença, mesmo embaixo de outra tela: o deep link não passa por cima deles.
+    names = []
+    for i = 0 to m.screens.getChildCount() - 1
+        names.push(m.screens.getChild(i).subtype())
+    end for
+    if not launch.deepLinkAllowed(names) then return
     if result.section = "series" then
         request = { screen: "DetailsScreen", params: { item: result.item, section: "series" } }
     else

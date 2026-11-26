@@ -312,6 +312,23 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(await activationRows()).toHaveLength(1)
   })
 
+  it('aviso sem data.id no endereço não age pelo id do corpo, que a assinatura não cobre (auditoria 2026-11-26, item 10)', async () => {
+    const { orderId } = await deviceOrder()
+    pay(orderId)
+    // Assinatura válida para um aviso sem id (só request-id e ts), com o id do pedido só no corpo.
+    const v1 = createHmac('sha256', SECRET).update(`request-id:req-x;ts:${clock};`).digest('hex')
+    const res = await handle(
+      new Request('http://license.test/webhooks/mercadopago?type=order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-signature': `ts=${clock},v1=${v1}`, 'x-request-id': 'req-x' },
+        body: JSON.stringify({ type: 'order', data: { id: `ORD-${orderId}` } }),
+      }),
+      '10.9.9.9',
+    )
+    expect(res.status).toBe(200)
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+  })
+
   it('Pix pago perto do vencimento ainda é entregue, mesmo com o pedido já marcado como expirado', async () => {
     const { orderId, viewSecret } = await deviceOrder()
     clock += 31 * MIN
@@ -865,6 +882,37 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     const sub = await subscribe()
     expect(sub.httpStatus).toBe(201)
     expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(1)
+  })
+
+  it('parcela aprovada com a adesão já marcada como falha: o pedido vira entregue e entra na receita (auditoria 2026-11-26, item 13)', async () => {
+    const sub = await subscribe()
+    await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(sub.orderId).run()
+    installment('7301', sub.preId)
+    await webhook('7301', { type: 'subscription_authorized_payment', requestId: 'req-7301' })
+    const order = await db.prepare('SELECT status, paid_at FROM orders WHERE id = ?').bind(sub.orderId).first()
+    expect(order.status).toBe('delivered')
+    expect(order.paid_at).not.toBeNull()
+  })
+
+  it('timeout na adesão, nova tentativa e o aviso da 1ª chega depois: ela é cancelada, não vira 2ª cobrança (auditoria 2026-11-26, item 1)', async () => {
+    let first = true
+    mpReply = (url, init = {}) => {
+      const reply = subscriptionReply(url, init) // a assinatura nasce no Mercado Pago mesmo quando a resposta se perde
+      if (first && url.endsWith('/preapproval') && init.method === 'POST') {
+        first = false
+        return { status: 504, body: {} }
+      }
+      return reply
+    }
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await subscribe()
+    const lost = (await db.prepare('SELECT id FROM orders ORDER BY rowid LIMIT 1').first()).id
+    clock += 11 * 60e3 // a reserva "parada" vence e é apagada na nova tentativa
+    expect((await subscribe()).httpStatus).toBe(201)
+    await webhook(`pre-${lost}`, { type: 'subscription_preapproval', requestId: 'req-lost' })
+    spy.mockRestore()
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE status <> 'cancelled'").first()).n).toBe(1)
+    expect(preapprovals.get(`pre-${lost}`).status).toBe('cancelled')
   })
 
   it('aparelho que já tem renovação no cartão não assina de novo (cobrança em dobro) (auditoria 3)', async () => {

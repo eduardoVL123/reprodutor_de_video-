@@ -15,7 +15,6 @@ import { CheckoutError, ALREADY_RENEWING } from './license-checkout-shared.mjs'
 import { createOrderFlow } from './license-checkout-orders.mjs'
 import { createSubscriptionFlow } from './license-checkout-subscriptions.mjs'
 
-export { KEY_VISIBLE_MS } from './license-checkout-orders.mjs'
 
 export const PIX_TTL_MS = 30 * 60 * 1000
 const PIX_EXPIRATION = 'PT30M' // mesmo prazo de PIX_TTL_MS, em ISO 8601 (o Mercado Pago aceita de 30 min a 30 dias)
@@ -280,7 +279,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     }
     const body = await readJsonBody(request, 16384).catch(() => ({}))
     const type = url.searchParams.get('type') || body.type
-    const dataId = url.searchParams.get('data.id') || (body.data && body.data.id)
+    // Só o id do endereço: é ele que a assinatura cobre (o do corpo poderia ser trocado num aviso reenviado).
+    const dataId = url.searchParams.get('data.id')
     const handler = Object.hasOwn(WEBHOOK_TOPICS, type) && WEBHOOK_TOPICS[type]
     if (!handler || !dataId) return json(200, { received: true })
     try {
