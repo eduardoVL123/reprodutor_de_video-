@@ -7,6 +7,7 @@
  */
 import { toBase64Url } from '../pair/pair-core.mjs'
 import { cleanJwk } from './license-sign.mjs'
+import { revokeActivationStatements } from './license-db.mjs'
 
 export const ROKU_VALIDATE_URL = 'https://apipub.roku.com/listen/transaction-service.svc/validate-transaction'
 export const ROKU_CACHE_MS = 10 * 60 * 1000
@@ -83,8 +84,10 @@ export async function applyRokuPay(db, { deviceKey, transactionId, result, now }
     .all()
   const rows = mine.results || []
   if (!result.entitled || !result.endsAt || result.endsAt <= now) {
-    for (const row of rows) await db.prepare('UPDATE activations SET revoked_at = ? WHERE id = ?').bind(now, row.id).run()
-    return rows.length ? 'revoked' : 'unchanged'
+    // Mesma regra do estorno do Mercado Pago: o que foi empilhado depois anda para trás (auditoria 2026-11-26, item 9).
+    if (!rows.length) return 'unchanged'
+    await db.batch(await revokeActivationStatements(db, deviceKey, rows.map((row) => row.id), now))
+    return 'revoked'
   }
   if (rows.length) {
     for (const row of rows) {

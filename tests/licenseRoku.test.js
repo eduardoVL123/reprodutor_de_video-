@@ -106,6 +106,18 @@ describe('Roku Pay — /v1/access', () => {
     expect(after.activationEndsAt).toBeNull()
   })
 
+  it('Roku cancelada com um Pix empilhado depois dela: o Pix é puxado para trás, sem tempo grátis (auditoria 2026-11-26, item 9)', async () => {
+    let clock = NOW
+    const h = createLicenseHandler({ db, now: () => clock, rokuApiKey: 'chave-parceiro', rokuFetch })
+    await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    // Pix comprado agora: começa agora e termina 1 ano depois do fim da Roku (extendActivation empilha).
+    await db.prepare("INSERT INTO activations (device_key, starts_at, ends_at, source, created_by) VALUES (?, ?, ?, 'pix', 'checkout')").bind('r'.repeat(32), NOW, NOW + 30 * DAY + 365 * DAY).run()
+    clock = NOW + 11 * 60 * 1000
+    rokuReply = { body: { status: 'Success', isEntitled: false, expirationDate: new Date(NOW).toISOString() } }
+    const reply = await access(h, { deviceKey: 'r'.repeat(32), platform: 'roku', host: '', transactionId: TX })
+    expect(reply.activationEndsAt).toBe(NOW + 365 * DAY)
+  })
+
   it('cancelada pela Roku e depois assinada de novo com a mesma compra: volta a ativar', async () => {
     let clock = NOW
     const h = createLicenseHandler({ db, now: () => clock, rokuApiKey: 'chave-parceiro', rokuFetch })
