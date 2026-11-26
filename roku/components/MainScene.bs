@@ -111,8 +111,12 @@ sub onDeepLinkResult(event as object)
     m.deepLinkTask = invalid
     if not utils.isObject(result.item) then return
     current = topScreen()
-    ' Termos, login e bloqueio da licença continuam na frente: o deep link não passa por cima deles.
-    if current <> invalid and current.subtype() <> "ProfileScreen" and launch.isDialogScreen(current.subtype()) then return
+    ' Termos, login e bloqueio da licença, mesmo embaixo de outra tela: o deep link não passa por cima deles.
+    names = []
+    for i = 0 to m.screens.getChildCount() - 1
+        names.push(m.screens.getChild(i).subtype())
+    end for
+    if not launch.deepLinkAllowed(names) then return
     if result.section = "series" then
         request = { screen: "DetailsScreen", params: { item: result.item, section: "series" } }
     else

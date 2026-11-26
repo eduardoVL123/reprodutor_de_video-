@@ -35,6 +35,28 @@ namespace launch
         return beacons
     end function
 
+    ' O deep link só passa se nenhuma tela da pilha (nomes, de baixo para cima) for de termos, login, envio pelo celular ou
+    ' bloqueio da licença: "Usar outra lista" deixa o bloqueio embaixo de outra tela. A escolha de perfil não segura.
+    function deepLinkAllowed(screens as object) as boolean
+        for each name in screens
+            if name <> "ProfileScreen" and launch.isDialogScreen(name) then return false
+        end for
+        return true
+    end function
+
+    ' Nenhuma categoria do item está escondida ou bloqueada (parental.hiddenMap da seção).
+    function parentalAllows(categories as object, hidden as object) as boolean
+        blocked = {}
+        blocked.setModeCaseSensitive()
+        for each id in hidden
+            blocked[utils.textOr(id, "")] = true
+        end for
+        for each id in categories
+            if blocked.doesExist(id) then return false
+        end for
+        return true
+    end function
+
     ' Deep link (contentId + mediaType, na abertura ou pelo roInput): { section, id } do item da lista aberta, ou
     ' invalid (a Roku pede que um link inválido só abra o Início). contentId = o id do item na lista do usuário.
     function deepLink(args as dynamic) as dynamic
