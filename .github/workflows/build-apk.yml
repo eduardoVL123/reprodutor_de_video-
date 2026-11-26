@@ -287,6 +287,12 @@ jobs:
 
       - name: Build e limite de 4 MB
         run: npm run roku:build
+        # Os mesmos serviços dos outros apps (scripts/roku.mjs buildConfig); a chave pública RSA vira pkg:/license-rsa.pem.
+        env:
+          PULSE_LICENSE_BASE_URL: ${{ vars.PULSE_LICENSE_BASE_URL }}
+          PULSE_PAIR_BASE_URL: ${{ vars.PULSE_PAIR_BASE_URL }}
+          PULSE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
+          PULSE_LICENSE_RSA_PUBLIC_KEY: ${{ vars.PULSE_LICENSE_RSA_PUBLIC_KEY }}
 
       - name: Testes Rooibos no simulador
         run: npm run roku:test
