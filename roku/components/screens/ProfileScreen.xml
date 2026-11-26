@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Escolha o perfil (port de src/components/ProfileGate.vue): ao abrir o app quando há mais de um perfil, e pelo
+     "Trocar perfil" do menu e da Conta. Escolher grava o perfil ativo (m.global.profile) e volta; Voltar fecha o
+     formulário de novo perfil e depois a tela, sem trocar de perfil. -->
+<component name="ProfileScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

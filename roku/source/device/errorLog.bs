@@ -1,0 +1,55 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
+' Port de src/services/errorLog.js (Plano de robustez, item 6): últimos erros guardados só no aparelho, para o
+' "Diagnóstico". Endereços inteiros viram "[endereço]" e o resto passa por maskSecrets.
+' Casos em tests/errorLog.test.js e roku/source/device/device.spec.bs.
+namespace errorLog
+
+    const KEY = "diag:errors"
+    const MAX = 20
+    const MESSAGE_MAX = 300
+
+    ' Texto seguro para mostrar e guardar: sem URL, sem senha, curto. Aceita texto ou erro { name, message }.
+    function cleanErrorText(value as dynamic) as string
+        raw = ""
+        if utils.isObject(value) and utils.isString(value.message) and value.message <> "" then
+            name = utils.textOr(value.name, "")
+            if name <> "" and name <> "Error" then raw = name + ": "
+            raw = raw + value.message
+        else
+            raw = utils.textOr(value, "")
+        end if
+        text = net.maskSecrets(raw)
+        text = CreateObject("roRegex", "\b[a-z][a-z0-9+.-]*:\/\/\S+", "i").replaceAll(text, "[endereço]")
+        text = CreateObject("roRegex", "\s+", "").replaceAll(text, " ").trim()
+        return Left(text, errorLog.MESSAGE_MAX)
+    end function
+
+    function read(store as object) as object
+        saved = store.get(errorLog.KEY)
+        if GetInterface(saved, "ifArray") = invalid then return []
+        return saved
+    end function
+
+    ' Registra um erro (mais recente primeiro). Nunca falha: o registro não pode derrubar o app.
+    sub record(error as dynamic, where as dynamic, store as object)
+        try
+            message = errorLog.cleanErrorText(error)
+            if message = "" then return
+            at& = CreateObject("roDateTime").asSeconds() * 1000&
+            entries = [{ at: at&, where: Left(errorLog.cleanErrorText(where), 60), message: message }]
+            for each entry in errorLog.read(store)
+                if entries.count() >= errorLog.MAX then exit for
+                entries.push(entry)
+            end for
+            store.set(errorLog.KEY, entries)
+        catch e
+            print "[errorLog] Não foi possível guardar o erro: "; e.message
+        end try
+    end sub
+
+    sub clear(store as object)
+        store.remove(errorLog.KEY)
+    end sub
+
+end namespace

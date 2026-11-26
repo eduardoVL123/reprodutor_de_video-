@@ -1,0 +1,38 @@
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/player/playerState.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/xtream/api.bs"
+
+sub init()
+    m.top.functionName = "runQueue"
+end sub
+
+sub runQueue()
+    request = m.top.request
+    hidden = request.hidden
+    if hidden = invalid then hidden = []
+    if request.mode = "step" then
+        state = request.state
+        moved = playerState.stepBy(state, request.delta, request.dir, hidden)
+        m.top.result = { mode: "step", moved: moved, state: state }
+        return
+    end if
+    if request.mode = "series" then
+        ' playHistoryItem: série que não carrega fica só com o episódio (forHistory com invalid).
+        response = xtream.fetchSeriesInfo(net.urlTransport(), { apiBase: request.apiBase, credentials: request.credentials, seriesId: request.item.seriesId })
+        data = invalid
+        if response.error = invalid then data = response.data
+        m.top.result = { mode: "open", moved: true, state: playerState.forHistory(request.item, data) }
+        return
+    end if
+    c = request.catalog
+    total = c.total
+    if total = invalid then
+        total = catalog.visibleCount(request.dir, c.section, hidden)
+        meta = catalog.getMeta(request.dir, c.section)
+        if total = invalid and meta <> invalid then total = meta.count
+        if total = invalid then total = 1
+    end if
+    state = playerState.forCatalog(request.dir, c.section, c.categoryId, c.item, c.index, total, hidden)
+    m.top.result = { mode: "open", moved: true, state: state }
+end sub

@@ -1,0 +1,108 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
+' Port de src/services/xtreamErrors.js (casos em tests/xtreamApi.test.js e roku/source/xtream/errors.spec.bs).
+' O XtreamError do JS vira um objeto { code, userMessage, technicalDetail, detail, status }.
+namespace xtream
+
+    const GENERIC_CONNECTION_ERROR = "Falha ao conectar. Verifique seus dados ou a conexão com a internet."
+    const UNEXPECTED_ERROR = "Algo deu errado. Tente de novo; se continuar, fale com o suporte e informe a causa técnica."
+    const MISSING_CREDENTIALS_ERROR = "Este link exige Usuário e Senha. Preencha os campos abaixo."
+
+    ' Compatibilidade com códigos antigos (minúsculos) ainda usados em chamadas legadas.
+    function legacyCodes() as object
+        return {
+            invalid_url: "INVALID_URL_ERROR",
+            invalid_input: "INVALID_INPUT",
+            timeout: "TIMEOUT_ERROR",
+            network: "CORS_OR_NETWORK_ERROR",
+            http: "HTTP_ERROR",
+            bad_response: "INVALID_FORMAT_ERROR",
+            unauthorized: "AUTH_INVALID_CREDENTIALS",
+            missing_credentials: "MISSING_CREDENTIALS"
+        }
+    end function
+
+    function buildUserMessage(code as string, ctx as object) as string
+        if code = "AUTH_INVALID_CREDENTIALS" then return "Usuário ou senha incorretos recusados pelo servidor."
+        if code = "AUTH_ACCOUNT_EXPIRED" then return "Conta inativa ou expirada no servidor (Status: " + utils.textOr(ctx.accountStatus, "desconhecido") + ")."
+        if code = "HTTP_ERROR" then
+            if utils.isNumber(ctx.status) and ctx.status >= 500 then
+                return "O servidor da lista está com problema (erro " + utils.textOr(ctx.status, "?") + "). Tente de novo em alguns minutos."
+            end if
+            return "O servidor recusou o pedido (erro " + utils.textOr(ctx.status, "?") + "). Confira o endereço da lista."
+        end if
+        if code = "TIMEOUT_ERROR" then return "O servidor demorou mais de " + utils.textOr(ctx.timeoutSec, "?") + "s para responder. Confira sua internet e tente de novo."
+        if code = "CORS_OR_NETWORK_ERROR" then return "Não foi possível falar com o servidor. Confira sua internet e o endereço da lista; o servidor pode estar fora do ar."
+        if code = "SAVED_DATA_UNREADABLE" then return "Não foi possível ler os dados salvos desta lista. Exclua a lista e adicione de novo."
+        if code = "INVALID_FORMAT_ERROR" then return "O servidor respondeu, mas não enviou dados Xtream Codes nem uma lista #EXTM3U válida."
+        if code = "EMPTY_M3U_ERROR" then return "A lista #EXTM3U foi baixada, mas não contém nenhum canal ou vídeo válido."
+        if code = "INVALID_URL_ERROR" then return "Endereço inválido. Informe algo como " + Chr(34) + "servidor.com:8080" + Chr(34) + " ou " + Chr(34) + "http://servidor.com" + Chr(34) + "."
+        if code = "MISSING_CREDENTIALS" then return xtream.MISSING_CREDENTIALS_ERROR
+        if code = "INVALID_INPUT" then return utils.textOr(ctx.raw, "Preencha os campos obrigatórios.")
+        if code = "NO_SESSION" then return "Nenhuma lista ativa. Conecte-se novamente."
+        return xtream.GENERIC_CONNECTION_ERROR
+    end function
+
+    ' code: um dos códigos de src/services/xtreamErrors.js (aceita os legados minúsculos).
+    ' info: texto (vira o detalhe) ou { raw, host, endpoint, status, statusText, timeoutSec, accountStatus }.
+    function newError(code as dynamic, info = invalid as dynamic) as object
+        normalized = utils.textOr(code, "UNKNOWN_ERROR")
+        legacy = xtream.legacyCodes()
+        if legacy.doesExist(normalized) then normalized = legacy[normalized]
+        ctx = {}
+        if utils.isString(info) then
+            ctx = { raw: info }
+        else if utils.isObject(info) then
+            ctx = info
+        end if
+        userMessage = xtream.buildUserMessage(normalized, ctx)
+        technicalDetail = net.maskSecrets("[" + normalized + "] Host: " + utils.textOr(ctx.host, "-") + " | Endpoint: " + utils.textOr(ctx.endpoint, "-") + " | Detalhe: " + utils.textOr(ctx.raw, "-"))
+        status = 0
+        if utils.isNumber(ctx.status) then status = ctx.status
+        return {
+            name: "XtreamError",
+            code: normalized,
+            message: userMessage,
+            userMessage: userMessage,
+            technicalDetail: technicalDetail,
+            detail: technicalDetail, ' compatibilidade com logs antigos
+            status: status
+        }
+    end function
+
+    ' Texto para a tela e detalhe técnico de qualquer erro. Só mensagens feitas para o usuário (userMessage) vão para a
+    ' tela; erro inesperado mostra `fallback` e leva o código UNEXPECTED no detalhe, para o suporte reconhecer.
+    function describeError(err as dynamic, fallback = invalid as dynamic) as object
+        if fallback = invalid then fallback = xtream.UNEXPECTED_ERROR
+        if utils.isObject(err) and utils.isString(err.userMessage) and err.userMessage <> "" then
+            detail = utils.textOr(err.technicalDetail, utils.textOr(err.detail, ""))
+            return { message: err.userMessage, detail: detail }
+        end if
+        name = "Error"
+        message = ""
+        if utils.isObject(err) then
+            name = utils.textOr(err.name, "Error")
+            message = utils.textOr(err.message, "")
+        else
+            message = utils.textOr(err, "")
+        end if
+        return { message: fallback, detail: net.maskSecrets("[UNEXPECTED] " + name + ": " + message) }
+    end function
+
+    ' Host e endpoint (sem credenciais) de uma URL, para diagnóstico.
+    function describeUrl(url as dynamic) as object
+        text = utils.textOr(url, "-")
+        parts = CreateObject("roRegex", "^(https?://[^/?#\s]+)([^?#]*)(\?[^#]*)?", "i").match(text)
+        if parts.count() = 0 then return { host: text, endpoint: "-" }
+        path = parts[2]
+        if path = "" then path = "/"
+        ' Fora de .php o caminho pode levar usuário e senha (/playlist/USUARIO/SENHA/m3u_plus): só o último trecho aparece.
+        if not CreateObject("roRegex", "\.php$", "i").isMatch(path) then
+            path = CreateObject("roRegex", "[^/]+(?=/)", "").replaceAll(path, "***")
+        end if
+        action = CreateObject("roRegex", "[?&]action=([^&#]*)", "").match(text)
+        if action.count() > 1 and action[1] <> "" then path = path + "?action=" + action[1]
+        return { host: LCase(parts[1]), endpoint: path }
+    end function
+
+end namespace

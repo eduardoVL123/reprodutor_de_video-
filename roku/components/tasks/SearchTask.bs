@@ -1,0 +1,43 @@
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/catalog/catalogSearch.bs"
+import "pkg:/source/search/searchScreen.bs"
+import "pkg:/source/parental/parental.bs"
+
+sub init()
+    m.top.functionName = "runSearch"
+end sub
+
+sub runSearch()
+    port = CreateObject("roMessagePort")
+    m.top.observeField("query", port)
+    ctx = m.top.ctx
+    choices = m.top.parental
+    cache = {}
+    while true
+        msg = wait(0, port)
+        ' Só a última busca da fila: as anteriores já ficaram velhas.
+        latest = invalid
+        while msg <> invalid
+            if type(msg) = "roSGNodeEvent" then latest = msg.getData()
+            msg = port.getMessage()
+        end while
+        if latest <> invalid then
+            if latest.stop = true then return
+            answer(latest, ctx, choices, cache)
+        end if
+    end while
+end sub
+
+sub answer(query as object, ctx as object, choices as dynamic, cache as object)
+    try
+        ' A cada busca: uma seção que acabou de baixar já chega com as categorias para o controle parental.
+        hidden = {}
+        if choices <> invalid then hidden = parental.hiddenMap(choices, ctx.dir)
+        found = catalogSearch.search(ctx.dir, query.text, query.sections, searchScreen.RESULTS_PER_SECTION, hidden, cache)
+        m.top.result = { seq: query.seq, ok: true, results: found.results, counts: found.counts }
+    catch e
+        ' Sem isto a falha aparecia como "Nenhum resultado".
+        print "[search] Falha na busca: "; e.message
+        m.top.result = { seq: query.seq, ok: false, results: [], counts: {} }
+    end try
+end sub

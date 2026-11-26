@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Detalhes do filme ou da série (port de src/components/MediaDetailsModal.vue, layout 2.0): fundo com a arte e a
+     vinheta, dados à esquerda e os botões; na série, abas de temporada e a fileira de episódios 16:9.
+     params = { item, section: "vod"|"series" }. Assistir e os episódios abrem o PlayerScreen; o coração guarda ou tira dos Favoritos. -->
+<component name="DetailsScreen" extends="Group">
+    <interface>
+        <field id="params" type="assocarray" onChange="onParams" />
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

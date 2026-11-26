@@ -1,0 +1,140 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
+' Decisões do motor de src/composables/useVideoEngine.js para o nó Video da Roku (casos em playerEngine.spec.bs):
+' watchdog de travamento, formato alternativo antes de começar, reconexão no mesmo arquivo e ponto depois de começar,
+' e o erro final ("sem sinal" quando nada chegou) com a causa técnica mascarada. O PlayerScreen chama tick() a cada
+' segundo e executa a ação devolvida: "none", "fallback", "reload" ou "fail".
+namespace playerEngine
+
+    const STALL_RECOVERY_AFTER_S = 10 ' segundos sem o tempo avançar (tocando) até reconectar
+    const MAX_STALL_RECOVERIES = 3 ' reconexões seguidas antes de desistir
+    const MAX_STARTUP_RECOVERIES = 1 ' antes do 1º quadro: o erro aparece em menos de 30 s
+    const GRACE_TICKS = 4 ' o Pre-Buffer Gate do web (3,5 s) antes de o watchdog contar
+    const RECOVERY_RESET_S = 30 ' voltou a tocar bem depois da última reconexão: zera as tentativas
+    const PLAYBACK_ERROR = "Não foi possível reproduzir esta mídia no momento. Verifique sua conexão ou tente outro item."
+    const NO_SIGNAL_ERROR = "Este canal não está transmitindo agora. Ele pode estar fora do ar ou só abrir no horário do evento. Tente mais tarde ou escolha outro canal."
+
+    ' stream = buildStreamUrl (primaryUrl, fallbackUrl, containerExtension).
+    function create(stream as object) as object
+        return {
+            stream: stream,
+            url: stream.primaryUrl,
+            usingFallback: false,
+            fallbackCause: "",
+            hasProgressed: false,
+            resumePoint: 0#,
+            recoveries: 0,
+            lastRecoveryAt: -1#,
+            stalled: 0,
+            grace: playerEngine.GRACE_TICKS,
+            lastPosition: -1#,
+            lastData: -1,
+            dataSeen: false,
+            elapsed: 0,
+            timeline: []
+        }
+    end function
+
+    sub mark(state as object, label as string)
+        if state.timeline.count() < 16 then state.timeline.push(label + " " + state.elapsed.toStr() + "s")
+    end sub
+
+    ' markProgress: tocou de verdade; a reconexão volta para cá.
+    sub progress(state as object, position as double)
+        if position <= 0.5 then return
+        state.hasProgressed = true
+        state.resumePoint = position
+        if state.lastRecoveryAt >= 0 and position - state.lastRecoveryAt > playerEngine.RECOVERY_RESET_S then
+            state.recoveries = 0
+            state.lastRecoveryAt = -1
+        end if
+    end sub
+
+    ' Um segundo do watchdog. data = o que já chegou do servidor (bufferingStatus.percentage, ou -1); o download
+    ' andando conta como vida (reconectar jogaria fora o que chegou).
+    function tick(state as object, position as double, paused as boolean, data as integer) as object
+        state.elapsed = state.elapsed + 1
+        if data > 0 then state.dataSeen = true
+        if state.grace > 0 then
+            state.grace = state.grace - 1
+            state.lastPosition = position
+            state.lastData = data
+            return { action: "none" }
+        end if
+        if paused then
+            state.stalled = 0
+            return { action: "none" }
+        end if
+        if state.lastPosition >= 0 and Abs(position - state.lastPosition) >= 0.25 then
+            state.stalled = 0
+            state.lastPosition = position
+            playerEngine.progress(state, position)
+            return { action: "none" }
+        end if
+        state.lastPosition = position
+        if data <> state.lastData then
+            state.lastData = data
+            state.stalled = 0
+            return { action: "none" }
+        end if
+        state.stalled = state.stalled + 1
+        if state.stalled < playerEngine.STALL_RECOVERY_AFTER_S then return { action: "none" }
+        state.stalled = 0
+        return playerEngine.recover(state, "stall")
+    end function
+
+    ' recoverFromStall: antes de começar, o alternativo uma vez; depois, o mesmo arquivo no ponto onde parou.
+    function recover(state as object, reason as string) as object
+        state.recoveries = state.recoveries + 1
+        limit = playerEngine.MAX_STARTUP_RECOVERIES
+        if state.hasProgressed then limit = playerEngine.MAX_STALL_RECOVERIES
+        if state.recoveries > limit then
+            detail = "A transmissão não começou: o servidor não enviou imagem"
+            if state.hasProgressed then detail = "A transmissão parou e não voltou após " + limit.toStr() + " tentativas de reconexão"
+            return playerEngine.fail(state, reason, detail, 0)
+        end if
+        if not state.hasProgressed and utils.textOr(state.stream.fallbackUrl, "") <> "" and not state.usingFallback then return playerEngine.fallback(state, "travou antes de começar")
+        playerEngine.mark(state, "reconexão")
+        state.lastRecoveryAt = state.resumePoint
+        state.grace = playerEngine.GRACE_TICKS
+        state.lastPosition = -1
+        return { action: "reload", url: state.url, position: state.resumePoint, stage: "Reconectando ao servidor..." }
+    end function
+
+    function fallback(state as object, cause as string) as object
+        state.usingFallback = true
+        state.fallbackCause = cause
+        state.url = state.stream.fallbackUrl
+        state.grace = playerEngine.GRACE_TICKS
+        state.lastPosition = -1
+        state.dataSeen = false
+        playerEngine.mark(state, "alternativo")
+        return { action: "fallback", url: state.url, position: 0, stage: "Tentando formato alternativo..." }
+    end function
+
+    ' Erro do nó Video (state = "error"): no meio do vídeo reconecta; antes, o alternativo; sem ele, o erro.
+    ' errorCode da Roku: -1 HTTP, -2 tempo esgotado, -3 desconhecido, -4 lista vazia, -5 formato não suportado.
+    function onError(state as object, errorCode as integer, errorText as string) as object
+        if state.hasProgressed then return playerEngine.recover(state, "erro " + errorCode.toStr())
+        reason = "roku code=" + errorCode.toStr()
+        if not state.usingFallback and utils.textOr(state.stream.fallbackUrl, "") <> "" then return playerEngine.fallback(state, reason)
+        detail = "Roku Video Error Code " + errorCode.toStr()
+        if errorText <> "" then detail = detail + ": " + errorText
+        return playerEngine.fail(state, reason, detail, errorCode)
+    end function
+
+    ' fail: "sem sinal" quando nada chegou do servidor (ou a Roku diz rede/tempo esgotado) e nunca tocou.
+    function fail(state as object, reason as string, detail as string, errorCode as integer) as object
+        noSignal = not state.hasProgressed and (not state.dataSeen or errorCode = -1 or errorCode = -2)
+        message = playerEngine.PLAYBACK_ERROR
+        if noSignal then message = playerEngine.NO_SIGNAL_ERROR
+        ext = utils.textOr(state.stream.containerExtension, "mídia")
+        text = "[Engine: roku] [Formato: " + ext + "] " + detail + " | URL: " + net.maskSecrets(state.url)
+        if state.usingFallback and state.fallbackCause <> "" then text = text + " | Formato principal: " + state.fallbackCause
+        timeline = "sem eventos"
+        if state.timeline.count() > 0 then timeline = state.timeline.join(", ")
+        text = text + " | Linha do tempo: " + timeline
+        return { action: "fail", message: message, detail: text }
+    end function
+
+end namespace

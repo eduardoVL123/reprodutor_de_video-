@@ -151,6 +151,32 @@ describe('pair-core: ciclo de vida de sessões e endpoints da API', () => {
     expect(res.status).toBe(400)
   })
 
+  it('sessão sem chave (Roku): o celular vê plain, envia e a TV recebe o mesmo box', async () => {
+    const core = createPairCore()
+    const created = await parseResponse(
+      await core.handleApi(makeRequest('http://localhost/v1/sessions', { method: 'POST', body: { plain: true } }), '10.0.0.1'),
+    )
+    expect(created.status).toBe(201)
+    const { code, secret } = created.json
+
+    const info = await parseResponse(await core.handleApi(makeRequest(`http://localhost/v1/sessions/${code}`), '10.0.0.2'))
+    expect(info.json).toEqual({ pub: null, plain: true })
+
+    const sent = await core.handleApi(makeRequest(`http://localhost/v1/sessions/${code}/payload`, { method: 'POST', body: { box: BOX } }), '10.0.0.2')
+    expect(sent.status).toBe(204)
+    const got = await parseResponse(await core.handleApi(makeRequest(`http://localhost/v1/sessions/${code}/payload`, { secret }), '10.0.0.1'))
+    expect(got.json).toEqual({ box: BOX })
+  })
+
+  it.each([
+    ['plain que não é true', { plain: 'sim' }],
+    ['plain numérico', { plain: 1 }],
+  ])('recusa sessão sem chave com %s', async (_nome, body) => {
+    const core = createPairCore()
+    const res = await core.handleApi(makeRequest('http://localhost/v1/sessions', { method: 'POST', body }), '1.2.3.4')
+    expect(res.status).toBe(400)
+  })
+
   it('retorna 503 quando estoura maxSessions', async () => {
     const core = createPairCore({ maxSessions: 1 })
     const req1 = makeRequest('http://localhost/v1/sessions', { method: 'POST', body: { pub: PUB } })

@@ -1,0 +1,105 @@
+' Transporte real (roUrlTransfer) contra o servidor falso `npm run mock` (127.0.0.1:8787, teste123/senha123).
+' Só roda em `npm run roku:test:integration`, que sobe o mock; o `roku:test` comum pula a tag "integration".
+namespace tests
+
+    const MOCK = "http://127.0.0.1:8787"
+
+    @suite("net.urlTransport (integração com o mock)")
+    @tags("integration")
+    class UrlTransportTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("respostas do servidor")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("login com usuário e senha certos")
+        function _()
+            result = xtream.authenticate(net.urlTransport(), { dns: tests.MOCK, username: "teste123", password: "senha123" })
+            m.assertInvalid(result.error)
+            m.assertEqual(result.userInfo.username, "teste123")
+            m.assertTrue(result.insecure)
+        end function
+
+        @it("senha errada é recusada pelo servidor")
+        function _()
+            result = xtream.authenticate(net.urlTransport(), { dns: tests.MOCK, username: "teste123", password: "errada" })
+            m.assertEqual(result.error.code, "AUTH_INVALID_CREDENTIALS")
+        end function
+
+        @it("404 vira HTTP_ERROR com o status")
+        function _()
+            response = net.urlTransport().get(tests.MOCK + "/nao-existe", 5000, "*/*")
+            m.assertInvalid(response.error)
+            m.assertEqual(response.status, 404)
+        end function
+
+        @it("baixa a lista M3U e o parser lê os itens")
+        function _()
+            result = xtream.fetchM3uText(net.urlTransport(), tests.MOCK + "/lista.m3u")
+            m.assertInvalid(result.error)
+            parsed = xtream.parseM3u(result.text)
+            m.assertEqual(parsed.liveStreams.count() + parsed.vodStreams.count(), 6)
+        end function
+
+        ' Só no aparelho: o simulador não expõe os cabeçalhos do salto 302 (ver net.finalUrlFromHeaders).
+        @it("link curto: credenciais no endereço final do redirecionamento")
+        @tags("device")
+        function _()
+            result = xtream.resolveShortInput(net.urlTransport(), { dns: tests.MOCK + "/v" })
+            m.assertInvalid(result.error)
+            m.assertEqual(result.mode, "xtream")
+            m.assertEqual(result.username, "teste123")
+            m.assertEqual(result.password, "senha123")
+        end function
+
+        @it("catálogo: baixa e grava a seção ao vivo do mock e lê a primeira página")
+        function _()
+            dir = "cachefs:/pulse-test-integration"
+            catalog.clearCatalog(dir)
+            ctx = { dir: dir, apiBase: tests.MOCK, credentials: { username: "teste123", password: "senha123" }, type: "xtream" }
+            result = catalog.loadSection(net.urlTransport(), ctx, "live", false)
+            m.assertTrue(result.ok)
+            m.assertEqual(result.list[0].category_name, "Todos")
+            m.assertTrue(result.list[0].count > 0)
+            page = catalog.getItems(dir, "live", catalog.ALL_CATEGORIES, 0, 5, [])
+            m.assertEqual(page.count(), 5)
+            m.assertNotInvalid(page[0].stream_id)
+            catalog.clearCatalog(dir)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("falhas de rede")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("porta sem servidor vira erro de rede")
+        function _()
+            response = net.urlTransport().get("http://127.0.0.1:9/player_api.php", 5000, "*/*")
+            m.assertEqual(response.error.code, "CORS_OR_NETWORK_ERROR")
+            m.assertTrue(response.error.technicalDetail.instr("127.0.0.1:9") >= 0)
+        end function
+
+    end class
+
+    @suite("net.urlTransport")
+    class UrlTransportUnitTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("endereço final pelo cabeçalho Location")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sem redirecionamento fica o próprio endereço")
+        function _()
+            m.assertEqual(net.finalUrlFromHeaders("http://a.test/x", [{ "content-type": "text/plain" }]), "http://a.test/x")
+        end function
+
+        @it("Location relativo é resolvido pelo endereço atual; vale o último salto")
+        function _()
+            headers = [{ location: "/player_api.php?username=u&password=p" }, { "content-type": "application/json" }]
+            m.assertEqual(net.finalUrlFromHeaders("http://a.test:8787/v", headers), "http://a.test:8787/player_api.php?username=u&password=p")
+            headers = [{ Location: "http://b.test/um" }, { location: "dois" }]
+            m.assertEqual(net.finalUrlFromHeaders("http://a.test/x", headers), "http://b.test/dois")
+        end function
+
+    end class
+
+end namespace

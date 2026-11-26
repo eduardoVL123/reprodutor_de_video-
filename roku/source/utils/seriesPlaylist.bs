@@ -1,0 +1,87 @@
+import "pkg:/source/utils/types.bs"
+' Port de src/utils/seriesPlaylist.js (casos em tests/seriesPlaylist.test.js e seriesPlaylist.spec.bs): temporadas e
+' fila de episódios de uma série (resposta do get_series_info). A fila tem a série inteira, então o próximo episódio
+' passa de uma temporada para a outra. O playHistoryItem entra com o player (D6).
+namespace seriesPlaylist
+
+    ' Episódios de uma temporada: painéis devolvem array ou objeto.
+    ' shortcut: objeto sai na ordem do roAssociativeArray (a do JSON no brs-engine); se um aparelho embaralhar,
+    ' ordenar por episode_num.
+    function episodesOf(data as dynamic, seasonKey as string) as object
+        if not utils.isObject(data) or not utils.isObject(data.episodes) then return []
+        list = data.episodes[seasonKey]
+        if GetInterface(list, "ifArray") <> invalid then return list
+        values = []
+        if utils.isObject(list) then
+            for each key in list
+                values.push(list[key])
+            end for
+        end if
+        return values
+    end function
+
+    ' Número da temporada: campo `season` do episódio (painéis que devolvem array) ou a chave.
+    function seasonNumberOf(data as dynamic, seasonKey as string) as integer
+        firstEpisode = seriesPlaylist.episodesOf(data, seasonKey)[0]
+        if utils.isObject(firstEpisode) and firstEpisode.season <> invalid then
+            text = utils.textOr(firstEpisode.season, "")
+            if CreateObject("roRegex", "^\s*-?\d", "").isMatch(text) then return Int(Val(text))
+        end if
+        if CreateObject("roRegex", "^\s*-?\d", "").isMatch(seasonKey) then return Int(Val(seasonKey))
+        return 0
+    end function
+
+    ' Temporadas com episódios, em ordem: [{ key, number }].
+    function seasonsOf(data as dynamic) as object
+        if not utils.isObject(data) or not utils.isObject(data.episodes) then return []
+        seasons = []
+        for each key in data.episodes
+            if seriesPlaylist.episodesOf(data, key).count() > 0 then seasons.push({ key: key, number: seriesPlaylist.seasonNumberOf(data, key) })
+        end for
+        seasons.sortBy("number")
+        return seasons
+    end function
+
+    ' Título sem o prefixo "S01E02 - " (ou "Série - S01E02 - ") que os painéis repetem; vazio vira "Episódio N".
+    function episodeTitle(ep as object) as string
+        raw = utils.textOr(ep.title, "")
+        if raw = "" then raw = utils.textOr(ep.name, "")
+        prefix = CreateObject("roRegex", "^(?:.*?\s-\s)?S\d{1,2}\s*E\d{1,3}\b\s*[-–:.]?\s*", "i")
+        title = prefix.replace(raw, "").trim()
+        if title = "" then return "Episódio " + utils.textOr(ep.episode_num, "")
+        return title
+    end function
+
+    ' Itens do player para todos os episódios, temporada após temporada.
+    ' p = { seriesData, seriesName, seriesId, fallbackImage?, categoryId?, categoryIds? }
+    function buildPlaylist(p as object) as object
+        fallbackImage = utils.textOr(p.fallbackImage, "")
+        categoryId = utils.textOr(p.categoryId, "")
+        categoryIds = p.categoryIds
+        if categoryIds = invalid then categoryIds = []
+        items = []
+        for each season in seriesPlaylist.seasonsOf(p.seriesData)
+            for each ep in seriesPlaylist.episodesOf(p.seriesData, season.key)
+                icon = ""
+                if utils.isObject(ep.info) then icon = utils.textOr(ep.info.movie_image, "")
+                if icon = "" then icon = fallbackImage
+                extension = utils.textOr(ep.container_extension, "")
+                if extension = "" then extension = "mp4"
+                ' Literal: as chaves ficam com a caixa do web (stream_icon, seriesId) no histórico salvo.
+                items.push({
+                    stream_id: ep.id,
+                    name: p.seriesName + " - T" + season.number.toStr() + ":E" + utils.textOr(ep.episode_num, "") + " - " + seriesPlaylist.episodeTitle(ep),
+                    stream_icon: icon,
+                    container_extension: extension,
+                    section: "series",
+                    seriesId: p.seriesId,
+                    ' Categorias da série: sem elas, o episódio no "Continuar assistindo" escapava do controle parental.
+                    category_id: categoryId,
+                    category_ids: categoryIds
+                })
+            end for
+        end for
+        return items
+    end function
+
+end namespace

@@ -1,0 +1,398 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/parental/parental.bs"
+
+' Medidas do PinDialog.vue e do ParentalModal.vue em px (1920×1080). PIN: painel de 480 em x 720, centrado na altura
+' (p-8 e 1 px de borda), título de 32 px, dica de 20, campo de 414×54, erro em vermelho e os botões Cancelar (120) e
+' Confirmar (133) à direita. Lista: painel de 896×704 em 512,188; cabeçalho até y 354 com Trocar PIN e Pronto; linhas
+' de 830×68 a cada 76 a partir de y 366, recortadas até y 859, com o botão do estado (160×46) à direita.
+const PIN_X = 753
+const PIN_W = 414
+const ROW_X = 545
+const ROW_TOP = 366
+const ROW_STEP = 76
+const LIST_TOP = 354
+const LIST_BOTTOM = 859
+const AMBER_300 = "0xFCD34DFF"
+const NEUTRAL_200 = "0xE5E5E5FF"
+const NO_PIN_YET = "Ainda não há PIN. Crie um no botão ""Controle parental"" desta aba para abrir esta categoria."
+
+sub init()
+    m.store = storage.create()
+    m.root = m.top.createChild("Group")
+    m.focusables = {}
+    m.focusId = ""
+    m.pin = ""
+    m.error = ""
+    m.currentPin = ""
+    m.changed = false
+    m.rowScroll = 0
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+sub onRequest()
+    request = m.top.request
+    m.mode = request.mode
+    m.section = request.section
+    m.category = request.category
+    m.categories = request.categories
+    if m.categories = invalid then m.categories = []
+    m.ctx = parental.activeContext(m.store)
+    m.guardState = parental.readGuard()
+    if m.mode = "unlock" then
+        showPin("unlock")
+    else
+        showPin("pin")
+    end if
+end sub
+
+' ---------- PIN ----------
+
+sub showPin(pinStep as string)
+    m.step = pinStep
+    m.pin = ""
+    m.error = ""
+    m.focusId = "pin-input"
+    render()
+end sub
+
+function pinTitle() as string
+    if m.step = "unlock" then return "Categoria bloqueada"
+    if m.step = "pin-current" then return "Trocar PIN"
+    if m.step = "pin-new" then return "Novo PIN"
+    return "Controle parental"
+end function
+
+function pinHint() as string
+    if m.step = "unlock" then
+        if parental.needsPin(m.ctx) then return NO_PIN_YET
+        return "Digite o PIN para abrir " + utils.textOr(m.category.category_name, "") + "."
+    end if
+    if m.step = "pin-current" then return "Digite o PIN atual."
+    if m.step = "pin-new" then return "De 4 a 8 números."
+    if parental.needsPin(m.ctx) then return "Crie um PIN de 4 a 8 números. Ele protege as categorias bloqueadas; guarde-o."
+    return "Digite o PIN para escolher o que aparece."
+end function
+
+sub render()
+    m.root.removeChildrenIndex(m.root.getChildCount(), 0)
+    m.focusables = {}
+    shade = m.root.createChild("Rectangle")
+    shade.width = 1920
+    shade.height = 1080
+    shade.color = "0x000000D9"
+    if m.step = "list" then
+        renderList()
+    else
+        renderPin()
+    end if
+    renderFocus()
+end sub
+
+sub renderPin()
+    panel = ui.panel(m.root, "dialog", 720, 0, 480, 10)
+    hint = ui.text(m.root, pinHint(), ui.font(400, 20), ui.NEUTRAL_400, PIN_X, 0, PIN_W, 28)
+    hintHeight = ui.textHeight(hint, 28)
+    errorHeight = 0
+    if m.error <> "" then errorHeight = 40
+    height = 33 + 44 + 8 + hintHeight + 20 + 54 + errorHeight + 24 + 50 + 33
+    top = Int((1080 - height) / 2)
+    panel.translation = [720, top]
+    panel.height = height
+    ui.text(m.root, pinTitle(), ui.font(700, 32), ui.WHITE, PIN_X, top + 33, PIN_W, 44).wrap = false
+    hint.translation = [PIN_X, top + 85]
+
+    ' tv-input com o PIN escondido (type="password"), centrado e espaçado (tracking 0.5em).
+    inputTop = top + 85 + hintHeight + 20
+    bg = ui.panel(m.root, "input", PIN_X, inputTop, PIN_W, 54)
+    ring = ui.panel(m.root, "input-focus", PIN_X - 4, inputTop - 4, PIN_W + 8, 62)
+    if m.pin <> "" then
+        dots = ui.trackedText(m.root, String(Len(m.pin), "•"), ui.font(400, 20), ui.WHITE, 0, inputTop + 13, 10)
+        dots.translation = [PIN_X + (PIN_W - dots.boundingRect().width + 10) / 2, inputTop + 13]
+    end if
+    m.focusables["pin-input"] = { ring: ring, bg: bg }
+    if m.error <> "" then ui.text(m.root, m.error, ui.font(400, 20), ui.ERROR, PIN_X, inputTop + 66, PIN_W, 28)
+
+    buttonsTop = inputTop + 54 + errorHeight + 24
+    addButton("pin-cancel", "Cancelar", 898, buttonsTop, 120, false)
+    addButton("pin-confirm", "Confirmar", 1034, buttonsTop, 133, true)
+end sub
+
+' .tv-btn (borda white/15) ou .tv-btn-primary (branco, texto preto e semibold), h 50.
+sub addButton(id as string, label as string, x as float, y as float, width as float, primary as boolean)
+    group = m.root.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring", -5, -5, width + 10, 60)
+    image = "btn"
+    color = ui.WHITE
+    weight = 500
+    if primary then
+        image = "btn-primary"
+        color = ui.BLACK
+        weight = 600
+    end if
+    ui.panel(group, image, 0, 0, width, 50)
+    text = ui.text(group, label, ui.font(weight, 20), color, 0, 11, width, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [width / 2, 25]
+    m.focusables[id] = { node: group, ring: ring }
+end sub
+
+' Teclado da Roku no lugar do campo (a TV não tem números no controle); o OK do teclado confirma (@keyup.enter).
+sub openKeyboard()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = pinTitle()
+    dialog.text = ""
+    dialog.buttons = ["OK", "Cancelar"]
+    if dialog.textEditBox <> invalid then dialog.textEditBox.secureMode = true
+    dialog.observeField("buttonSelected", "onKeyboardButton")
+    dialog.observeField("wasClosed", "onKeyboardClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardButton(event as object)
+    dialog = m.top.getScene().dialog
+    if event.getData() = 0 and dialog <> invalid then
+        m.pin = dialog.text
+        confirm()
+    end if
+    if dialog <> invalid then dialog.close = true
+end sub
+
+sub onKeyboardClosed()
+    m.top.getScene().dialog = invalid
+    m.top.setFocus(true)
+end sub
+
+' submit do PinDialog: certo avança, errado mostra o motivo e limpa o campo.
+sub confirm()
+    now = parental.clockMs()
+    problem = ""
+    if m.step = "unlock" then
+        if parental.needsPin(m.ctx) then
+            problem = NO_PIN_YET
+        else if parental.unlock(m.store, m.ctx, m.guardState, m.section, m.category, m.pin, now) then
+            parental.saveGuard(m.guardState)
+            finish("unlocked")
+            return
+        else
+            problem = parental.pinError(m.guardState, now)
+        end if
+    else if m.step = "pin" or m.step = "pin-current" then
+        if parental.checkPin(m.store, m.ctx, m.guardState, m.pin, now) then
+            parental.saveGuard(m.guardState)
+            if m.step = "pin" then
+                showList()
+            else
+                m.currentPin = m.pin
+                showPin("pin-new")
+            end if
+            return
+        end if
+        problem = parental.pinError(m.guardState, now)
+    else if m.step = "pin-new" then
+        problem = parental.changePin(m.store, m.ctx, m.guardState, m.currentPin, m.pin, now)
+        if problem = "" then
+            parental.saveGuard(m.guardState)
+            m.currentPin = ""
+            showList()
+            return
+        end if
+    end if
+    parental.saveGuard(m.guardState)
+    m.error = problem
+    m.pin = ""
+    m.focusId = "pin-input"
+    render()
+end sub
+
+sub cancelPin()
+    if m.step = "pin-current" or m.step = "pin-new" then
+        m.currentPin = ""
+        showList()
+    else
+        finish("closed")
+    end if
+end sub
+
+sub finish(result as string)
+    ' Avisa o Início (as fileiras seguem as escolhas novas) e guarda o desbloqueio desta abertura.
+    if m.changed or result = "unlocked" then parental.saveUnlocked(m.ctx)
+    m.top.done = { result: result, changed: m.changed }
+end sub
+
+' ---------- Lista de categorias ----------
+
+sub showList()
+    m.step = "list"
+    m.focusId = "parental-close"
+    if m.categories.count() > 0 then m.focusId = "parental-row-0"
+    m.rowScroll = 0
+    render()
+end sub
+
+sub renderList()
+    ui.panel(m.root, "dialog", 512, 188, 896, 704)
+    ui.text(m.root, "Controle parental", ui.font(700, 44), ui.WHITE, ROW_X, 221, 562, 56).wrap = false
+    ui.text(m.root, "Bloqueada: abre só com o PIN. Escondida: some do app. Vale para este perfil.", ui.font(400, 20), ui.NEUTRAL_400, ROW_X, 281, 562, 28)
+    addButton("parental-change-pin", "Trocar PIN", 1123, 221, 136, false)
+    addButton("parental-close", "Pronto", 1271, 221, 104, true)
+    line = m.root.createChild("Rectangle")
+    line.color = "0xFFFFFF14"
+    line.width = 830
+    line.height = 1
+    line.translation = [ROW_X, LIST_TOP - 1]
+
+    if m.categories.count() = 0 then
+        ui.text(m.root, "Esta lista não tem categorias.", ui.font(400, 20), ui.NEUTRAL_400, ROW_X, LIST_TOP + 32, 830, 28)
+        return
+    end if
+    ' Só as linhas da janela visível (overflow-y-auto): uma lista com centenas de categorias não vira centenas de nós.
+    clip = m.root.createChild("Group")
+    clip.clippingRect = [ROW_X - 10, LIST_TOP, 850, LIST_BOTTOM - LIST_TOP]
+    first = Int(m.rowScroll / ROW_STEP)
+    last = first + Int((LIST_BOTTOM - LIST_TOP) / ROW_STEP) + 1
+    if last > m.categories.count() - 1 then last = m.categories.count() - 1
+    for i = first to last
+        addRow(clip, i)
+    end for
+end sub
+
+sub addRow(parent as object, index as integer)
+    category = m.categories[index]
+    y = ROW_TOP + index * ROW_STEP - m.rowScroll
+    ui.panel(parent, "parental-row", ROW_X, y, 830, 68)
+    name = ui.text(parent, utils.textOr(category.category_name, ""), ui.font(400, 20), ui.WHITE, 562, y + 20, 620, 28)
+    name.wrap = false
+    status = parental.statusOf(m.ctx, m.section, category)
+    label = "Visível"
+    color = NEUTRAL_200
+    if status = "locked" then
+        label = "Bloqueada"
+        color = AMBER_300
+    else if status = "hidden" then
+        label = "Escondida"
+        color = ui.RED_300
+    end if
+    group = parent.createChild("Group")
+    group.translation = [1198, y + 11]
+    ring = ui.panel(group, "focus-ring", -5, -5, 170, 56)
+    ui.panel(group, "status-" + status, 0, 0, 160, 46)
+    text = ui.text(group, label, ui.font(600, 20), color, 0, 9, 160, 28)
+    text.horizAlign = "center"
+    group.scaleRotateCenter = [80, 23]
+    m.focusables["parental-row-" + index.toStr()] = { node: group, ring: ring, index: index }
+end sub
+
+' NEXT do ParentalModal.vue: Visível → Bloqueada → Escondida → Visível.
+sub cycle(index as integer)
+    category = m.categories[index]
+    status = parental.statusOf(m.ctx, m.section, category)
+    nextStatus = "locked"
+    if status = "locked" then nextStatus = "hidden"
+    if status = "hidden" then nextStatus = "visible"
+    parental.setStatus(m.store, m.ctx, m.section, category, nextStatus)
+    m.changed = true
+    render()
+end sub
+
+' ---------- Foco e teclas ----------
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    focusedTree = m.top.isInFocusChain()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = focusedTree and id = m.focusId
+        entry.ring.visible = focused
+        if entry.bg <> invalid then entry.bg.visible = not focused
+        if entry.node <> invalid then
+            if focused then
+                entry.node.scale = [1.02, 1.02]
+            else
+                entry.node.scale = [1, 1]
+            end if
+        end if
+    end for
+end sub
+
+sub focusRow(index as integer)
+    if index < 0 or index >= m.categories.count() then return
+    top = ROW_TOP + index * ROW_STEP
+    if top - m.rowScroll < ROW_TOP then m.rowScroll = top - ROW_TOP
+    if top + 68 - m.rowScroll > LIST_BOTTOM then m.rowScroll = top + 68 - LIST_BOTTOM
+    m.focusId = "parental-row-" + index.toStr()
+    render()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" then
+        if m.step = "list" then
+            finish("closed")
+        else
+            cancelPin()
+        end if
+        return true
+    end if
+    if m.step = "list" then
+        listKey(key)
+    else
+        pinKey(key)
+    end if
+    ' Por cima da aba: nenhuma tecla passa para o catálogo nem para o menu.
+    return true
+end function
+
+sub pinKey(key as string)
+    if key = "OK" then
+        if m.focusId = "pin-input" then openKeyboard()
+        if m.focusId = "pin-confirm" then confirm()
+        if m.focusId = "pin-cancel" then cancelPin()
+        return
+    end if
+    target = ""
+    if key = "down" and m.focusId = "pin-input" then target = "pin-confirm"
+    if key = "up" and m.focusId <> "pin-input" then target = "pin-input"
+    if key = "left" and m.focusId = "pin-confirm" then target = "pin-cancel"
+    if key = "right" and m.focusId = "pin-cancel" then target = "pin-confirm"
+    if target <> "" then
+        m.focusId = target
+        renderFocus()
+    end if
+end sub
+
+sub listKey(key as string)
+    entry = m.focusables[m.focusId]
+    rowIndex = -1
+    if entry <> invalid and entry.index <> invalid then rowIndex = entry.index
+    if key = "OK" then
+        if m.focusId = "parental-close" then finish("closed")
+        if m.focusId = "parental-change-pin" then showPin("pin-current")
+        if rowIndex >= 0 then cycle(rowIndex)
+        return
+    end if
+    if rowIndex >= 0 then
+        if key = "down" then focusRow(rowIndex + 1)
+        if key = "up" then
+            if rowIndex = 0 then
+                m.focusId = "parental-close"
+                renderFocus()
+            else
+                focusRow(rowIndex - 1)
+            end if
+        end if
+        return
+    end if
+    if key = "left" and m.focusId = "parental-close" then m.focusId = "parental-change-pin"
+    if key = "right" and m.focusId = "parental-change-pin" then m.focusId = "parental-close"
+    if key = "down" and m.categories.count() > 0 then
+        focusRow(Int(m.rowScroll / ROW_STEP))
+        return
+    end if
+    renderFocus()
+end sub

@@ -1,0 +1,31 @@
+' Checagens de tipo usadas pelos módulos portados.
+namespace utils
+
+    ' Pela interface, não pelo nome do tipo: um inteiro guardado em array/objeto vira "roInteger", não "Integer".
+    function isNumber(value as dynamic) as boolean
+        return GetInterface(value, "ifInt") <> invalid or GetInterface(value, "ifFloat") <> invalid or GetInterface(value, "ifDouble") <> invalid or GetInterface(value, "ifLongInt") <> invalid
+    end function
+
+    function isString(value as dynamic) as boolean
+        return GetInterface(value, "ifString") <> invalid
+    end function
+
+    function isObject(value as dynamic) as boolean
+        return GetInterface(value, "ifAssociativeArray") <> invalid
+    end function
+
+    ' Equivalente ao `valor || fallback` do JS para texto: invalid, "" e 0 viram o fallback.
+    function textOr(value as dynamic, fallback as string) as string
+        if utils.isString(value) then
+            if value = "" then return fallback
+            return value
+        end if
+        if utils.isNumber(value) then
+            if value = 0 then return fallback
+            if GetInterface(value, "ifInt") <> invalid or GetInterface(value, "ifLongInt") <> invalid then return value.toStr()
+            return Str(value).trim()
+        end if
+        return fallback
+    end function
+
+end namespace

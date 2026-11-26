@@ -1,0 +1,17 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/catalog/catalog.bs"
+
+sub init()
+    m.top.functionName = "runCatalog"
+end sub
+
+sub runCatalog()
+    request = m.top.request
+    if request.action = "items" then
+        hidden = request.hidden
+        if hidden = invalid then hidden = []
+        m.top.result = { items: catalog.getItems(request.ctx.dir, request.section, request.categoryId, request.start, request.count, hidden) }
+        return
+    end if
+    m.top.result = catalog.loadShared(net.urlTransport(), request.ctx, request.section, request.force = true)
+end sub

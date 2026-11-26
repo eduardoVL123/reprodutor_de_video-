@@ -1,0 +1,56 @@
+' Casos de tests/seriesPlaylist.test.js (o playHistoryItem entra com o player, D6).
+namespace tests
+
+    ' Painéis Xtream devolvem as temporadas fora de ordem e às vezes como objeto em vez de array.
+    function seriesData() as object
+        return ParseJson("{""episodes"":{""2"":[{""id"":201,""season"":2,""episode_num"":1,""title"":""Volta"",""container_extension"":""mkv""}],""1"":{""a"":{""id"":101,""season"":1,""episode_num"":1,""title"":""Começo"",""info"":{""movie_image"":""http://srv.test/e101.jpg""}},""b"":{""id"":102,""season"":1,""episode_num"":2,""title"":""""}},""3"":[]}}")
+    end function
+
+    @suite("seriesPlaylist")
+    class SeriesPlaylistTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("seriesPlaylist — fila da série inteira")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("ordena as temporadas e ignora as vazias")
+        function _()
+            numbers = []
+            for each season in seriesPlaylist.seasonsOf(tests.seriesData())
+                numbers.push(season.number)
+            end for
+            m.assertEqual(numbers, [1, 2])
+        end function
+
+        @it("o título do episódio perde o prefixo ""S01E02"" que os painéis repetem (o número já aparece no selo)")
+        function _()
+            m.assertEqual(seriesPlaylist.episodeTitle({ episode_num: 2, title: "S01E02 - O Barco" }), "O Barco")
+            m.assertEqual(seriesPlaylist.episodeTitle({ episode_num: 2, title: "Maré Alta - S01E02 - O Barco" }), "O Barco")
+            m.assertEqual(seriesPlaylist.episodeTitle({ episode_num: 2, title: "S01E02" }), "Episódio 2")
+            m.assertEqual(seriesPlaylist.episodeTitle({ episode_num: 2, title: "O Barco" }), "O Barco")
+            m.assertEqual(seriesPlaylist.episodeTitle({ episode_num: 2, title: "" }), "Episódio 2")
+        end function
+
+        @it("junta todas as temporadas em ordem, para o próximo episódio passar de uma para a outra")
+        function _()
+            items = seriesPlaylist.buildPlaylist({ seriesData: tests.seriesData(), seriesName: "Maré", seriesId: 9, fallbackImage: "http://srv.test/poster.jpg" })
+            streamIds = []
+            for each entry in items
+                streamIds.push(entry.stream_id)
+            end for
+            m.assertEqual(streamIds, [101, 102, 201])
+            m.assertEqual(items[0], { stream_id: 101, name: "Maré - T1:E1 - Começo", stream_icon: "http://srv.test/e101.jpg", container_extension: "mp4", section: "series", seriesId: 9, category_id: "", category_ids: [] })
+            m.assertEqual(items[1].name, "Maré - T1:E2 - Episódio 2")
+            m.assertEqual(items[1].stream_icon, "http://srv.test/poster.jpg")
+            m.assertEqual(items[2].container_extension, "mkv")
+        end function
+
+        @it("episódio leva as categorias da série: o controle parental do Início consegue bloquear")
+        function _()
+            items = seriesPlaylist.buildPlaylist({ seriesData: tests.seriesData(), seriesName: "X", seriesId: 9, categoryId: "7", categoryIds: ["8"] })
+            m.assertEqual(catalog.categoriesOf(items[0]), ["7", "8"])
+        end function
+
+    end class
+
+end namespace

@@ -1,0 +1,51 @@
+import "pkg:/source/utils/types.bs"
+' Beacons de abertura exigidos pela certificação Roku (3.2, "Measuring app performance"): AppLaunchComplete quando o
+' Início está desenhado e visível; se antes dele aparece uma tela de escolha ou login, ela fica entre
+' AppDialogInitiate e AppDialogComplete (a Roku desconta esse tempo). Uma vez por abertura. Casos em launch.spec.bs.
+namespace launch
+
+    ' Telas que vêm antes do Início (aceite dos termos, login, envio pelo celular, perfil, bloqueio da licença).
+    function isDialogScreen(name as string) as boolean
+        return name = "FtueScreen" or name = "LoginScreen" or name = "PairScreen" or name = "ProfileScreen" or name = "ActivationScreen"
+    end function
+
+    function create() as object
+        return { dialog: false, done: false }
+    end function
+
+    ' Uma tela ficou por cima (topo da pilha), e o Início já desenhou (homeReady)? Devolve os beacons a disparar agora,
+    ' na ordem, e atualiza o estado.
+    function onTop(state as object, name as string, homeReady as boolean) as object
+        beacons = []
+        if state.done then return beacons
+        if launch.isDialogScreen(name) then
+            if not state.dialog then
+                state.dialog = true
+                beacons.push("AppDialogInitiate")
+            end if
+            return beacons
+        end if
+        if name <> "HomeScreen" or not homeReady then return beacons
+        if state.dialog then
+            state.dialog = false
+            beacons.push("AppDialogComplete")
+        end if
+        state.done = true
+        beacons.push("AppLaunchComplete")
+        return beacons
+    end function
+
+    ' Deep link (contentId + mediaType, na abertura ou pelo roInput): { section, id } do item da lista aberta, ou
+    ' invalid (a Roku pede que um link inválido só abra o Início). contentId = o id do item na lista do usuário.
+    function deepLink(args as dynamic) as dynamic
+        if not utils.isObject(args) then return invalid
+        id = utils.textOr(args.contentId, utils.textOr(args.contentid, ""))
+        mediaType = LCase(utils.textOr(args.mediaType, utils.textOr(args.mediatype, "")))
+        if id = "" or Len(id) > 255 then return invalid
+        if mediaType = "movie" then return { section: "vod", id: id }
+        if mediaType = "series" then return { section: "series", id: id }
+        if mediaType = "live" then return { section: "live", id: id }
+        return invalid
+    end function
+
+end namespace

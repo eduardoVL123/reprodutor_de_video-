@@ -1,0 +1,133 @@
+' Casos de tests/parental.test.js (parentalStore). Os dois de "storage falhou ao ler" não se aplicam: o registro da
+' Roku não lança erro ao ler. Os de "catálogo com categorias fora da vista" estão em catalog.spec.bs.
+namespace tests
+
+    function parentalCats() as object
+        return [
+            { category_id: "1", category_name: "Filmes" },
+            { category_id: "2", category_name: "Adultos +18" },
+            { category_id: "3", category_name: "Esportes" }
+        ]
+    end function
+
+    @suite("parental")
+    class ParentalTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            m.store = storage.create("pulse-test")
+            m.store.clear()
+            m.guard = { fails: 0, lockedUntil: 0# }
+            m.now = 1000000#
+            m.cats = tests.parentalCats()
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("parentalStore")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("categoria com nome adulto já começa bloqueada; o resto, visível")
+        function _()
+            ctx = parental.load(m.store, "p1", invalid)
+            m.assertEqual([parental.statusOf(ctx, "vod", m.cats[0]), parental.statusOf(ctx, "vod", m.cats[1]), parental.statusOf(ctx, "vod", m.cats[2])], ["visible", "locked", "visible"])
+            m.assertEqual(parental.blockedIds(ctx, "vod", m.cats), ["2"])
+            m.assertTrue(parental.isAdultName("Eróticos"))
+            m.assertTrue(parental.isAdultName("XXX"))
+            m.assertFalse(parental.isAdultName("Esportes 18h"))
+        end function
+
+        @it("sem PIN de fábrica: abrir a categoria não cria PIN (quem cria é o Controle parental); depois só ele desbloqueia")
+        function _()
+            ctx = parental.load(m.store, "p1", invalid)
+            m.assertTrue(parental.needsPin(ctx))
+            m.assertFalse(parental.unlock(m.store, ctx, m.guard, "vod", m.cats[1], "2580", m.now))
+            m.assertTrue(parental.needsPin(ctx))
+            m.assertFalse(parental.checkPin(m.store, ctx, m.guard, "12", m.now))
+            m.assertTrue(parental.checkPin(m.store, ctx, m.guard, "2580", m.now))
+            m.assertTrue(parental.unlock(m.store, ctx, m.guard, "vod", m.cats[1], "2580", m.now))
+            m.assertFalse(parental.needsPin(ctx))
+            m.assertFalse(parental.isLocked(ctx, "vod", m.cats[1]))
+            m.assertEqual(parental.blockedIds(ctx, "vod", m.cats), [])
+            m.assertFalse(parental.checkPin(m.store, ctx, m.guard, "0000", m.now))
+        end function
+
+        @it("o PIN é guardado como o hash SHA-256 do web, nunca em texto")
+        function _()
+            ctx = parental.load(m.store, "p1", invalid)
+            parental.checkPin(m.store, ctx, m.guard, "2580", m.now)
+            saved = m.store.get(parental.PIN_KEY)
+            m.assertEqual(saved, "8a932855db7742fa6f6691fe83015f15a0b516a96808d621382d56df7deb55c0")
+            m.assertFalse(parental.needsPin(parental.load(m.store, "p2", invalid)))
+        end function
+
+        @it("escolha de uma lista não vale para a categoria de mesmo id em outra lista; desbloqueio some ao trocar")
+        function _()
+            a = parental.load(m.store, "p-lista", "A")
+            parental.setStatus(m.store, a, "vod", m.cats[2], "visible")
+            parental.checkPin(m.store, a, m.guard, "2580", m.now)
+            parental.unlock(m.store, a, m.guard, "vod", m.cats[1], "2580", m.now)
+            b = parental.load(m.store, "p-lista", "B")
+            m.assertEqual(parental.statusOf(b, "vod", { category_id: "3", category_name: "XXX Adultos" }), "locked")
+            m.assertTrue(parental.isLocked(b, "vod", m.cats[1]))
+            m.assertNotEqual(a.owner, b.owner)
+            m.assertEqual(parental.statusOf(parental.load(m.store, "p-lista", "A"), "vod", m.cats[2]), "visible")
+        end function
+
+        @it("5 PINs errados: espera 30 s, e nem o certo abre nesse tempo")
+        function _()
+            ctx = parental.load(m.store, "p-trava", invalid)
+            parental.checkPin(m.store, ctx, m.guard, "2580", m.now)
+            for i = 1 to 5
+                m.assertFalse(parental.checkPin(m.store, ctx, m.guard, "1111", m.now))
+            end for
+            m.assertFalse(parental.checkPin(m.store, ctx, m.guard, "2580", m.now))
+            m.assertEqual(parental.pinError(m.guard, m.now), "Muitas tentativas. Espere 30 s.")
+            m.assertTrue(parental.checkPin(m.store, ctx, m.guard, "2580", m.now + 31000))
+        end function
+
+        @it("trocar o PIN: precisa do atual, e o novo passa a valer")
+        function _()
+            ctx = parental.load(m.store, "p1", invalid)
+            parental.checkPin(m.store, ctx, m.guard, "2580", m.now)
+            m.assertEqual(parental.changePin(m.store, ctx, m.guard, "9999", "4321", m.now), "PIN atual incorreto.")
+            m.assertEqual(parental.changePin(m.store, ctx, m.guard, "2580", "12", m.now), "O novo PIN precisa ter de 4 a 8 números.")
+            m.assertEqual(parental.changePin(m.store, ctx, m.guard, "2580", "4321", m.now), "")
+            m.assertFalse(parental.checkPin(m.store, ctx, m.guard, "2580", m.now))
+            m.assertTrue(parental.checkPin(m.store, ctx, m.guard, "4321", m.now))
+        end function
+
+        @it("escolha do usuário vale por perfil e sobrevive a reabrir o app")
+        function _()
+            ctx = parental.load(m.store, "p1", invalid)
+            parental.setStatus(m.store, ctx, "vod", m.cats[0], "hidden")
+            parental.setStatus(m.store, ctx, "vod", m.cats[1], "visible")
+            m.assertEqual(parental.blockedIds(parental.load(m.store, "p1", invalid), "vod", m.cats), ["1"])
+            p2 = parental.load(m.store, "p2", invalid)
+            m.assertEqual(parental.blockedIds(p2, "vod", m.cats), ["1"])
+            parental.setStatus(m.store, p2, "vod", m.cats[0], "visible")
+            m.assertEqual(parental.blockedIds(parental.load(m.store, "p2", invalid), "vod", m.cats), [])
+            m.assertEqual(parental.blockedIds(parental.load(m.store, "p1", invalid), "vod", m.cats), ["1"])
+        end function
+
+        @it("perfil sem escolhas próprias herda as do Principal (a criança não escapa criando outro perfil)")
+        function _()
+            ctx = parental.load(m.store, "p1", "L")
+            parental.setStatus(m.store, ctx, "vod", m.cats[2], "hidden")
+            m.assertEqual(parental.statusOf(parental.load(m.store, "p-novo", "L"), "vod", m.cats[2]), "hidden")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("favoritos e histórico fora da vista (allowedByParental)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("item de categoria bloqueada, em qualquer das suas categorias, não aparece")
+        function _()
+            blocked = { live: ["2"], vod: [], series: [] }
+            m.assertFalse(parental.allows(blocked, { stream_id: 1, section: "live", category_id: "2" }))
+            m.assertFalse(parental.allows(blocked, { stream_id: 2, section: "live", category_id: "1", category_ids: ["1", "2"] }))
+            m.assertTrue(parental.allows(blocked, { stream_id: 3, section: "live", category_id: "1" }))
+            m.assertTrue(parental.allows(blocked, { stream_id: 4, section: "vod", category_id: "2" }))
+        end function
+
+    end class
+
+end namespace

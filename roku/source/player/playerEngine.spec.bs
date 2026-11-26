@@ -1,0 +1,141 @@
+' Casos de tests/useVideoEngine.stall.test.js, useVideoEngine.hls.test.js e useVideoEngine.test.js (as decisões; o
+' nó Video da Roku faz o resto).
+namespace tests
+
+    function engineEpisode() as object
+        return { primaryUrl: "http://srv.test/series/usuario1/senha-secreta/77.mp4", fallbackUrl: "http://srv.test/series/usuario1/senha-secreta/77.m3u8", containerExtension: "mp4" }
+    end function
+
+    ' Toca do segundo `from` por `seconds` segundos (o tempo anda e o buffer fica cheio).
+    function enginePlay(state as object, from as double, seconds as integer) as object
+        action = { action: "none" }
+        for i = 0 to seconds - 1
+            action = playerEngine.tick(state, from + i, false, 100)
+        end for
+        return action
+    end function
+
+    ' Travado: o tempo e os dados não andam.
+    function engineStall(state as object, position as double, seconds as integer) as object
+        last = { action: "none" }
+        for i = 1 to seconds
+            action = playerEngine.tick(state, position, false, 100)
+            if action.action <> "none" then return action
+            last = action
+        end for
+        return last
+    end function
+
+    @suite("playerEngine")
+    class PlayerEngineTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("travamento no meio do episódio")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("reconecta no MESMO arquivo e volta ao ponto onde parou (não recomeça em outro formato)")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            tests.enginePlay(state, 1200, 10)
+            action = tests.engineStall(state, 1209, 15)
+            m.assertEqual(action.action, "reload")
+            m.assertEqual(action.url, tests.engineEpisode().primaryUrl)
+            m.assertTrue(Abs(action.position - 1209) < 2)
+            m.assertEqual(action.stage, "Reconectando ao servidor...")
+        end function
+
+        @it("não reconecta enquanto o arquivo ainda está chegando (rede lenta)")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            tests.enginePlay(state, 1200, 10)
+            for s = 0 to 19
+                m.assertEqual(playerEngine.tick(state, 1209, false, s).action, "none")
+            end for
+        end function
+
+        @it("desiste depois de algumas tentativas e mostra erro (não fica preso para sempre)")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            tests.enginePlay(state, 1200, 10)
+            reloads = 0
+            action = { action: "none" }
+            for attempt = 1 to 8
+                action = tests.engineStall(state, 1209, 15)
+                if action.action = "reload" then reloads = reloads + 1
+                if action.action = "fail" then exit for
+            end for
+            m.assertEqual(action.action, "fail")
+            m.assertEqual(reloads, 3)
+            m.assertEqual(action.message, playerEngine.PLAYBACK_ERROR)
+        end function
+
+        @it("quedas espaçadas, cada uma recuperada, não esgotam as tentativas (canal aberto por horas)")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            position = 100#
+            tests.enginePlay(state, position, 10)
+            for drop = 1 to 5
+                position = position + 9
+                m.assertEqual(tests.engineStall(state, position, 15).action, "reload")
+                tests.enginePlay(state, position, 45)
+                position = position + 45
+            end for
+            m.assertEqual(state.recoveries, 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("canal ou vídeo que nunca começa")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sem nada chegando, mostra o erro de sem sinal em menos de 30 segundos")
+        function _()
+            state = playerEngine.create({ primaryUrl: "http://srv.test/live/u/p/9.m3u8", fallbackUrl: "", containerExtension: "m3u8" })
+            action = { action: "none" }
+            seconds = 0
+            reloads = 0
+            while action.action <> "fail" and seconds < 60
+                action = playerEngine.tick(state, 0, false, 0)
+                if action.action = "reload" then reloads = reloads + 1
+                seconds = seconds + 1
+            end while
+            m.assertEqual(reloads, 1)
+            m.assertEqual(action.action, "fail")
+            m.assertTrue(seconds < 30, "levou " + seconds.toStr() + " s")
+            m.assertEqual(action.message, playerEngine.NO_SIGNAL_ERROR)
+        end function
+
+        @it("antes de começar tenta o formato alternativo uma vez; depois o erro traz a causa do principal")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            action = playerEngine.onError(state, -5, "formato não suportado")
+            m.assertEqual(action.action, "fallback")
+            m.assertEqual(action.url, tests.engineEpisode().fallbackUrl)
+            m.assertEqual(action.stage, "Tentando formato alternativo...")
+            action = playerEngine.onError(state, -3, "")
+            m.assertEqual(action.action, "fail")
+            m.assertTrue(Instr(1, action.detail, "Formato principal: roku code=-5") > 0, action.detail)
+            m.assertTrue(Instr(1, action.detail, "alternativo 0s") > 0, action.detail)
+        end function
+
+        @it("erro de rede (-1) sem ter tocado é sem sinal; o detalhe mostra o motor e a URL sem a senha")
+        function _()
+            state = playerEngine.create({ primaryUrl: "http://srv.test/movie/usuario1/senha-secreta/1.mp4", fallbackUrl: invalid, containerExtension: "mp4" })
+            action = playerEngine.onError(state, -1, "HTTP 404")
+            m.assertEqual(action.action, "fail")
+            m.assertEqual(action.message, playerEngine.NO_SIGNAL_ERROR)
+            m.assertTrue(Instr(1, action.detail, "[Engine: roku]") > 0)
+            m.assertEqual(Instr(1, action.detail, "senha-secreta"), 0)
+        end function
+
+        @it("erro no meio do vídeo reconecta no mesmo ponto em vez de mostrar erro")
+        function _()
+            state = playerEngine.create(tests.engineEpisode())
+            tests.enginePlay(state, 600, 10)
+            action = playerEngine.onError(state, -3, "")
+            m.assertEqual(action.action, "reload")
+            m.assertTrue(Abs(action.position - 609) < 2)
+        end function
+
+    end class
+
+end namespace

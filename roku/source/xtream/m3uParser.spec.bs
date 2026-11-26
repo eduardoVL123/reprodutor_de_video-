@@ -1,0 +1,189 @@
+' Mesmos casos de tests/m3uGroups.test.js. Fica de fora "cede a vez durante o parse": na Roku o parse roda num
+' Task node e não trava o controle remoto. Os hashes esperados vieram do hashText do JS (node).
+namespace tests
+
+    @suite("xtream.parseM3u")
+    class M3uParserTests extends rooibos.BaseTestSuite
+
+        function list(group as string, url as string) as string
+            return "#EXTM3U" + Chr(10) + "#EXTINF:-1 group-title=" + Chr(34) + group + Chr(34) + ",Item" + Chr(10) + url + Chr(10)
+        end function
+
+        function lines(items as object) as string
+            return items.join(Chr(10)) + Chr(10)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("hashText — mesmos valores do JS")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("djb2 em base 36")
+        @params("", "45h")
+        @params("Esportes", "1kdt7tm")
+        @params("Filmes, Ação", "1uc5qa3")
+        @params("http://h.test/a.m3u8", "1veiwm6")
+        @params("Séries Netflix", "1oyday6")
+        function _(text, expected)
+            m.assertEqual(xtream.hashText(text), expected)
+        end function
+
+        @it("texto longo não estoura")
+        function _()
+            m.assertEqual(xtream.hashText(String(200, "x")), "dxg8g5")
+        end function
+
+        @it("vírgula do nome: a primeira fora de aspas (duplas ou simples); aspa sem fechar = sem nome")
+        function _()
+            q = Chr(34)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1,Canal"), 11)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1,D'Artagnan, o filme"), 11)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 tvg-name=" + q + "A, B" + q + ",X"), 27)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x='a,b' y=" + q + "c,d" + q + ",N"), 27)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x=" + q + "it's" + q + ",N"), 20)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1 x=" + q + "a,b"), 0)
+            m.assertEqual(xtream.nameCommaIndex("#EXTINF:-1"), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("filme ou canal ao vivo")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("grupo 'Série A' (futebol) com link de canal continua ao vivo")
+        function _()
+            r = xtream.parseM3u(m.list("Futebol | Série A", "http://h.test/live/u/p/1.m3u8"))
+            m.assertEqual(r.liveStreams.count(), 1)
+            m.assertEqual(r.vodStreams.count(), 0)
+        end function
+
+        @it("grupo 'Série A' mesmo com link sem extensão não vira filme")
+        function _()
+            m.assertEqual(xtream.parseM3u(m.list("Futebol | Série A", "http://h.test/u/p/1")).vodStreams.count(), 0)
+        end function
+
+        @it("grupo 'Séries' com link sem extensão de canal ao vivo ainda vai para VOD")
+        function _()
+            m.assertEqual(xtream.parseM3u(m.list("Séries Netflix", "http://h.test/series/u/p/9")).vodStreams.count(), 1)
+        end function
+
+        @it("arquivo mp4 é filme mesmo em grupo qualquer")
+        function _()
+            m.assertEqual(xtream.parseM3u(m.list("Geral", "http://h.test/a.mp4")).vodStreams.count(), 1)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("auditoria")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("vírgula dentro de atributo não corta o nome nem perde o grupo")
+        function _()
+            q = Chr(34)
+            text = m.lines(["#EXTM3U", "#EXTINF:-1 tvg-name=" + q + "Ação, HD" + q + " group-title=" + q + "Filmes, Ação" + q + ",Rambo", "http://h.test/rambo.mp4"])
+            r = xtream.parseM3u(text)
+            m.assertEqual(r.vodStreams[0].name, "Rambo")
+            m.assertEqual(r.vodCategories[0].category_name, "Filmes, Ação")
+        end function
+
+        @it("o id vem do endereço: um canal novo no topo não muda o id dos outros")
+        function _()
+            before = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1,Canal A", "http://h.test/a.m3u8"])).liveStreams[0].stream_id
+            after = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1,Novo", "http://h.test/novo.m3u8", "#EXTINF:-1,Canal A", "http://h.test/a.m3u8"])).liveStreams[1]
+            m.assertEqual(after.name, "Canal A")
+            m.assertEqual(after.stream_id, before)
+            m.assertEqual(before, "m3u_live_1veiwm6")
+            m.assertTrue(before.instr("h.test") < 0)
+        end function
+
+        @it("a mesma URL repetida ganha ids diferentes")
+        function _()
+            r = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1,A", "http://h.test/x.m3u8", "#EXTINF:-1,B", "http://h.test/x.m3u8"]))
+            m.assertNotEqual(r.liveStreams[0].stream_id, r.liveStreams[1].stream_id)
+            m.assertEqual(r.liveStreams[1].stream_id, r.liveStreams[0].stream_id + "_1")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("fim de linha")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("lê igual com CRLF (Windows), sem quebra no final e com linhas em branco")
+        function _()
+            crlf = Chr(13) + Chr(10)
+            text = "#EXTM3U" + crlf + crlf + "#EXTINF:-1 group-title=" + Chr(34) + "Notícias" + Chr(34) + ",Canal 1" + crlf + "http://h.test/1.m3u8" + crlf + "#EXTINF:-1,Canal 2" + crlf + "http://h.test/2.m3u8"
+            live = xtream.parseM3u(text).liveStreams
+            m.assertEqual(live.count(), 2)
+            m.assertEqual(live[0].name, "Canal 1")
+            m.assertEqual(live[0].directUrl, "http://h.test/1.m3u8")
+            m.assertEqual(live[1].name, "Canal 2")
+            m.assertEqual(live[1].directUrl, "http://h.test/2.m3u8")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("id do grupo")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("fornecedor reordena a lista: cada grupo mantém o mesmo id")
+        function _()
+            q = Chr(34)
+            esportes = "#EXTINF:-1 group-title=" + q + "Esportes" + q + ",Canal 1" + Chr(10) + "http://h.test/live/u/p/1.m3u8"
+            hot = "#EXTINF:-1 group-title=" + q + "Hot Club" + q + ",Canal 2" + Chr(10) + "http://h.test/live/u/p/2.m3u8"
+            novidades = "#EXTINF:-1 group-title=" + q + "Novidades" + q + ",Canal 3" + Chr(10) + "http://h.test/live/u/p/3.m3u8"
+            before = xtream.parseM3u(m.lines(["#EXTM3U", esportes, hot])).liveCategories
+            after = xtream.parseM3u(m.lines(["#EXTM3U", novidades, esportes, hot])).liveCategories
+            m.assertEqual(after[1].category_id, before[0].category_id)
+            m.assertEqual(after[2].category_id, before[1].category_id)
+            m.assertNotEqual(after[0].category_id, before[0].category_id)
+            m.assertEqual(before[0].category_id, "g_1kdt7tm")
+        end function
+
+        @it("grupos com a mesma palavra em caixa diferente continuam separados, na ordem da lista")
+        function _()
+            r = xtream.parseM3u(m.list("Esportes", "http://h.test/1.m3u8") + m.list("ESPORTES", "http://h.test/2.m3u8").mid(8))
+            m.assertEqual(r.liveCategories.count(), 2)
+            m.assertEqual(r.liveCategories[0].category_name, "Esportes")
+            m.assertEqual(r.liveCategories[1].category_name, "ESPORTES")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("grupo em #EXTGRP e sem aspas")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("#EXTGRP vale quando o #EXTINF não traz group-title")
+        function _()
+            r = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1,Jogo", "#EXTGRP:Esportes", "http://h.test/1.m3u8"]))
+            m.assertEqual(r.liveCategories.count(), 1)
+            m.assertEqual(r.liveCategories[0].category_name, "Esportes")
+        end function
+
+        @it("group-title do #EXTINF ganha do #EXTGRP")
+        function _()
+            r = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1 group-title=" + Chr(34) + "Notícias" + Chr(34) + ",Jornal", "#EXTGRP:Outro", "http://h.test/1.m3u8"]))
+            m.assertEqual(r.liveCategories[0].category_name, "Notícias")
+        end function
+
+        @it("valor sem aspas com espaço vai até o próximo atributo")
+        function _()
+            r = xtream.parseM3u(m.lines(["#EXTM3U", "#EXTINF:-1 group-title=Filmes HD tvg-logo=http://h.test/l.png,Rambo", "http://h.test/r.mp4"]))
+            m.assertEqual(r.vodCategories[0].category_name, "Filmes HD")
+            m.assertEqual(r.vodStreams[0].stream_icon, "http://h.test/l.png")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("readM3u")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("lista sem nenhum item vira EMPTY_M3U_ERROR")
+        function _()
+            result = xtream.readM3u("#EXTM3U" + Chr(10))
+            m.assertEqual(result.error.code, "EMPTY_M3U_ERROR")
+            m.assertInvalid(result.parsed)
+        end function
+
+        @it("lista com itens devolve o resultado do parse")
+        function _()
+            result = xtream.readM3u(m.list("Geral", "http://h.test/a.mp4"))
+            m.assertInvalid(result.error)
+            m.assertEqual(result.parsed.vodStreams.count(), 1)
+        end function
+
+    end class
+
+end namespace

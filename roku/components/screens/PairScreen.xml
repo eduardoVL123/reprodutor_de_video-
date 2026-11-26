@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Adicionar lista pelo celular (port de src/components/PairPanel.vue + src/composables/usePairing.js): QR e código
+     na TV, confirmação do que chegou e erros. params.fromList = aberta pelo gerenciador de listas (Digitar volta). -->
+<component name="PairScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="params" type="assocarray" onChange="onParams" />
+    </interface>
+</component>

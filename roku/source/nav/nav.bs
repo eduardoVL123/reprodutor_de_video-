@@ -1,0 +1,25 @@
+' Decisões de navegação (Voltar e "Sair do Pulse Player?"); a MainScene só aplica o resultado.
+' Port do comportamento de src/components/ExitConfirm.vue e da pilha de Voltar de src/utils/spatialNavigation.js
+' (casos em tests/exitConfirm.test.js e roku/source/nav/nav.spec.bs). Certificação Roku 4.6: um diálogo só na home.
+namespace nav
+
+    const EXIT_TITLE = "Sair do Pulse Player?"
+
+    ' "Cancelar" primeiro: o foco começa nele para um Voltar a mais não fechar o app sem querer.
+    function exitButtons() as object
+        return ["Cancelar", "Sair"]
+    end function
+
+    ' state: { stackSize: telas abertas (1 = tela inicial), dialogOpen: pergunta de sair aberta }
+    function onBack(state as object) as string
+        if state.dialogOpen then return "closeDialog"
+        if state.stackSize > 1 then return "pop"
+        return "askExit"
+    end function
+
+    function onExitButton(buttonIndex as integer) as string
+        if buttonIndex = 1 then return "exit"
+        return "closeDialog"
+    end function
+
+end namespace

@@ -1,0 +1,174 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/errors.bs"
+' Port de parseM3u/readM3u/hashText de src/services/m3uParser.js (casos em tests/m3uGroups.test.js e
+' roku/source/xtream/m3uParser.spec.bs). Roda num Task node: não precisa ceder a vez como no navegador.
+' A gravação no catálogo (importM3uCatalog) entra com o catálogo (D4).
+namespace xtream
+
+    ' Hash curto e estável de um texto (djb2, base 36): ids sem pôr a URL (que pode carregar senha) dentro do id.
+    ' shortcut: Asc() devolve o código Unicode do caractere, o JS usa unidades UTF-16; só difere em emoji e caracteres
+    ' fora do plano básico — ids de grupo/URL com emoji não batem com os do app web (ids são locais, não sincronizam).
+    function hashText(text as string) as string
+        h& = 5381
+        ' Sem acento (URLs, quase sempre) os bytes UTF-8 são os próprios códigos: lê de uma vez, sem Mid letra a letra.
+        bytes = CreateObject("roByteArray")
+        bytes.FromAsciiString(text)
+        if bytes.count() = Len(text) then
+            for each code in bytes
+                h& = (h& * 33 + code) mod 4294967296&
+            end for
+        else
+            for i = 1 to Len(text)
+                h& = (h& * 33 + Asc(Mid(text, i, 1))) mod 4294967296&
+            end for
+        end if
+        digits = "0123456789abcdefghijklmnopqrstuvwxyz"
+        if h& = 0 then return "0"
+        result = ""
+        while h& > 0
+            result = Mid(digits, (h& mod 36) + 1, 1) + result
+            h& = h& \ 36
+        end while
+        return result
+    end function
+
+    ' Primeira vírgula fora de aspas: `tvg-name="Ação, HD" group-title="Filmes, Ação",Rambo` separa antes de "Rambo".
+    ' Devolve a posição base 1 (0 = não achou).
+    ' Pula de aspa em aspa com Instr (nativo): letra a letra era metade do tempo de ler uma lista grande.
+    function nameCommaIndex(line as string) as integer
+        start = 9
+        while true
+            comma = Instr(start, line, ",")
+            if comma = 0 then return 0
+            opening = Instr(start, line, Chr(34))
+            single = Instr(start, line, "'")
+            if single > 0 and (opening = 0 or single < opening) then opening = single
+            if opening = 0 or comma < opening then return comma
+            closing = Instr(opening + 1, line, Mid(line, opening, 1))
+            if closing = 0 then return 0
+            start = closing + 1
+        end while
+        return 0
+    end function
+
+    function m3uAttributeRegexes() as object
+        regexes = {}
+        for each name in ["tvg-logo", "group-title", "tvg-name"]
+            ' Sem aspas, o valor vai até o próximo `atributo=` (aceita "Filmes HD").
+            regexes[name] = CreateObject("roRegex", name + "=(?:" + Chr(34) + "([^" + Chr(34) + "]*)" + Chr(34) + "|'([^']*)'|([^\s" + Chr(34) + "',][^,]*?)(?=\s+[\w-]+=|$))", "i")
+        end for
+        return regexes
+    end function
+
+    function extractAttribute(attrString as string, regex as object) as string
+        if attrString = "" then return ""
+        match = regex.match(attrString)
+        for i = 1 to match.count() - 1
+            if match[i] <> invalid and match[i] <> "" then return match[i].trim()
+        end for
+        return ""
+    end function
+
+    ' Devolve { liveStreams, vodStreams, liveCategories, vodCategories } como o app web.
+    function parseM3u(text as dynamic) as object
+        result = { liveStreams: [], vodStreams: [], liveCategories: [], vodCategories: [] }
+        if not utils.isString(text) or text = "" then return result
+
+        attrs = xtream.m3uAttributeRegexes()
+        vodUrlRegex = CreateObject("roRegex", "\.(mp4|mkv|avi|mov|wmv|webm)(\?.*)?$", "i")
+        liveUrlRegex = CreateObject("roRegex", "\.(ts|m3u8)(\?.*)?$", "i")
+        vodGroupRegex = CreateObject("roRegex", "filmes?|movies?|vod|s[eé]ries?", "i")
+        leagueRegex = CreateObject("roRegex", "s[eé]ries?\s*[a-d]\b", "i")
+        extRegex = CreateObject("roRegex", "\.([a-zA-Z0-9]{3,4})(\?.*)?$", "")
+
+        ' Chaves de objeto na Roku ignoram maiúsculas: sem o modo sensível, "Esportes" e "ESPORTES" virariam um grupo só.
+        categoryIds = { live: {}, vod: {} }
+        categoryIds.live.setModeCaseSensitive()
+        categoryIds.vod.setModeCaseSensitive()
+        idCount = {} ' mesma URL repetida na lista ganha sufixo
+        idCount.setModeCaseSensitive()
+        currentMeta = invalid
+        count = 0
+
+        for each rawLine in text.split(Chr(10))
+            line = rawLine.trim() ' o trim tira também o \r de fim de linha do Windows
+            if line = "" then
+                ' linha em branco
+            else if line.startsWith("#EXTINF:") then
+                commaIdx = xtream.nameCommaIndex(line)
+                if commaIdx > 0 then
+                    attrPart = Mid(line, 9, commaIdx - 9).trim()
+                    namePart = Mid(line, commaIdx + 1).trim()
+                else
+                    attrPart = Mid(line, 9).trim()
+                    namePart = ""
+                end if
+                group = xtream.extractAttribute(attrPart, attrs["group-title"])
+                displayName = namePart
+                if displayName = "" then displayName = xtream.extractAttribute(attrPart, attrs["tvg-name"])
+                if displayName = "" then displayName = "Canal " + (count + 1).toStr()
+                groupName = group
+                if groupName = "" then groupName = "Geral"
+                currentMeta = { name: displayName, logo: xtream.extractAttribute(attrPart, attrs["tvg-logo"]), group: groupName, groupFromExtinf: group <> "" }
+            else if line.startsWith("#EXTGRP:") then
+                ' Listas que põem o grupo numa linha própria; o group-title do #EXTINF ganha se existir.
+                extgrp = Mid(line, 9).trim()
+                if currentMeta <> invalid and not currentMeta.groupFromExtinf and extgrp <> "" then currentMeta.group = extgrp
+            else if not line.startsWith("#") and currentMeta <> invalid then
+                count = count + 1
+                url = line
+                groupTitle = currentMeta.group
+
+                ' O grupo só vale para link que não parece canal ao vivo; "Série A" a "Série D" são campeonatos de futebol.
+                isVodGroup = not liveUrlRegex.isMatch(url) and vodGroupRegex.isMatch(groupTitle) and not leagueRegex.isMatch(groupTitle)
+                isVod = vodUrlRegex.isMatch(url) or isVodGroup
+                section = "live"
+                if isVod then section = "vod"
+
+                ' Pelo nome, não pela ordem: o fornecedor reordenar a lista não pode mover o bloqueio do controle parental.
+                if not categoryIds[section].doesExist(groupTitle) then
+                    categoryId = "g_" + xtream.hashText(groupTitle)
+                    categoryIds[section][groupTitle] = categoryId
+                    result[section + "Categories"].push({ category_id: categoryId, category_name: groupTitle })
+                end if
+
+                extMatch = extRegex.match(url)
+                ext = "m3u8"
+                if isVod then ext = "mp4"
+                if extMatch.count() > 1 then ext = LCase(extMatch[1])
+
+                ' Id pelo endereço, não pela posição: o provedor pôr um canal no topo não pode trocar o histórico de todos.
+                baseId = "m3u_" + section + "_" + xtream.hashText(url)
+                seen = 0
+                if idCount.doesExist(baseId) then seen = idCount[baseId]
+                idCount[baseId] = seen + 1
+                streamId = baseId
+                if seen > 0 then streamId = baseId + "_" + seen.toStr()
+
+                result[section + "Streams"].push({
+                    stream_id: streamId,
+                    num: count,
+                    name: currentMeta.name,
+                    stream_icon: currentMeta.logo,
+                    category_id: categoryIds[section][groupTitle],
+                    directUrl: url,
+                    container_extension: ext,
+                    section: section
+                })
+                currentMeta = invalid
+            end if
+        end for
+
+        return result
+    end function
+
+    ' Lê a lista e recusa a vazia. Em vez do throw do JS, devolve { parsed, error }.
+    function readM3u(text as dynamic) as object
+        parsed = xtream.parseM3u(text)
+        if parsed.liveStreams.count() = 0 and parsed.vodStreams.count() = 0 then
+            return { parsed: invalid, error: xtream.newError("EMPTY_M3U_ERROR") }
+        end if
+        return { parsed: parsed, error: invalid }
+    end function
+
+end namespace

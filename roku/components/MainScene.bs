@@ -1,0 +1,261 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/nav/nav.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/ftue/ftue.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/device/secrets.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/net/maskSecrets.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/device/errorLog.bs"
+import "pkg:/source/account/account.bs"
+import "pkg:/source/pairing/pairing.bs"
+import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/device/device.bs"
+import "pkg:/source/license/licensing.bs"
+import "pkg:/source/nav/launch.bs"
+import "pkg:/source/player/playerState.bs"
+
+sub init()
+    m.top.backgroundColor = "0x0B0F0CFF"
+    ' Seções do catálogo sendo baixadas agora (catalog.loadShared): o Início e as abas não baixam a mesma duas vezes.
+    m.global.addFields({ catalogLoad_live: "", catalogLoad_vod: "", catalogLoad_series: "" })
+    ' Perfil ativo ({ id, name, color }): o menu, a Conta e a Busca leem daqui e o ProfileScreen troca.
+    state = profiles.hydrate(storage.create())
+    m.global.addFields({ profile: profiles.active(state.list, state.activeId) })
+    ' Controle parental desta abertura (parental.bs): categorias desbloqueadas com o PIN e a trava de 5 erros.
+    m.global.addFields({ parental: { owner: "", unlocked: {}, rev: 0 }, parentalGuard: { fails: 0, lockedUntil: 0 } })
+    m.profileAsked = false
+    m.top.backgroundUri = ""
+    m.screens = m.top.findNode("screens")
+    m.offlineNotice = m.top.findNode("offlineNotice")
+    m.launch = launch.create()
+    m.homeReady = false
+    pushScreen(CreateObject("roSGNode", initialScreen()))
+    askProfile()
+end sub
+
+' "Quem está assistindo?" uma vez por abertura do app, quando o Início aparece e há mais de um perfil (o
+' isProfileGateOpen do web começa aberto e o Voltar fecha sem perguntar de novo).
+sub askProfile()
+    current = topScreen()
+    if m.profileAsked or current = invalid or current.subtype() <> "HomeScreen" then return
+    m.profileAsked = true
+    if profiles.hydrate(storage.create()).gateOpen then pushScreen(CreateObject("roSGNode", "ProfileScreen"))
+end sub
+
+' NetworkStatus.vue: aviso no topo (top-14, centralizado) quando a rede cai; não bloqueia a tela, o que está no disco
+' continua navegável. px-6 py-3, ícone w-6 e gap-3, texto text-tv-sm amber-200.
+sub renderOffline()
+    m.offlineNotice.removeChildrenIndex(m.offlineNotice.getChildCount(), 0)
+    if not m.top.offline then return
+    group = m.offlineNotice.createChild("Group")
+    bg = ui.panel(group, "offline", 0, 0, 10, 52)
+    icon = ui.panelImage(group, "icon-wifi-off.png", 24, 14, 24, 24)
+    icon.blendColor = "0xFDE68AFF"
+    text = ui.inlineText(group, "Sem conexão com a internet. Verifique a rede do aparelho.", ui.font(400, 20), "0xFDE68AFF", 60, 12, 28)
+    width = 60 + text.boundingRect().width + 24
+    bg.width = width
+    group.translation = [(1920 - width) / 2, 56]
+end sub
+
+' Como a guarda do router do web: sem o aceite dos termos só o FTUE; sem sessão salva, o login; senão a home.
+function initialScreen() as string
+    store = storage.create()
+    if not ftue.isAccepted(store.get(ftue.STORAGE_KEY)) then return "FtueScreen"
+    if session.hydrate(store) = invalid then return phonePairing.loginScreen()
+    return "HomeScreen"
+end function
+
+' Abre uma tela por cima da atual; a anterior fica escondida e volta com o Voltar.
+sub pushScreen(screen as object)
+    current = topScreen()
+    if current <> invalid then current.visible = false
+    m.screens.appendChild(screen)
+    if screen.hasField("navigate") then screen.observeField("navigate", "onNavigate")
+    if screen.hasField("ready") then screen.observeField("ready", "onHomeReady")
+    screen.visible = true
+    screen.setFocus(true)
+    updateLaunch()
+end sub
+
+' Beacons de abertura da certificação (launch.bs): a tela do topo mudou ou o Início acabou de desenhar.
+sub updateLaunch()
+    current = topScreen()
+    if current = invalid then return
+    for each beacon in launch.onTop(m.launch, current.subtype(), m.homeReady)
+        m.top.signalBeacon(beacon)
+    end for
+end sub
+
+sub onHomeReady()
+    m.homeReady = true
+    updateLaunch()
+end sub
+
+' Deep link: filme e canal tocam direto, série abre os detalhes; link inválido ou item fora da lista fica onde está
+' (a Roku pede o Início). A busca do item roda numa Task (carrega a seção se ainda não estiver no disco).
+sub onDeepLink()
+    link = launch.deepLink(m.top.deepLink)
+    if link = invalid then return
+    m.deepLinkTask = CreateObject("roSGNode", "DeepLinkTask")
+    m.deepLinkTask.link = link
+    m.deepLinkTask.observeField("result", "onDeepLinkResult")
+    m.deepLinkTask.control = "run"
+end sub
+
+sub onDeepLinkResult(event as object)
+    result = event.getData()
+    m.deepLinkTask = invalid
+    if not utils.isObject(result.item) then return
+    current = topScreen()
+    ' Termos, login e bloqueio da licença continuam na frente: o deep link não passa por cima deles.
+    if current <> invalid and current.subtype() <> "ProfileScreen" and launch.isDialogScreen(current.subtype()) then return
+    if result.section = "series" then
+        request = { screen: "DetailsScreen", params: { item: result.item, section: "series" } }
+    else
+        request = playerState.openRequest(playerState.forItem(result.item))
+    end if
+    if request = invalid then return
+    ' Um vídeo só: o que estava tocando fecha (guarda o progresso) antes do novo.
+    if current <> invalid and current.subtype() = "PlayerScreen" then
+        ' Sem o "back" dele (se chegasse depois, fecharia o player novo): para o vídeo e sai da pilha aqui.
+        current.unobserveField("navigate")
+        current.close = true
+        m.screens.removeChild(current)
+    end if
+    screen = CreateObject("roSGNode", request.screen)
+    screen.params = request.params
+    pushScreen(screen)
+end sub
+
+' Troca a tela atual (sem voltar para ela), como o router.replace do web.
+sub replaceScreen(screen as object)
+    count = m.screens.getChildCount()
+    if count > 0 then m.screens.removeChildIndex(count - 1)
+    pushScreen(screen)
+end sub
+
+sub onNavigate(event as object)
+    request = event.getData()
+    if request.action = "exit" then
+        m.top.exitApp = true
+    else if request.action = "replace" then
+        replaceScreen(CreateObject("roSGNode", request.screen))
+        askProfile()
+    else if request.action = "push" then
+        screen = CreateObject("roSGNode", request.screen)
+        ' Dados da tela nova (ex.: o item dos detalhes), como as props do web.
+        if request.params <> invalid and screen.hasField("params") then screen.params = request.params
+        pushScreen(screen)
+    else if request.action = "back" then
+        popScreen()
+    else if request.action = "reset" then
+        resetTo(request.screen)
+        askProfile()
+    else if request.action = "diagnostics" then
+        showDiagnostics()
+    else if request.action = "askExit" then
+        ' Tela que não pode voltar (bloqueio da licença): o Voltar só oferece sair do app.
+        askExit()
+    end if
+end sub
+
+' A lista aberta mudou (gerenciador de listas): o app recomeça nesta tela, sem nada da lista anterior na pilha.
+' As cargas antigas que ainda rodam gravam na pasta da lista delas (catalog.contextFor); a vez de baixar cada seção
+' fica livre para a lista nova não esperar por elas.
+sub resetTo(screenName as string)
+    m.screens.removeChildrenIndex(m.screens.getChildCount(), 0)
+    m.global.setFields({ catalogLoad_live: "", catalogLoad_vod: "", catalogLoad_series: "" })
+    pushScreen(CreateObject("roSGNode", screenName))
+end sub
+
+sub popScreen()
+    count = m.screens.getChildCount()
+    if count <= 1 then return
+    m.screens.removeChildIndex(count - 1)
+    focusTopScreen()
+    updateLaunch()
+end sub
+
+function topScreen() as dynamic
+    count = m.screens.getChildCount()
+    if count = 0 then return invalid
+    return m.screens.getChild(count - 1)
+end function
+
+sub focusTopScreen()
+    current = topScreen()
+    if current = invalid then return
+    current.visible = true
+    current.setFocus(true)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press or key <> "back" then return false
+    action = nav.onBack({ stackSize: m.screens.getChildCount(), dialogOpen: m.top.dialog <> invalid })
+    if action = "pop" then
+        popScreen()
+    else if action = "askExit" then
+        askExit()
+    else if action = "closeDialog" then
+        closeDialog()
+    end if
+    return true
+end function
+
+sub askExit()
+    dialog = CreateObject("roSGNode", "StandardMessageDialog")
+    dialog.title = nav.EXIT_TITLE
+    dialog.buttons = nav.exitButtons()
+    dialog.observeField("buttonSelected", "onExitButton")
+    ' O próprio diálogo fecha com Voltar/Home e avisa em wasClosed.
+    dialog.observeField("wasClosed", "onDialogClosed")
+    m.top.dialog = dialog
+end sub
+
+sub onExitButton(event as object)
+    if nav.onExitButton(event.getData()) = "exit" then
+        m.top.exitApp = true
+    else
+        closeDialog()
+    end if
+end sub
+
+' Diagnóstico (DiagnosticsDialog.vue): código do aparelho, plataforma e os últimos erros guardados só aqui.
+' Sem licença confirmada o código fica "—".
+sub showDiagnostics()
+    errors = errorLog.read(storage.create())
+    dialog = m.top.dialog
+    if dialog = invalid then
+        dialog = CreateObject("roSGNode", "StandardMessageDialog")
+        dialog.title = "Diagnóstico"
+        dialog.observeField("buttonSelected", "onDiagnosticsButton")
+        dialog.observeField("wasClosed", "onDialogClosed")
+    end if
+    store = storage.create()
+    dialog.message = account.diagnosticsLines(errors, licensing.loadSaved(store, device.getDeviceKey(store)).code, "roku")
+    dialog.buttons = account.diagnosticsButtons(errors.count())
+    m.top.dialog = dialog
+end sub
+
+' Fechar (0) fecha; Limpar (1) apaga os erros e mostra o diálogo de novo, já vazio.
+sub onDiagnosticsButton(event as object)
+    if event.getData() = 1 then
+        errorLog.clear(storage.create())
+        showDiagnostics()
+    else
+        closeDialog()
+    end if
+end sub
+
+sub closeDialog()
+    if m.top.dialog <> invalid then m.top.dialog.close = true
+end sub
+
+sub onDialogClosed()
+    m.top.dialog = invalid
+    focusTopScreen()
+end sub

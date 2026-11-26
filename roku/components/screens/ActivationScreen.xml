@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Licença bloqueada na Roku (port de src/views/ActivationRequired.vue, D8): verificando, sem conexão, suspenso ou
+     teste acabou. Na Roku a única forma de pagar é o Roku Pay (ChannelStore): sem QR, sem código, sem site.
+     params.reason = licensing.blockReason. Fecha sozinha quando a licença libera; o Voltar só oferece sair do app. -->
+<component name="ActivationScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="params" type="assocarray" onChange="onParams" />
+    </interface>
+</component>

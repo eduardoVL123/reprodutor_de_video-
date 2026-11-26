@@ -1,0 +1,190 @@
+' Casos de tests/playerStore.test.js (histórico, série longa, zapping, canal ao vivo). Os de migração de dados antigos
+' (antes dos perfis e das listas) não se aplicam: a Roku nasce com as chaves por perfil e lista.
+namespace tests
+
+    const PLAYER_DIR = "cachefs:/pulse-test-player"
+
+    @suite("playerState")
+    class PlayerStateTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            m.store = storage.create("pulse-test")
+            m.store.clear()
+            m.key = playerState.historyKey("p1", "A")
+            m.movie = { stream_id: 50, name: "Filme", section: "vod", container_extension: "mp4" }
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("histórico persistido")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("descarta entradas corrompidas ao ler o histórico salvo")
+        function _()
+            m.store.set(m.key, [{ currentTime: 5 }, invalid, { stream_id: 7, name: "Filme", section: "vod", currentTime: 120, duration: 3600, progressPct: 3 }])
+            history = playerState.loadHistory(m.store, m.key)
+            m.assertEqual(history.count(), 1)
+            m.assertEqual(history[0].stream_id, 7)
+            m.assertEqual(Int(history[0].currentTime), 120)
+        end function
+
+        @it("link M3U com usuário e senha não fica em texto no registro, e volta ao reabrir")
+        function _()
+            url = "http://srv.test/joao/s3nh4/55.mp4"
+            playerState.saveProgress(m.store, m.key, [], { stream_id: 55, name: "Filme", section: "vod", directUrl: url }, 600, 3000, 1#)
+            m.assertEqual(Instr(1, FormatJson(m.store.get(m.key)), "s3nh4"), 0)
+            m.assertEqual(playerState.loadHistory(m.store, m.key)[0].directUrl, url)
+        end function
+
+        @it("cada lista tem o seu histórico")
+        function _()
+            m.assertEqual(m.key, "player:watchHistory:p1:A")
+            playerState.saveProgress(m.store, m.key, [], m.movie, 600, 3000, 1#)
+            m.assertEqual(playerState.loadHistory(m.store, playerState.historyKey("p1", "B")).count(), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Continuar assistindo")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("trocar de canal várias vezes não expulsa filmes e episódios do histórico")
+        function _()
+            history = playerState.saveProgress(m.store, m.key, [], m.movie, 900, 5400, 1#)
+            for n = 0 to 19
+                history = playerState.saveProgress(m.store, m.key, history, { stream_id: 1000 + n, name: "Canal", section: "live" }, 0, 0, 2#)
+            end for
+            live = 0
+            hasMovie = false
+            for each h in history
+                if h.section = "live" then live = live + 1
+                if h.section = "vod" and h.stream_id = 50 then hasMovie = true
+            end for
+            m.assertTrue(hasMovie)
+            m.assertEqual(live, 4)
+        end function
+
+        @it("salva o progresso no item indicado e retoma dele")
+        function _()
+            history = playerState.saveProgress(m.store, m.key, [], m.movie, 900, 5400, 1#)
+            m.assertEqual(Int(playerState.getSavedTime(history, 50, "vod")), 900)
+            m.assertEqual(Int(playerState.getSavedTime(history, 60, "vod")), 0)
+            m.assertEqual(Int(playerState.getSavedTime(playerState.loadHistory(m.store, m.key), "50", "vod")), 900)
+        end function
+
+        @it("guarda um único card por série: o episódio mais recente substitui o anterior")
+        function _()
+            ep1 = { stream_id: 901, name: "Série - T1:E1 - Ep", section: "series", seriesId: "S9" }
+            ep2 = { stream_id: 902, name: "Série - T1:E2 - Ep", section: "series", seriesId: "S9" }
+            history = playerState.saveProgress(m.store, m.key, [], ep1, 1200, 2700, 1#)
+            history = playerState.saveProgress(m.store, m.key, history, ep2, 300, 2700, 2#)
+            m.assertEqual(history.count(), 1)
+            m.assertEqual(history[0].stream_id, 902)
+            m.assertEqual(history[0].seriesId, "S9")
+        end function
+
+        @it("menos de 15 s não grava; a partir de 95 % sai do Continuar assistindo")
+        function _()
+            m.assertEqual(playerState.saveProgress(m.store, m.key, [], m.movie, 10, 5400, 1#).count(), 0)
+            history = playerState.saveProgress(m.store, m.key, [], m.movie, 900, 5400, 1#)
+            history = playerState.saveProgress(m.store, m.key, history, m.movie, 5200, 5400, 2#)
+            m.assertEqual(history.count(), 0)
+            m.assertEqual(playerState.loadHistory(m.store, m.key).count(), 0)
+        end function
+
+        @it("o mesmo canal no topo do histórico não é regravado a cada salvamento")
+        function _()
+            channel = { stream_id: 77, name: "Canal 77", section: "live" }
+            before = playerState.saveProgress(m.store, m.key, [], channel, 10, 0, 1#)
+            m.store.remove(m.key)
+            after = before
+            for i = 0 to 4
+                after = playerState.saveProgress(m.store, m.key, after, channel, 20 + i * 10, 0, 2#)
+            end for
+            m.assertInvalid(m.store.get(m.key))
+            after = playerState.saveProgress(m.store, m.key, after, { stream_id: 78, name: "Canal 78", section: "live" }, 0, 0, 3#)
+            m.assertEqual(after[0].stream_id, 78)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("fila de reprodução")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("episódio 350 de 400 toca o 350, com a fila em volta dele")
+        function _()
+            items = []
+            for i = 0 to 399
+                items.push({ stream_id: 1000 + i, name: "E" + (i + 1).toStr(), section: "series", directUrl: "http://srv.test/" + i.toStr() + ".mp4" })
+            end for
+            state = playerState.forPlaylist(items, 349)
+            m.assertEqual(playerState.current(state).stream_id, 1349)
+            m.assertEqual(state.items.count(), 200)
+            m.assertEqual(state.items[199].stream_id, 1399)
+        end function
+
+        @it("favoritos: série fica de fora e começa pelo escolhido")
+        function _()
+            list = [{ stream_id: 1, section: "series", name: "S" }, { stream_id: 2, section: "vod", name: "F" }, { stream_id: 3, section: "live", name: "C" }]
+            state = playerState.forFavorites(list, { stream_id: 3, section: "live" })
+            m.assertEqual(state.items.count(), 2)
+            m.assertEqual(playerState.current(state).stream_id, 3)
+            m.assertInvalid(playerState.forFavorites([list[0]], invalid))
+        end function
+
+        @it("com a posição certa, CH+ vai para o canal seguinte; no fim dá a volta")
+        function _()
+            channels = tests.playerChannels(30)
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, channels[6], 6, 30, [])
+            m.assertTrue(playerState.stepBy(state, 1, tests.PLAYER_DIR, []))
+            m.assertEqual(playerState.current(state).stream_id, 8)
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, channels[29], 29, 30, [])
+            m.assertTrue(playerState.stepBy(state, 1, tests.PLAYER_DIR, []))
+            m.assertEqual(playerState.current(state).stream_id, 1)
+            m.assertTrue(playerState.stepBy(state, -1, tests.PLAYER_DIR, []))
+            m.assertEqual(playerState.current(state).stream_id, 30)
+        end function
+
+        @it("posição que não bate com o item: sem próximo em vez de tocar o canal errado")
+        function _()
+            channels = tests.playerChannels(30)
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, channels[6], 0, 30, [])
+            m.assertEqual(playerState.current(state).stream_id, 7)
+            m.assertFalse(playerState.stepBy(state, 1, tests.PLAYER_DIR, []))
+            m.assertFalse(playerState.stepBy(state, -1, tests.PLAYER_DIR, []))
+            m.assertEqual(playerState.current(state).stream_id, 7)
+        end function
+
+        @it("só pede outra janela quando o próximo está fora da que está na memória")
+        function _()
+            channels = tests.playerChannels(30)
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, channels[6], 6, 30, [])
+            m.assertFalse(playerState.needsWindow(state, 1))
+            state.items = [state.items[6]]
+            state.context.windowStart = 6
+            state.index = 0
+            m.assertTrue(playerState.needsWindow(state, 1))
+            m.assertFalse(playerState.needsWindow(playerState.forItem(channels[0]), 1))
+        end function
+
+        @it("filme não dá a volta: no último da categoria não há próximo")
+        function _()
+            tests.playerChannels(3)
+            items = catalog.getItems(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, 0, 3, [])
+            state = playerState.forCatalog(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, items[2], 2, 3, [])
+            state.mode = "vod"
+            m.assertFalse(playerState.hasNext(state))
+            m.assertFalse(playerState.stepBy(state, 1, tests.PLAYER_DIR, []))
+            m.assertTrue(playerState.hasPrev(state))
+        end function
+
+    end class
+
+    ' Grava n canais (ids 1..n) no catálogo de teste e devolve os itens como o catálogo os lê.
+    function playerChannels(n as integer) as object
+        list = []
+        for i = 1 to n
+            list.push({ stream_id: i, name: "Canal " + i.toStr(), category_id: "1" })
+        end for
+        catalog.saveSection(tests.PLAYER_DIR, "live", [{ category_id: "1", category_name: "Todos" }], list)
+        return catalog.getItems(tests.PLAYER_DIR, "live", catalog.ALL_CATEGORIES, 0, n, [])
+    end function
+
+end namespace

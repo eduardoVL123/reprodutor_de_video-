@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "roku-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "roku:preview"],
+      "port": 6502
+    },
+    {
+      "name": "roku-sim",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/roku-preview.mjs"],
+      "port": 6502
+    },
+    {
+      "name": "web-dev",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5173
+    }
+  ]
+}

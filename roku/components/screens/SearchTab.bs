@@ -1,0 +1,687 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/ui/gridItem.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/catalog/catalogSearch.bs"
+import "pkg:/source/catalog/grid.bs"
+import "pkg:/source/search/searchScreen.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/player/playerState.bs"
+import "pkg:/source/parental/parental.bs"
+
+' Medidas do SearchScreen.vue em px (1920×1080): teclado de x 176 a 720 (w-[34rem]); campo em y 56 (64 de altura);
+' teclas de 72 com gap 10; painel da direita em x 760: sugestões com 352 e resultados de x 1144 a 1824 (4 colunas).
+const KB_LEFT = 176
+const KB_WIDTH = 544
+const KB_TOP = 204
+const KB_KEY_H = 72
+const KB_GAP = 10
+const KB_ACTIONS_TOP = 700
+const PANEL_X = 760
+const SUG_WIDTH = 352
+const RESULTS_X = 1144
+const RESULTS_W = 680
+const PANEL_BOTTOM = 1024
+const NEUTRAL_200 = "0xE5E5E5FF"
+const NEUTRAL_300 = "0xD4D4D4FF"
+
+sub init()
+    m.left = m.top.createChild("Group")
+    m.right = m.top.createChild("Group")
+    m.nav = spatial.create([], {}, [1920, 1080])
+    m.focusables = {}
+    m.query = ""
+    m.results = []
+    m.counts = {}
+    m.searching = false
+    m.failed = false
+    m.filter = "all"
+    m.seq = 0
+    m.states = {}
+    m.resultScroll = 0
+    m.focusId = "kb-a"
+    m.lastKeyId = "kb-a"
+    m.lastSuggestionId = ""
+    m.focusResultsOnAnswer = false
+
+    current = session.hydrate(storage.create())
+    m.ctx = invalid
+    m.sections = searchScreen.sectionsFor("")
+    if current <> invalid then
+        m.ctx = catalog.contextFor(current)
+        m.sections = searchScreen.sectionsFor(utils.textOr(current.type, ""))
+    end if
+    m.recent = searchScreen.parseRecent(storage.create().get(searchScreen.recentKey(activeProfileId())))
+
+    m.timer = m.top.createChild("Timer")
+    m.timer.duration = searchScreen.DEBOUNCE_MS / 1000
+    m.timer.observeField("fire", "runSearch")
+
+    if m.ctx <> invalid then
+        m.task = CreateObject("roSGNode", "SearchTask")
+        m.task.ctx = m.ctx
+        ' Categorias escondidas ou bloqueadas ficam fora dos resultados (catalogSearch.js do web).
+        m.task.parental = parental.activeContext(storage.create())
+        m.task.observeField("result", "onResult")
+        m.task.control = "run"
+        for each section in m.sections
+            m.states[section] = "loading"
+        end for
+        loadSection(0)
+    end if
+
+    renderKeyboard()
+    renderPanel()
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+' O Início fecha a aba (stop = true): encerra a Task, que vive enquanto a busca está aberta.
+sub stopTask()
+    if m.task <> invalid then m.task.query = { stop: true }
+end sub
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+' ---------- Busca ----------
+
+sub setQuery(value as string)
+    if value = m.query then return
+    m.query = value
+    updateInput()
+    scheduleSearch()
+end sub
+
+sub scheduleSearch()
+    m.timer.control = "stop"
+    m.failed = false
+    if not searchScreen.hasMinQuery(m.query) then
+        m.seq = m.seq + 1 ' resposta atrasada de uma busca anterior não vale mais
+        m.results = []
+        m.counts = {}
+        m.searching = false
+        renderPanel()
+        return
+    end if
+    m.searching = true
+    m.timer.control = "start"
+    renderPanel()
+end sub
+
+sub runSearch()
+    m.timer.control = "stop"
+    if m.task = invalid or not searchScreen.hasMinQuery(m.query) then
+        m.searching = false
+        renderPanel()
+        return
+    end if
+    m.seq = m.seq + 1
+    m.searching = true
+    m.failed = false
+    m.task.query = { seq: m.seq, text: m.query, sections: readySections() }
+end sub
+
+function readySections() as object
+    ready = []
+    for each section in m.sections
+        if m.states[section] = "ready" then ready.push(section)
+    end for
+    return ready
+end function
+
+' Uma seção por vez, como o Início: as três juntas estouram a memória de TV fraca. Se o Início já baixa uma,
+' loadShared espera ela. Numa Task à parte, para a busca nas seções prontas não esperar o download das outras.
+sub loadSection(index as integer)
+    m.loadIndex = index
+    if index >= m.sections.count() then return
+    m.loader = CreateObject("roSGNode", "CatalogTask")
+    m.loader.request = { action: "load", section: m.sections[index], force: false, ctx: m.ctx }
+    m.loader.observeField("result", "onLoaded")
+    m.loader.control = "run"
+end sub
+
+' Uma seção que termina de baixar entra na busca em andamento.
+sub onLoaded(event as object)
+    section = m.sections[m.loadIndex]
+    m.states[section] = "error"
+    if event.getData().ok = true then m.states[section] = "ready"
+    if searchScreen.hasMinQuery(m.query) then
+        runSearch()
+    else
+        renderPanel()
+    end if
+    loadSection(m.loadIndex + 1)
+end sub
+
+sub onResult(event as object)
+    data = event.getData()
+    if data.seq <> m.seq then return
+    m.searching = false
+    m.failed = not data.ok
+    m.results = data.results
+    m.counts = data.counts
+    m.resultScroll = 0
+    renderPanel()
+    if m.focusResultsOnAnswer then
+        m.focusResultsOnAnswer = false
+        if visibleList().count() > 0 then focusResult(0)
+    end if
+end sub
+
+function visibleList() as object
+    filters = searchScreen.filterList(m.sections, m.counts)
+    return searchScreen.visibleResults(m.results, searchScreen.effectiveFilter(filters, m.filter))
+end function
+
+sub rememberSearch()
+    m.recent = searchScreen.rememberSearch(m.recent, m.query)
+    storage.create().set(searchScreen.recentKey(activeProfileId()), m.recent)
+end sub
+
+' ---------- Desenho: campo e teclado (fixos) ----------
+
+sub renderKeyboard()
+    m.left.removeChildrenIndex(m.left.getChildCount(), 0)
+    ' Campo (tv-input text-tv-lg): o OK abre o teclado do aparelho.
+    group = m.left.createChild("Group")
+    group.translation = [KB_LEFT, 56]
+    ring = ui.panel(group, "input-focus", -4, -4, KB_WIDTH + 8, 64 + 8)
+    ui.panel(group, "input", 0, 0, KB_WIDTH, 64)
+    m.inputText = ui.text(group, "", ui.font(400, 32), ui.WHITE, 20, 10, KB_WIDTH - 40, 44)
+    m.inputText.wrap = false
+    group.scaleRotateCenter = [KB_WIDTH / 2, 32]
+    entry = addFocusable("search-input", "left", ["search-keyboard"], "search-input-row", [KB_LEFT, 56, KB_WIDTH, 64], group, ring, 1.01)
+    updateInput()
+    hint = ui.text(m.left, "Use as letras abaixo ou aperte OK no campo para abrir o teclado do aparelho", ui.font(400, 20), ui.NEUTRAL_500, KB_LEFT, 128, KB_WIDTH, 28)
+    hint.wrap = true
+
+    rows = searchScreen.keyboardRows()
+    keyW = (KB_WIDTH - 5 * KB_GAP) / 6
+    for r = 0 to rows.count() - 1
+        for c = 0 to rows[r].count() - 1
+            ch = rows[r][c]
+            keyButton("kb-" + ch, ch, "", KB_LEFT + c * (keyW + KB_GAP), KB_TOP + r * (KB_KEY_H + KB_GAP), keyW, "kb-row-" + r.toStr(), ui.font(600, 24))
+        end for
+    end for
+    actionW = (KB_WIDTH - 2 * KB_GAP) / 3
+    keyButton("kb-space", "Espaço", "icon-space", KB_LEFT, KB_ACTIONS_TOP, actionW, "kb-actions", ui.font(600, 20))
+    keyButton("kb-backspace", "Apagar", "icon-backspace", KB_LEFT + actionW + KB_GAP, KB_ACTIONS_TOP, actionW, "kb-actions", ui.font(600, 20))
+    keyButton("kb-clear", "Limpar", "", KB_LEFT + 2 * (actionW + KB_GAP), KB_ACTIONS_TOP, actionW, "kb-actions", ui.font(600, 20))
+end sub
+
+' Tecla (bg-white/[0.06] border-white/10); focada fica branca com o texto preto (focus:bg-white focus:text-black).
+sub keyButton(id as string, label as string, icon as string, x as float, y as float, width as float, row as string, fontNode as object)
+    group = m.left.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring", -5, -5, width + 10, KB_KEY_H + 10)
+    ui.panel(group, "btn-soft", 0, 0, width, KB_KEY_H)
+    fill = ui.panel(group, "btn-primary", 0, 0, width, KB_KEY_H)
+    lineH = 36
+    if fontNode.size < 24 then lineH = 28
+    text = ui.inlineText(group, label, fontNode, ui.WHITE, 0, (KB_KEY_H - lineH) / 2, lineH)
+    textW = text.boundingRect().width
+    iconNode = invalid
+    contentW = textW
+    if icon <> "" then contentW = 24 + 10 + textW
+    cursor = (width - contentW) / 2
+    if icon <> "" then
+        iconNode = group.createChild("Poster")
+        iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+        iconNode.width = 24
+        iconNode.height = 24
+        iconNode.translation = [cursor, (KB_KEY_H - 24) / 2]
+        cursor = cursor + 34
+    end if
+    text.translation = [cursor, text.translation[1]]
+    group.scaleRotateCenter = [width / 2, KB_KEY_H / 2]
+    entry = addFocusable(id, "left", ["search-keyboard"], row, [x, y, width, KB_KEY_H], group, ring, 1.02)
+    entry.fill = fill
+    entry.label = text
+    entry.icon = iconNode
+end sub
+
+sub updateInput()
+    if m.inputText = invalid then return
+    if m.query = "" then
+        m.inputText.text = "Buscar filmes, séries e canais"
+        m.inputText.color = ui.NEUTRAL_500
+    else
+        m.inputText.text = m.query
+        m.inputText.color = ui.WHITE
+    end if
+end sub
+
+' ---------- Desenho: painel da direita ----------
+
+sub renderPanel()
+    m.right.removeChildrenIndex(m.right.getChildCount(), 0)
+    resetFocusables("right")
+    m.resultsTop = invalid
+    m.resultsGroup = invalid
+    if not searchScreen.hasMinQuery(m.query) then
+        renderRecent()
+    else
+        renderSuggestions()
+        renderResultsColumn()
+    end if
+    if m.focusables[m.focusId] = invalid and not isResultId(m.focusId) then m.focusId = m.lastKeyId
+    if isResultId(m.focusId) and resultIndex(m.focusId) >= visibleList().count() then m.focusId = m.lastKeyId
+    renderFocus()
+end sub
+
+sub renderRecent()
+    ui.text(m.right, "Digite pelo menos 3 letras para ver sugestões", ui.font(400, 24), ui.NEUTRAL_400, PANEL_X, 68, 1064, 36)
+    if m.recent.count() = 0 then return
+    heading(m.right, "BUSCAS RECENTES", PANEL_X, 144)
+    y = 188
+    for i = 0 to m.recent.count() - 1
+        group = m.right.createChild("Group")
+        group.translation = [PANEL_X, y]
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 62)
+        bg = ui.panel(group, "btn-soft", 0, 0, 10, 52)
+        clock = group.createChild("Poster")
+        clock.uri = "pkg:/images/ui/icon-clock.png"
+        clock.width = 20
+        clock.height = 20
+        clock.blendColor = ui.NEUTRAL_400
+        clock.translation = [21, 16]
+        label = ui.inlineText(group, m.recent[i], ui.font(400, 20), NEUTRAL_200, 53, 12, 28)
+        textW = label.boundingRect().width
+        if textW > 448 then
+            ' truncate max-w-[28rem]
+            textW = 448
+            label.width = 448
+        end if
+        width = 53 + textW + 21
+        bg.width = width
+        ring.width = width + 10
+        group.scaleRotateCenter = [width / 2, 26]
+        addFocusable("search-recent-" + i.toStr(), "right", ["search-recent"], "", [PANEL_X, y, width, 52], group, ring, 1.02)
+        y = y + 64
+    end for
+end sub
+
+' Título de seção (uppercase tracking-[0.2em]).
+sub heading(parent as object, value as string, x as float, y as float)
+    fontNode = ui.font(700, 20)
+    ui.trackedText(parent, value, fontNode, NEUTRAL_300, x, y + (28 - ui.naturalLineHeight(fontNode)) / 2, 4)
+end sub
+
+sub renderSuggestions()
+    heading(m.right, "SUGESTÕES", PANEL_X + 16, 60)
+    titles = catalogSearch.getSuggestions(m.results, searchScreen.SUGGESTIONS_MAX)
+    if titles.count() = 0 and not m.searching then
+        ui.text(m.right, "Sem sugestões", ui.font(400, 20), ui.NEUTRAL_500, PANEL_X + 16, 100, SUG_WIDTH - 32, 28)
+    end if
+    m.suggestions = titles
+    for i = 0 to titles.count() - 1
+        y = 100 + i * 52
+        group = m.right.createChild("Group")
+        group.translation = [PANEL_X, y]
+        ring = ui.panel(group, "focus-ring", -5, -5, SUG_WIDTH + 10, 58)
+        fill = ui.panel(group, "row-focus", 0, 0, SUG_WIDTH, 48)
+        x = 16
+        ' shortcut: o destaque não corta com reticências; títulos maiores que 320 px passam da coluna.
+        for each part in catalogSearch.highlightParts(titles[i], m.query)
+            color = ui.NEUTRAL_400
+            weight = 400
+            if part.match then
+                color = ui.WHITE
+                weight = 700
+            end if
+            piece = ui.inlineText(group, part.text, ui.font(weight, 20), color, x, 10, 28)
+            x = x + piece.boundingRect().width
+        end for
+        group.scaleRotateCenter = [SUG_WIDTH / 2, 24]
+        entry = addFocusable("search-sug-" + i.toStr(), "right", ["search-suggestions"], "", [PANEL_X, y, SUG_WIDTH, 48], group, ring, 1.02)
+        entry.fill = fill
+    end for
+end sub
+
+sub renderResultsColumn()
+    y = 56
+    filters = searchScreen.filterList(m.sections, m.counts)
+    active = searchScreen.effectiveFilter(filters, m.filter)
+    x = RESULTS_X
+    for each f in filters
+        group = m.right.createChild("Group")
+        group.translation = [x, y]
+        image = "chip-soft"
+        color = NEUTRAL_300
+        if f.id = active then
+            image = "chip-active"
+            color = ui.TEXT_ON_ACCENT
+        end if
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 62)
+        bg = ui.panel(group, image, 0, 0, 10, 52)
+        label = ui.inlineText(group, f.label, ui.font(600, 20), color, 21, 12, 28)
+        width = label.boundingRect().width + 42
+        bg.width = width
+        ring.width = width + 10
+        group.scaleRotateCenter = [width / 2, 26]
+        addFocusable("search-filter-" + f.id, "right", [], "search-filters", [x, y, width, 52], group, ring, 1.02)
+        x = x + width + 12
+    end for
+    if filters.count() > 0 then y = y + 52
+
+    notice = searchScreen.loadingNotice(m.sections, m.states)
+    if notice <> "" then
+        ui.text(m.right, notice, ui.font(400, 20), ui.NEUTRAL_500, RESULTS_X, y + 12, RESULTS_W, 28)
+        y = y + 40
+    end if
+
+    list = visibleList()
+    if (m.searching or notice <> "") and list.count() = 0 then
+        ' Esqueleto enquanto busca ou enquanto o catálogo ainda baixa.
+        for i = 0 to 3
+            skeleton = ui.panel(m.right, "row-focus", RESULTS_X + i * 172, y + 20, 156, 264)
+            skeleton.opacity = 0.6
+        end for
+    else if m.failed then
+        centered(m.right, "Não foi possível buscar agora.", ui.font(600, 32), ui.WHITE, y + 48, 44)
+        centered(m.right, "Tente de novo; se continuar, feche e abra o app.", ui.font(400, 24), ui.NEUTRAL_400, y + 100, 36)
+        group = m.right.createChild("Group")
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 60)
+        bg = ui.panel(group, "btn-primary", 0, 0, 10, 50)
+        label = ui.inlineText(group, "Tentar novamente", ui.font(600, 20), ui.BLACK, 21, 11, 28)
+        width = label.boundingRect().width + 42
+        bg.width = width
+        ring.width = width + 10
+        bx = RESULTS_X + (RESULTS_W - width) / 2
+        group.translation = [bx, y + 156]
+        group.scaleRotateCenter = [width / 2, 25]
+        addFocusable("search-retry", "right", ["search-error"], "", [bx, y + 156, width, 50], group, ring, 1.02)
+    else if list.count() = 0 then
+        centered(m.right, "Nenhum resultado para """ + m.query.trim() + """", ui.font(600, 32), ui.WHITE, y + 48, 44)
+        centered(m.right, "Confira a ortografia ou tente outro nome.", ui.font(400, 24), ui.NEUTRAL_400, y + 100, 36)
+    else
+        m.resultsTop = y + 16
+        renderResults()
+    end if
+end sub
+
+sub centered(parent as object, value as string, fontNode as object, color as string, y as float, lineH as float)
+    label = ui.text(parent, value, fontNode, color, RESULTS_X, y, RESULTS_W, lineH)
+    label.horizAlign = "center"
+end sub
+
+function resultsLayout() as object
+    return { columns: searchScreen.RESULT_COLUMNS, rowHeight: 264, gap: 16, pad: 4, width: RESULTS_W, height: PANEL_BOTTOM - m.resultsTop }
+end function
+
+' Só as linhas na tela (como a grade das abas): até 120 resultados não cabem de uma vez numa TV fraca.
+sub renderResults()
+    if m.resultsGroup <> invalid then m.right.removeChild(m.resultsGroup)
+    resetFocusables("results")
+    g = resultsLayout()
+    m.resultsGroup = m.right.createChild("Group")
+    m.resultsGroup.clippingRect = [RESULTS_X - 8, m.resultsTop, RESULTS_W + 16, g.height]
+    list = visibleList()
+    rows = grid.visibleRows(g, list.count(), m.resultScroll)
+    first = rows.first * g.columns
+    last = (rows.last + 1) * g.columns - 1
+    if last > list.count() - 1 then last = list.count() - 1
+    for index = first to last
+        r = list[index]
+        rect = grid.slotRect(g, index)
+        x = RESULTS_X + rect[0]
+        y = m.resultsTop + rect[1] - m.resultScroll
+        variant = "poster"
+        if r.section = "live" then variant = "channel"
+        node = gridItem.cell(m.resultsGroup, r.item, variant, index, x, y, rect[2], rect[3])
+        badge = searchScreen.sectionBadge(r.section)
+        if badge <> "" then
+            tag = ui.panel(node.group, "badge", 0, 10, 10, 34)
+            text = ui.trackedText(node.group, badge, ui.font(700, 20), ui.WHITE, 0, 0, 1)
+            textW = text.boundingRect().width
+            tag.width = textW + 18
+            tagX = rect[2] - 10 - tag.width
+            tag.translation = [tagX, 10]
+            text.translation = [tagX + 9, 13 + (28 - ui.naturalLineHeight(ui.font(700, 20))) / 2]
+        end if
+        entry = addFocusable("search-res-" + index.toStr(), "results", ["search-results"], "", [x, y, rect[2], rect[3]], node.group, node.ring, 1.02)
+        entry.result = r
+    end for
+end sub
+
+' ---------- Foco ----------
+
+function addFocusable(id as string, part as string, groups as object, row as string, rect as object, node as object, ring as object, zoom as float) as object
+    entry = { id: id, groups: groups, row: row, rect: rect, node: node, ring: ring, zoom: zoom, part: part }
+    m.focusables[id] = entry
+    return entry
+end function
+
+sub resetFocusables(part as string)
+    for each id in m.focusables
+        entryPart = m.focusables[id].part
+        if entryPart = part or (part = "right" and entryPart = "results") then m.focusables.delete(id)
+    end for
+end sub
+
+sub renderFocus()
+    tabFocused = m.top.focusedChild <> invalid
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = tabFocused and id = m.focusId
+        entry.ring.visible = focused
+        if focused then
+            entry.node.scale = [entry.zoom, entry.zoom]
+        else
+            entry.node.scale = [1, 1]
+        end if
+        if entry.fill <> invalid then entry.fill.visible = focused
+        if entry.label <> invalid then
+            if focused then
+                entry.label.color = ui.BLACK
+            else
+                entry.label.color = ui.WHITE
+            end if
+        end if
+        if entry.icon <> invalid then
+            if focused then
+                entry.icon.blendColor = ui.BLACK
+            else
+                entry.icon.blendColor = ui.WHITE
+            end if
+        end if
+    end for
+end sub
+
+sub refreshNav()
+    items = []
+    for each id in m.focusables
+        entry = m.focusables[id]
+        items.push({ id: id, groups: entry.groups, row: entry.row, rect: entry.rect, active: false, slide: false, scroller: entry.part = "results" })
+    end for
+    m.nav.items = items
+    groupRects = { "search-keyboard": [KB_LEFT, 56, KB_WIDTH, 716], "search-suggestions": [PANEL_X, 56, SUG_WIDTH, 968], "search-recent": [PANEL_X, 144, 1064, 880] }
+    if m.resultsTop <> invalid then groupRects["search-results"] = [RESULTS_X, m.resultsTop, RESULTS_W, PANEL_BOTTOM - m.resultsTop]
+    m.nav.groupRects = groupRects
+end sub
+
+sub focusOn(id as string)
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    if Left(id, 3) = "kb-" or id = "search-input" then m.lastKeyId = id
+    if Left(id, 11) = "search-sug-" then m.lastSuggestionId = id
+    renderFocus()
+end sub
+
+function isResultId(id as string) as boolean
+    return Left(id, 11) = "search-res-"
+end function
+
+function resultIndex(id as string) as integer
+    if not isResultId(id) then return -1
+    return Int(Val(Mid(id, 12)))
+end function
+
+' Rola só o necessário para a linha do resultado caber (scrollIntoView nearest).
+sub focusResult(index as integer)
+    newScroll = grid.scrollToIndex(resultsLayout(), m.resultScroll, index)
+    if newScroll <> m.resultScroll then
+        m.resultScroll = newScroll
+        renderResults()
+    end if
+    focusOn("search-res-" + index.toStr())
+end sub
+
+sub focusLastKey()
+    if m.focusables[m.lastKeyId] = invalid then m.lastKeyId = "kb-a"
+    focusOn(m.lastKeyId)
+end sub
+
+' focusFirstIn das sugestões e dos resultados.
+function focusFirstSuggestion() as boolean
+    if m.focusables["search-sug-0"] = invalid then return false
+    focusOn("search-sug-0")
+    return true
+end function
+
+function focusFirstResult() as boolean
+    if m.resultsTop = invalid or visibleList().count() = 0 then return false
+    focusResult(0)
+    return true
+end function
+
+' Teclas da última coluna (data-kb-last-col): Direita vai para as sugestões ou os resultados.
+function isLastColumnKey(id as string) as boolean
+    if id = "kb-clear" then return true
+    for each row in searchScreen.keyboardRows()
+        if id = "kb-" + row[row.count() - 1] then return true
+    end for
+    return false
+end function
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" then return onBack()
+    if key = "OK" then return onSelect()
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+
+    index = resultIndex(m.focusId)
+    if index >= 0 then
+        nextIndex = grid.target(searchScreen.RESULT_COLUMNS, visibleList().count(), index, key)
+        if nextIndex >= 0 then
+            focusResult(nextIndex)
+            return true
+        end if
+        if key = "left" and index mod searchScreen.RESULT_COLUMNS = 0 then
+            if m.focusables[m.lastSuggestionId] <> invalid then
+                focusOn(m.lastSuggestionId)
+            else if not focusFirstSuggestion() then
+                focusLastKey()
+            end if
+            return true
+        end if
+    end if
+    if key = "right" and isLastColumnKey(m.focusId) then
+        if focusFirstSuggestion() or focusFirstResult() then return true
+    end if
+    if Left(m.focusId, 11) = "search-sug-" then
+        if key = "right" then
+            focusFirstResult()
+            return true
+        end if
+        if key = "left" then
+            focusLastKey()
+            return true
+        end if
+    end if
+
+    refreshNav()
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then
+        focusOn(target)
+    else if key = "left" then
+        m.top.exit = "left"
+    end if
+    return true
+end function
+
+' Voltar: do painel da direita volta ao teclado; com texto, limpa; senão o Início volta para a aba Início.
+function onBack() as boolean
+    if Left(m.focusId, 3) <> "kb-" and m.focusId <> "search-input" then
+        focusLastKey()
+        return true
+    end if
+    if m.query <> "" then
+        setQuery("")
+        return true
+    end if
+    return false
+end function
+
+function onSelect() as boolean
+    id = m.focusId
+    if id = "kb-space" then
+        setQuery(searchScreen.typeSpace(m.query))
+    else if id = "kb-backspace" then
+        setQuery(searchScreen.backspace(m.query))
+    else if id = "kb-clear" then
+        setQuery("")
+    else if Left(id, 3) = "kb-" then
+        setQuery(searchScreen.typeText(m.query, Mid(id, 4)))
+    else if id = "search-input" then
+        openKeyboard()
+    else if Left(id, 14) = "search-recent-" then
+        setQuery(m.recent[Int(Val(Mid(id, 15)))])
+        focusLastKey()
+    else if Left(id, 11) = "search-sug-" then
+        ' Preenche com o título, busca na hora e leva o foco ao 1º resultado.
+        setQuery(m.suggestions[Int(Val(Mid(id, 12)))])
+        m.focusResultsOnAnswer = true
+        runSearch()
+    else if Left(id, 14) = "search-filter-" then
+        m.filter = Mid(id, 15)
+        m.resultScroll = 0
+        renderPanel()
+    else if id = "search-retry" then
+        runSearch()
+        renderPanel()
+    else if isResultId(id) then
+        entry = m.focusables[id]
+        rememberSearch()
+        ' Canal toca na hora (playItem do web); filme e série abrem os detalhes.
+        if entry <> invalid and entry.result.section = "live" then
+            channel = {}
+            channel.append(entry.result.item)
+            channel.section = "live"
+            m.top.navigate = playerState.openRequest(playerState.forItem(channel))
+        else if entry <> invalid then m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: entry.result.item, section: entry.result.section } }
+    end if
+    return true
+end function
+
+' Teclado do aparelho (StandardKeyboardDialog), como o OK no campo do web.
+sub openKeyboard()
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = "Buscar"
+    dialog.text = m.query
+    dialog.buttons = ["OK", "Cancelar"]
+    dialog.keyboardDomain = "alphanumeric"
+    dialog.observeField("buttonSelected", "onKeyboardButton")
+    dialog.observeField("wasClosed", "onKeyboardClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardButton(event as object)
+    dialog = m.top.getScene().dialog
+    if event.getData() = 0 and dialog <> invalid then setQuery(Left(dialog.text, searchScreen.MAX_QUERY_LENGTH))
+    if dialog <> invalid then dialog.close = true
+end sub
+
+sub onKeyboardClosed()
+    m.top.getScene().dialog = invalid
+    m.top.setFocus(true)
+end sub
+
+' Buscas recentes por perfil (search:recent:<perfil>).
+function activeProfileId() as dynamic
+    if m.global.profile = invalid then return invalid
+    return m.global.profile.id
+end function

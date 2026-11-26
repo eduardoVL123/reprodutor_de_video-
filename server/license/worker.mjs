@@ -80,6 +80,8 @@ function buildHandle(env) {
     mpWebhookSecret: v('MP_WEBHOOK_SECRET'),
     mpPublicKey: v('MP_PUBLIC_KEY'),
     signingKey: v('LICENSE_SIGNING_KEY'),
+    rokuApiKey: v('ROKU_API_KEY'),
+    rsaKey: v('LICENSE_RSA_KEY'),
   })
 }
 

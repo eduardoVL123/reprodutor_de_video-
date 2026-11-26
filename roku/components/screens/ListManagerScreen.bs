@@ -1,0 +1,456 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/pairing/pairing.bs"
+
+' Medidas do ListManagerModal.vue em px (1920×1080) sem erro: painel de 1120×793 em x 400 (p-8 + borda: conteúdo em
+' x 433, y 177), cabeçalho até y 286, colunas em y 310 (listas em x 433 e formulário em x 1001, divisória em 976),
+' cartões das listas de y 350 a 817 e "Sair da conta atual" em y 834. O erro entra abaixo do cabeçalho e empurra o
+' resto; o painel fica centralizado (items-center).
+const CARD_W = 1120
+const CARD_BASE_H = 793
+const LIST_X = 433
+const LIST_TOP = 350
+const LIST_BOTTOM = 817
+const LIST_CARD_W = 499
+const FORM_X = 1001
+const FORM_W = 478
+const NEUTRAL_200 = "0xE5E5E5FF"
+const RED_400 = "0xF87171FF"
+
+sub init()
+    m.form = { label: "", dns: "", user: "", pass: "" }
+    m.error = ""
+    m.errorDetail = ""
+    m.busy = ""
+    m.confirmRemove = -1
+    m.listScroll = 0
+    m.focusId = "modal-close-btn"
+    m.nav = spatial.create([], {}, [1920, 1080])
+    m.root = m.top.createChild("Group")
+    build()
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+function fields() as object
+    return [
+        { key: "label", id: "new-list-label", label: "Nome / Apelido (opcional)", placeholder: "Ex: Minha lista" },
+        { key: "dns", id: "new-list-dns", label: "Link Curto ou URL do Servidor", placeholder: "Ex: servidor.com:8080" },
+        { key: "user", id: "new-list-user", label: "Usuário (opcional para link curto)", placeholder: "Seu usuário" },
+        { key: "pass", id: "new-list-pass", label: "Senha (opcional para link curto)", placeholder: "Sua senha" }
+    ]
+end function
+
+' Monta a tela inteira (o erro muda a altura do painel e a posição de tudo abaixo do cabeçalho).
+sub build()
+    m.root.removeChildrenIndex(m.root.getChildCount(), 0)
+    m.focusables = {}
+    store = storage.create()
+    m.lists = session.readSavedLists(store)
+    current = session.hydrate(store)
+    m.currentId = ""
+    if current <> invalid then m.currentId = utils.textOr(current.id, "")
+
+    backdrop = m.root.createChild("Rectangle")
+    backdrop.width = 1920
+    backdrop.height = 1080
+    backdrop.color = "0x000000E6"
+    content = CreateObject("roSGNode", "Group")
+
+    ' Cabeçalho
+    ui.text(content, "Gerenciador de Listas", ui.font(700, 44), ui.WHITE, 433, 177, 682, 56)
+    ui.text(content, "Alterne entre suas listas cadastradas ou adicione um novo servidor ou playlist", ui.font(400, 20), ui.NEUTRAL_400, 433, 237, 920, 28)
+    addButton(content, "modal-close-btn", "Fechar", "icon-close", 1369, 198, "btn", ui.WHITE, ["modal-lists-dialog"], "")
+    drawLine(content, 433, 285, 1054, 1, "0xFFFFFF14")
+
+    extra = 0
+    if m.error <> "" then extra = buildError(content, 302) + 16
+    m.extra = extra
+
+    ' Coluna 1: listas salvas
+    heading(content, "LISTAS SALVAS (" + m.lists.count().toStr() + ")", 433, 310 + extra)
+    m.listClip = content.createChild("Group")
+    m.listClip.clippingRect = [LIST_X - 8, LIST_TOP + extra - 8, LIST_CARD_W + 16, LIST_BOTTOM - LIST_TOP + 8]
+    m.listGroup = m.listClip.createChild("Group")
+    y = LIST_TOP + extra
+    m.cardTops = []
+    for i = 0 to m.lists.count() - 1
+        height = buildListCard(m.listGroup, i, y)
+        m.cardTops.push([y, height])
+        y = y + height + 12
+    end for
+    if m.lists.count() = 0 then
+        empty = ui.text(content, "Nenhuma lista adicional cadastrada.", ui.font(400, 20), ui.NEUTRAL_500, LIST_X, LIST_TOP + extra + 24, LIST_CARD_W, 28)
+        empty.horizAlign = "center"
+    end if
+    drawLine(content, 433, 817 + extra, 511, 1, "0xFFFFFF0F")
+    addButton(content, "btn-modal-logout", "Sair da conta atual", "icon-logout", 433, 834 + extra, "btn", RED_400, ["modal-lists-saved"], "")
+
+    ' Coluna 2: adicionar nova lista
+    drawLine(content, 976, 310 + extra, 1, 570, "0xFFFFFF14")
+    heading(content, "ADICIONAR NOVA LISTA", FORM_X, 310 + extra)
+    ' "Enviar pelo celular" (btn-pair-phone) só com o serviço de pareamento configurado, como o pairingOn do web.
+    if config.pairingEnabled() then addButton(content, "btn-pair-phone", "Enviar pelo celular", "", 0, 298 + extra, "btn-primary", ui.TEXT_ON_ACCENT, ["modal-lists-add", "modal-lists-dialog"], "", FORM_X + FORM_W)
+    ui.text(content, "Navegue com as setas e pressione OK para abrir o teclado", ui.font(400, 20), ui.NEUTRAL_400, FORM_X, 342 + extra, 486, 28)
+    y = 410 + extra
+    for each field in fields()
+        addField(content, field, y)
+        y = y + 100
+    end for
+    m.save = content.createChild("PulseButton")
+    m.save.variant = "primary"
+    m.save.buttonHeight = 54
+    m.save.fixedWidth = FORM_W
+    m.save.text = "Conectar e Salvar Lista"
+    if m.busy = "add" then m.save.text = "Conectando..."
+    m.save.loading = m.busy = "add"
+    m.save.translation = [FORM_X, 818 + extra]
+    m.focusables["btn-save-new-list"] = { rect: [FORM_X, 818 + extra, FORM_W, 54], groups: ["modal-lists-add", "modal-lists-dialog"], row: "", button: m.save }
+
+    cardH = CARD_BASE_H + extra
+    dy = Int((1080 - cardH) / 2) - 144
+    ui.panel(m.root, "dialog", 400, 144 + dy, CARD_W, cardH)
+    content.translation = [0, dy]
+    m.root.appendChild(content)
+    for each id in m.focusables
+        r = m.focusables[id].rect
+        m.focusables[id].rect = [r[0], r[1] + dy, r[2], r[3]]
+    end for
+    m.listTop = LIST_TOP + extra + dy
+    m.listBottom = LIST_BOTTOM + extra + dy
+    m.dy = dy
+    if m.focusables[m.focusId] = invalid then m.focusId = "modal-close-btn"
+    m.nav.groupRects = { "modal-lists-saved": [433, 310 + extra + dy, 511, 570], "modal-lists-add": [976, 310 + extra + dy, 511, 570] }
+    renderFocus()
+end sub
+
+sub drawLine(parent as object, x as float, y as float, width as float, height as float, color as string)
+    r = parent.createChild("Rectangle")
+    r.translation = [x, y]
+    r.width = width
+    r.height = height
+    r.color = color
+end sub
+
+' h3: text-tv-sm bold neutral-200 uppercase tracking-wider (0.05em).
+sub heading(parent as object, value as string, x as float, y as float)
+    fontNode = ui.font(700, 20)
+    ui.trackedText(parent, value, fontNode, NEUTRAL_200, x, y + (28 - ui.naturalLineHeight(fontNode)) / 2, 1)
+end sub
+
+' Caixa de erro (mt-4): mensagem e "Causa técnica" (shortcut: usa o error-box do login, borda e fundo um pouco
+' diferentes do red-500/30 + red-500/15 do modal). Devolve a altura.
+function buildError(parent as object, y as float) as float
+    width = 1054
+    bg = ui.panel(parent, "error-box", 433, y, width, 0)
+    message = ui.text(parent, m.error, ui.font(600, 20), ui.RED_300, 433 + 18, y + 17, width - 36, 28)
+    height = 17 + ui.textHeight(message, 28)
+    if m.errorDetail <> "" then
+        detailY = y + height + 8
+        detailBg = ui.panel(parent, "error-detail", 433 + 18, detailY, width - 36, 0)
+        detail = ui.text(parent, "Causa técnica: " + m.errorDetail, ui.monoFont(20), ui.RED_300, 433 + 29, detailY + 11, width - 58, 28)
+        detailHeight = 11 + ui.textHeight(detail, 28) + 11
+        detailBg.height = detailHeight
+        height = height + 8 + detailHeight
+    end if
+    height = height + 17
+    bg.height = height
+    return height
+end function
+
+' Cartão da lista: nome, selos ATIVA / SEM CRIPTOGRAFIA e, à direita, Ativar (as outras) e Excluir. Devolve a altura.
+function buildListCard(parent as object, index as integer, y as float) as float
+    item = m.lists[index]
+    active = utils.textOr(item.id, "") = m.currentId
+    confirming = m.confirmRemove = index
+    removeH = 34
+    if confirming then removeH = 46
+    inner = removeH
+    if not active and inner < 42 then inner = 42
+    height = inner + 34
+    image = "list-card"
+    if active then image = "list-card-active"
+    ui.panel(parent, image, LIST_X, y, LIST_CARD_W, height)
+    centerY = y + height / 2
+
+    ' Botões da direita (gap-2): Excluir na borda, Ativar antes dele.
+    edge = LIST_X + LIST_CARD_W - 17
+    removeId = "btn-remove-" + index.toStr()
+    if confirming then
+        w = addButton(parent, removeId, "Confirmar exclusão", "", 0, centerY - 23, "btn-danger", ui.RED_300, ["modal-lists-saved", "modal-lists-dialog"], "card-" + index.toStr(), edge)
+    else
+        w = addButton(parent, removeId, "", "icon-trash", 0, centerY - 17, "btn", ui.NEUTRAL_400, ["modal-lists-saved", "modal-lists-dialog"], "card-" + index.toStr(), edge)
+    end if
+    edge = edge - w - 8
+    if not active then
+        w = addButton(parent, "btn-switch-" + index.toStr(), "Ativar", "", 0, centerY - 21, "btn-primary", ui.BLACK, ["modal-lists-saved", "modal-lists-dialog"], "card-" + index.toStr(), edge)
+        edge = edge - w
+    end if
+
+    ' Nome e selos (gap-2.5), sem passar dos botões (pr-3).
+    x = LIST_X + 17
+    name = ui.inlineText(parent, session.listDisplayName(item, index), ui.font(700, 20), ui.WHITE, x, centerY - 14, 28)
+    maxName = edge - 12 - x
+    if name.boundingRect().width > maxName then name.width = maxName
+    x = x + name.boundingRect().width + 10
+    if active then x = badge(parent, "ATIVA", "badge-ok", "0x10B981FF", x, centerY - 17) + 10
+    if item.insecure = true then badge(parent, "SEM CRIPTOGRAFIA", "badge-warn", "0xF59E0BFF", x, centerY - 17)
+    return height
+end function
+
+function badge(parent as object, value as string, image as string, color as string, x as float, y as float) as float
+    bg = ui.panel(parent, image, x, y, 10, 34)
+    label = ui.inlineText(parent, value, ui.font(700, 20), color, x + 9, y + 3, 28)
+    width = label.boundingRect().width + 18
+    bg.width = width
+    return x + width
+end function
+
+' .tv-btn !px-4 (!py-2 com texto, !p-2 só com ícone): ícone w-4 e texto com gap-2. Com alignRight > 0 o botão
+' termina nesse x. Devolve a largura.
+function addButton(parent as object, id as string, label as string, icon as string, x as float, y as float, image as string, color as string, groups as object, row as string, alignRight = 0 as float) as float
+    group = parent.createChild("Group")
+    ring = ui.panel(group, "focus-ring", -5, -5, 10, 10)
+    bg = ui.panel(group, image, 0, 0, 10, 10)
+    padX = 17
+    if label = "" then padX = 9
+    cursor = padX
+    height = 34
+    if label <> "" then height = 46
+    if image = "btn-primary" then height = 42
+    if icon <> "" then
+        iconNode = group.createChild("Poster")
+        iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+        iconNode.width = 16
+        iconNode.height = 16
+        iconNode.blendColor = color
+        iconNode.translation = [cursor, (height - 16) / 2]
+        cursor = cursor + 16
+        if label <> "" then cursor = cursor + 8
+    end if
+    if label <> "" then
+        weight = 500
+        if image <> "btn" then weight = 600
+        text = ui.inlineText(group, label, ui.font(weight, 20), color, cursor, (height - 28) / 2, 28)
+        cursor = cursor + text.boundingRect().width
+    end if
+    width = cursor + padX
+    bg.width = width
+    bg.height = height
+    ring.width = width + 10
+    ring.height = height + 10
+    if alignRight > 0 then x = alignRight - width
+    group.translation = [x, y]
+    group.scaleRotateCenter = [width / 2, height / 2]
+    m.focusables[id] = { rect: [x, y, width, height], groups: groups, row: row, node: group, ring: ring, inList: row <> "" }
+    return width
+end function
+
+' Rótulo (mb-1) + .tv-input; o foco usa o input-focus do login.
+sub addField(parent as object, field as object, y as float)
+    ui.text(parent, field.label, ui.font(500, 20), ui.NEUTRAL_400, FORM_X, y, FORM_W, 28)
+    top = y + 32
+    bg = ui.panel(parent, "input", FORM_X, top, FORM_W, 54)
+    ring = ui.panel(parent, "input-focus", FORM_X - 4, top - 4, FORM_W + 8, 62)
+    value = m.form[field.key]
+    color = ui.WHITE
+    shown = value
+    if value = "" then
+        shown = field.placeholder
+        color = ui.NEUTRAL_500
+    end if
+    text = ui.text(parent, shown, ui.font(400, 20), color, FORM_X + 21, top + 13, FORM_W - 42, 28)
+    text.wrap = false
+    m.focusables[field.id] = { rect: [FORM_X, top, FORM_W, 54], groups: ["modal-lists-add", "modal-lists-dialog"], row: "", ring: ring, bg: bg, key: field.key }
+end sub
+
+' ---------- Foco ----------
+
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    focusedScreen = m.top.isInFocusChain()
+    keepVisible()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = focusedScreen and id = m.focusId
+        if entry.button <> invalid then
+            entry.button.focused = focused
+        else if entry.bg <> invalid then
+            entry.ring.visible = focused
+            entry.bg.visible = not focused
+        else
+            entry.ring.visible = focused
+            if focused then
+                entry.node.scale = [1.02, 1.02]
+            else
+                entry.node.scale = [1, 1]
+            end if
+        end if
+    end for
+end sub
+
+' Rola a lista de cartões para o focado caber na área (overflow-y-auto do web).
+sub keepVisible()
+    entry = m.focusables[m.focusId]
+    if entry = invalid or entry.inList <> true then return
+    index = Int(Val(Mid(entry.row, 6)))
+    top = m.cardTops[index][0] + m.dy - m.listScroll
+    bottom = top + m.cardTops[index][1]
+    if top < m.listTop then m.listScroll = m.listScroll - (m.listTop - top)
+    if bottom > m.listBottom then m.listScroll = m.listScroll + (bottom - m.listBottom)
+    m.listGroup.translation = [0, -m.listScroll]
+end sub
+
+sub refreshNav()
+    items = []
+    for each id in m.focusables
+        entry = m.focusables[id]
+        r = entry.rect
+        if entry.inList = true then r = [r[0], r[1] - m.listScroll, r[2], r[3]]
+        items.push({ id: id, groups: entry.groups, row: entry.row, rect: r, active: false, slide: false, scroller: entry.inList = true })
+    end for
+    m.nav.items = items
+end sub
+
+sub focusOn(id as string)
+    ' Excluir só confirma enquanto o botão segura o foco (@blur do web).
+    hadConfirm = m.confirmRemove >= 0
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    if hadConfirm then
+        m.confirmRemove = -1
+        build()
+    else
+        renderFocus()
+    end if
+end sub
+
+' ---------- Ações ----------
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "OK" then
+        onSelect()
+        return true
+    end if
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    refreshNav()
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then focusOn(target)
+    return true
+end function
+
+sub onSelect()
+    if m.busy <> "" then return
+    id = m.focusId
+    entry = m.focusables[id]
+    if id = "modal-close-btn" then
+        m.top.navigate = { action: "back" }
+    else if id = "btn-modal-logout" then
+        session.logout(storage.create())
+        m.top.navigate = { action: "reset", screen: phonePairing.loginScreen() }
+    else if id = "btn-save-new-list" then
+        addList()
+    else if id = "btn-pair-phone" then
+        m.top.navigate = { action: "push", screen: "PairScreen", params: { fromList: true } }
+    else if Left(id, 11) = "btn-switch-" then
+        runTask({ action: "switch", listId: m.lists[Int(Val(Mid(id, 12)))].id })
+    else if Left(id, 11) = "btn-remove-" then
+        index = Int(Val(Mid(id, 12)))
+        ' Excluir apaga a senha salva e um OK sem querer é fácil: o 1º aperto só pede confirmação.
+        if m.confirmRemove <> index then
+            m.confirmRemove = index
+            build()
+        else
+            m.confirmRemove = -1
+            runTask({ action: "remove", listId: m.lists[index].id })
+        end if
+    else if entry <> invalid and entry.key <> invalid then
+        openKeyboard(entry.key)
+    end if
+end sub
+
+sub addList()
+    if m.form.dns.trim() = "" then
+        showError("Informe o endereço do servidor ou da playlist.", "Campo de endereço vazio.")
+        return
+    end if
+    m.busy = "add"
+    m.error = ""
+    m.errorDetail = ""
+    build()
+    runTask({ action: "add", form: { dns: m.form.dns, username: m.form.user, password: m.form.pass, label: m.form.label } })
+end sub
+
+sub runTask(params as object)
+    if params.action <> "add" then m.busy = params.action
+    m.task = CreateObject("roSGNode", "ListTask")
+    m.task.params = params
+    m.task.observeField("result", "onTaskResult")
+    m.task.control = "run"
+end sub
+
+sub onTaskResult(event as object)
+    result = event.getData()
+    m.busy = ""
+    m.task = invalid
+    if not result.ok then
+        showError(utils.textOr(result.error, ""), utils.textOr(result.errorDetail, ""))
+        return
+    end if
+    if result.outcome = "changed" then
+        m.top.navigate = { action: "reset", screen: "HomeScreen" }
+    else if result.outcome = "loggedOut" then
+        m.top.navigate = { action: "reset", screen: phonePairing.loginScreen() }
+    else
+        m.error = ""
+        m.errorDetail = ""
+        m.focusId = "modal-close-btn"
+        m.listScroll = 0
+        build()
+    end if
+end sub
+
+sub showError(message as string, detail as string)
+    m.busy = ""
+    m.error = message
+    m.errorDetail = detail
+    build()
+end sub
+
+' Campos: o StandardKeyboardDialog da Roku (certificação 4.12), como no login.
+sub openKeyboard(key as string)
+    for each field in fields()
+        if field.key = key then title = field.label
+    end for
+    dialog = CreateObject("roSGNode", "StandardKeyboardDialog")
+    dialog.title = title
+    dialog.text = m.form[key]
+    dialog.buttons = ["OK", "Cancelar"]
+    dialog.keyboardDomain = "alphanumeric"
+    if key = "pass" then dialog.keyboardDomain = "password"
+    m.editing = key
+    dialog.observeField("buttonSelected", "onKeyboardButton")
+    dialog.observeField("wasClosed", "onKeyboardClosed")
+    m.top.getScene().dialog = dialog
+end sub
+
+sub onKeyboardButton(event as object)
+    dialog = m.top.getScene().dialog
+    if event.getData() = 0 and dialog <> invalid then
+        m.form[m.editing] = dialog.text
+        build()
+    end if
+    if dialog <> invalid then dialog.close = true
+end sub
+
+sub onKeyboardClosed()
+    m.top.getScene().dialog = invalid
+    m.top.setFocus(true)
+end sub

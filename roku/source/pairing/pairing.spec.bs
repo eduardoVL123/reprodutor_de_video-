@@ -1,0 +1,171 @@
+' Casos de tests/pairingApi.test.js e tests/usePairing.test.js (o que não é Vue: chamadas, abrir o envio e a regra de
+' falhas), com a sessão "plain" da Roku e um transporte falso.
+namespace tests
+
+    ' Transporte falso do pareamento: `routes` = [{ method, prefix, response }]; guarda os pedidos.
+    function fakePairTransport(routes as object) as object
+        return {
+            routes: routes,
+            calls: [],
+            send: function(method as string, url as string, _timeoutMs as integer, headers as object, body as string) as object
+                m.calls.push({ method: method, url: url, headers: headers, body: body })
+                for each route in m.routes
+                    if route.method = method and url.startsWith(route.prefix) then return route.response
+                end for
+                return { error: "rede" }
+            end function
+        }
+    end function
+
+    ' O que a página do celular manda numa sessão "plain" (PairLib.wrapPlain): base64url do JSON.
+    function plainBox(data as object) as string
+        bytes = CreateObject("roByteArray")
+        bytes.fromAsciiString(FormatJson(data, 1))
+        return bytes.toBase64String().replace("+", "-").replace("/", "_").replace("=", "")
+    end function
+
+    @suite("phonePairing")
+    class PairingTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("endereços")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("ignora a barra final; vazio é desligado")
+        function _()
+            m.assertEqual(phonePairing.normalizeBase(" https://par.exemplo.com/ "), "https://par.exemplo.com")
+            m.assertEqual(phonePairing.normalizeBase(invalid), "")
+        end function
+
+        @it("o endereço para mostrar na TV não leva o protocolo e preserva porta e caminho")
+        function _()
+            m.assertEqual(phonePairing.pageUrl("http://192.168.0.10:8788/p", "K7M2QP"), "http://192.168.0.10:8788/p/K7M2QP")
+            m.assertEqual(phonePairing.displayUrl("http://192.168.0.10:8788/p", "K7M2QP"), "192.168.0.10:8788/p/K7M2QP")
+            m.assertEqual(phonePairing.displayUrl("https://par.exemplo.com", "K7M2QP"), "par.exemplo.com/K7M2QP")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("createSession")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("pede uma sessão sem chave (plain) em JSON e devolve código, segredo e validade")
+        function _()
+            t = tests.fakePairTransport([{ method: "POST", prefix: "https://par.test/v1/sessions", response: { status: 201, body: FormatJson({ code: "K7M2QP", secret: "s3cr3t", expiresIn: 600 }) } }])
+
+            result = phonePairing.createSession(t, "https://par.test")
+
+            m.assertEqual(result, { code: "K7M2QP", secret: "s3cr3t", expiresIn: 600 })
+            m.assertEqual(t.calls[0].url, "https://par.test/v1/sessions")
+            m.assertEqual(ParseJson(t.calls[0].body), { plain: true })
+            m.assertEqual(t.calls[0].headers["Content-Type"], "application/json")
+        end function
+
+        @it("429 é BUSY; rede, outro status ou resposta estranha é UNAVAILABLE; sem endereço nem chama a rede")
+        function _()
+            busy = tests.fakePairTransport([{ method: "POST", prefix: "https://par.test", response: { status: 429, body: "" } }])
+            m.assertEqual(phonePairing.createSession(busy, "https://par.test"), { error: "BUSY" })
+            m.assertEqual(phonePairing.createSession(tests.fakePairTransport([]), "https://par.test"), { error: "UNAVAILABLE" })
+            broken = tests.fakePairTransport([{ method: "POST", prefix: "https://par.test", response: { status: 500, body: "" } }])
+            m.assertEqual(phonePairing.createSession(broken, "https://par.test"), { error: "UNAVAILABLE" })
+            weird = tests.fakePairTransport([{ method: "POST", prefix: "https://par.test", response: { status: 201, body: "{""code"":1}" } }])
+            m.assertEqual(phonePairing.createSession(weird, "https://par.test"), { error: "UNAVAILABLE" })
+            off = tests.fakePairTransport([])
+            m.assertEqual(phonePairing.createSession(off, ""), { error: "UNAVAILABLE" })
+            m.assertEqual(off.calls.count(), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("pollSession")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("pede o resultado com o segredo no cabeçalho; 204 = esperando, 200 = chegou")
+        function _()
+            waiting = tests.fakePairTransport([{ method: "GET", prefix: "https://par.test/v1/sessions/K7M2QP/payload", response: { status: 204, body: "" } }])
+            m.assertEqual(phonePairing.pollSession(waiting, "https://par.test", "K7M2QP", "s3cr3t"), { status: "pending" })
+            m.assertEqual(waiting.calls[0].headers["X-Pair-Secret"], "s3cr3t")
+            ready = tests.fakePairTransport([{ method: "GET", prefix: "https://par.test", response: { status: 200, body: FormatJson({ box: "abc" }) } }])
+            m.assertEqual(phonePairing.pollSession(ready, "https://par.test", "K7M2QP", "s"), { status: "ready", box: "abc" })
+        end function
+
+        @it("404 = expirou, 429 = BUSY, rede = UNAVAILABLE")
+        function _()
+            gone = tests.fakePairTransport([{ method: "GET", prefix: "https://par.test", response: { status: 404, body: "" } }])
+            m.assertEqual(phonePairing.pollSession(gone, "https://par.test", "K7M2QP", "s"), { error: "EXPIRED" })
+            busy = tests.fakePairTransport([{ method: "GET", prefix: "https://par.test", response: { status: 429, body: "" } }])
+            m.assertEqual(phonePairing.pollSession(busy, "https://par.test", "K7M2QP", "s"), { error: "BUSY" })
+            m.assertEqual(phonePairing.pollSession(tests.fakePairTransport([]), "https://par.test", "K7M2QP", "s"), { error: "UNAVAILABLE" })
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("o que chegou do celular")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("abre o envio da página do celular, com acentos, e o apelido vazio chega como texto vazio")
+        function _()
+            sent = { dns: "http://srv.com/get.php?username=a&password=b", username: "ana", password: "çã0", label: "Sala de estar" }
+            m.assertEqual(phonePairing.openBox(tests.plainBox(sent)), sent)
+            m.assertEqual(phonePairing.openBox(tests.plainBox({ dns: "srv.com" })), { dns: "srv.com", username: "", password: "", label: "" })
+        end function
+
+        @it("o que não abre ou vem sem endereço vira invalid")
+        function _()
+            m.assertInvalid(phonePairing.openBox("não é base64url!"))
+            m.assertInvalid(phonePairing.openBox(tests.plainBox({ username: "ana" })))
+            m.assertInvalid(phonePairing.openBox("bm9wZQ"))
+        end function
+
+        @it("servidor (host:porta) e se é http, pela regra do login")
+        function _()
+            m.assertEqual(phonePairing.describeList("srv.com:8080"), { host: "srv.com:8080", insecure: true })
+            m.assertEqual(phonePairing.describeList("https://srv.com/get.php?x=1"), { host: "srv.com", insecure: false })
+            m.assertInvalid(phonePairing.describeList("ftp://srv.com"))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("afterPoll (regras do usePairing)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("quando chega, a tela recebe só servidor, apelido e se é http; a lista fica guardada para o login")
+        function _()
+            sent = { dns: "http://srv.com:8080/get.php?username=a&password=segredo", username: "ana", password: "segredo", label: "Casa" }
+
+            result = phonePairing.afterPoll(2, { status: "ready", box: tests.plainBox(sent) })
+
+            m.assertEqual(result.state, "received")
+            m.assertEqual(result.received, { host: "srv.com:8080", label: "Casa", insecure: true })
+            m.assertEqual(result.list, sent)
+            m.assertEqual(result.failures, 0)
+        end function
+
+        @it("endereço inválido ou dado que não abre vira erro badData")
+        function _()
+            bad = phonePairing.afterPoll(0, { status: "ready", box: tests.plainBox({ dns: "ftp://srv.com" }) })
+            m.assertEqual(bad.state, "error")
+            m.assertEqual(bad.kind, "badData")
+            m.assertEqual(bad.error, phonePairing.BAD_DATA_MESSAGE)
+            m.assertEqual(phonePairing.afterPoll(0, { status: "ready", box: "%%" }).kind, "badData")
+        end function
+
+        @it("servidor diz que a sessão não existe mais: expirou")
+        function _()
+            m.assertEqual(phonePairing.afterPoll(3, { error: "EXPIRED" }), { state: "expired", failures: 0 })
+        end function
+
+        @it("uma falha passageira não derruba a espera, e o contador zera quando volta")
+        function _()
+            m.assertEqual(phonePairing.afterPoll(0, { error: "UNAVAILABLE" }), { state: "waiting", failures: 1 })
+            m.assertEqual(phonePairing.afterPoll(1, { error: "BUSY" }), { state: "waiting", failures: 2 })
+            m.assertEqual(phonePairing.afterPoll(2, { status: "pending" }), { state: "waiting", failures: 0 })
+        end function
+
+        @it("5 falhas seguidas viram erro unavailable, com a mensagem da última")
+        function _()
+            result = phonePairing.afterPoll(4, { error: "BUSY" })
+            m.assertEqual(result.state, "error")
+            m.assertEqual(result.kind, "unavailable")
+            m.assertEqual(result.error, phonePairing.BUSY_MESSAGE)
+        end function
+
+    end class
+
+end namespace

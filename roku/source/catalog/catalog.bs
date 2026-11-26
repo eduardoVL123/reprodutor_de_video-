@@ -1,0 +1,980 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+' Port de src/services/catalogDb.js, da carga de src/stores/catalogStore.js e de src/utils/normalizeText.js (casos em
+' tests/catalogDb.test.js, tests/parental.test.js, tests/catalogStore.m3u.test.js e catalog.spec.bs).
+' Mesmo formato do web, em arquivos no lugar do IndexedDB (um diretório por seção):
+'   meta.json        { version, count, chunkSize, chunkCount, counts:{catId:n}, updatedAt }
+'   categories.json  categorias como vieram da API
+'   index.json       { catId: [posição global, ...] }
+'   chunk-N.json     até CHUNK_SIZE itens
+'   search.json      [nome normalizado, ...] na ordem das posições
+' Roda num Task node. O diretório padrão (DEFAULT_DIR) é cachefs:/catalog (some no reboot: o próximo boot baixa a lista de novo).
+' Categorias fora da vista (controle parental) entram como parâmetro `hidden` em vez do estado do módulo web.
+namespace catalog
+
+    const DEFAULT_DIR = "cachefs:/catalog"
+    const CHUNK_SIZE = 500
+    const HEAD_ITEMS = 40 ' começo de cada categoria guardado no modo pelo servidor (fileiras de 15 e a 1ª página da grade)
+    const ALL_CATEGORIES = "all"
+    ' Sobe quando o formato dos itens salvos muda: catálogos antigos são baixados de novo.
+    const CATALOG_VERSION = 4
+    ' Espaço que o catálogo sempre deixa livre no cachefs (o sistema e as outras gravações do app precisam dele).
+    const DISK_RESERVE_BYTES = 4194304
+    ' Por item, o que o índice por categoria e o de busca ainda vão ocupar depois dos chunks.
+    const INDEX_BYTES_PER_ITEM = 48
+    ' Listas grandes (50.000+ itens) podem demorar bem mais que um login.
+    const CATALOG_TIMEOUT_MS = 120000
+    ' Espera máxima pela carga de outra Task (duas requisições de CATALOG_TIMEOUT_MS mais a gravação).
+    const SHARED_WAIT_MS = 300000
+    const CLAIM_SETTLE_MS = 300
+
+    ' ---------- Texto ----------
+
+    ' Equivalente ao normalize('NFD') + remoção dos acentos para as letras latinas acentuadas.
+    ' shortcut: letras fora desta tabela (ex.: vietnamita) ficam com acento; ampliar se aparecer lista assim.
+    function accentTable() as object
+        return {
+            a: "àáâãäåāăą", c: "çćĉċč", d: "ď", e: "èéêëēĕėęě", g: "ĝğġģ", h: "ĥ", i: "ìíîïĩīĭį", j: "ĵ", k: "ķ",
+            l: "ĺļľ", n: "ñńņň", o: "òóôõöōŏő", r: "ŕŗř", s: "śŝşš", t: "ţť", u: "ùúûüũūŭůűų", w: "ŵ", y: "ýÿŷ", z: "źżž"
+        }
+    end function
+
+    ' Regex da busca compiladas uma vez por thread: compilar 20 por título levava minutos para gravar 30 mil filmes.
+    function textRegexes() as object
+        if m.catalogTextRegexes <> invalid then return m.catalogTextRegexes
+        accents = []
+        table = catalog.accentTable()
+        for each base in table
+            accents.push({ base: base, regex: CreateObject("roRegex", "[" + table[base] + "]", "") })
+        end for
+        m.catalogTextRegexes = {
+            accents: accents,
+            nonAscii: CreateObject("roRegex", "[^\x00-\x7F]", ""),
+            nonWord: CreateObject("roRegex", "[^0-9a-z\x{0370}-\x{1FFF}\x{2C00}-\x{D7FF}\x{F900}-\x{FDFF}]+", "")
+        }
+        return m.catalogTextRegexes
+    end function
+
+    ' Remove acentos e passa para minúsculas, sem mexer na pontuação.
+    function foldText(text as dynamic) as string
+        folded = LCase(utils.textOr(text, ""))
+        regexes = catalog.textRegexes()
+        ' Todos os acentos da tabela estão fora do ASCII: título sem acento (a maioria) não precisa das trocas.
+        if not regexes.nonAscii.isMatch(folded) then return folded
+        for each accent in regexes.accents
+            folded = accent.regex.replaceAll(folded, accent.base)
+        end for
+        return folded
+    end function
+
+    ' Forma canônica para busca: "Homem-Aranha: Longe de Casa" => "homem aranha longe de casa". Mantém letras
+    ' latinas sem acento, dígitos e alfabetos não latinos (grego, cirílico, CJK...); o resto vira espaço.
+    function normalizeText(text as dynamic) as string
+        return catalog.textRegexes().nonWord.replaceAll(catalog.foldText(text), " ").trim()
+    end function
+
+    ' ---------- Arquivos ----------
+
+    function sectionDir(dir as string, section as string) as string
+        return dir + "/" + section
+    end function
+
+    function readJsonFile(path as string) as dynamic
+        if not CreateObject("roFileSystem").exists(path) then return invalid
+        return ParseJson(ReadAsciiFile(path))
+    end function
+
+    sub deleteTree(path as string)
+        fs = CreateObject("roFileSystem")
+        if not fs.exists(path) then return
+        for each name in fs.getDirectoryListing(path)
+            catalog.deleteTree(path + "/" + name)
+        end for
+        DeleteFile(path)
+        fs.delete(path)
+    end sub
+
+    ' Remove todo o catálogo (logout / troca de conta).
+    sub clearCatalog(dir as string)
+        catalog.deleteTree(dir)
+    end sub
+
+    ' ---------- Gravação ----------
+
+    ' Categorias do item: a principal (category_id) e as extras (category_ids, painéis Xtream novos).
+    function categoriesOf(item as dynamic) as object
+        if not utils.isObject(item) then return ["none"]
+        ' Caso comum (sem category_ids): uma categoria só, sem a lista e o mapa de repetidas (30 mil vezes no índice).
+        if GetInterface(item.category_ids, "ifArray") = invalid then
+            single = utils.textOr(item.category_id, "")
+            if utils.isNumber(item.category_id) and item.category_id = 0 then single = "0"
+            if single = "" then return ["none"]
+            return [single]
+        end if
+        candidates = [item.category_id]
+        if GetInterface(item.category_ids, "ifArray") <> invalid then candidates.append(item.category_ids)
+        unique = []
+        seen = {}
+        for each id in candidates
+            key = utils.textOr(id, "")
+            if utils.isNumber(id) and id = 0 then key = "0"
+            if key <> "" and not seen.doesExist(key) then
+                seen[key] = true
+                unique.push(key)
+            end if
+        end for
+        if unique.count() = 0 then return ["none"]
+        return unique
+    end function
+
+    ' Item como o web grava: stream_id (ou series_id), capa em stream_icon, extensão padrão e seção.
+    function normalizeItem(raw as dynamic, section as string) as dynamic
+        if not utils.isObject(raw) then return raw
+        item = {}
+        item.append(raw)
+        streamId = raw.stream_id
+        if streamId = invalid then streamId = raw.series_id
+        item["stream_id"] = streamId
+        item["series_id"] = streamId
+        item["stream_icon"] = utils.textOr(raw.stream_icon, utils.textOr(raw.cover, ""))
+        extension = utils.textOr(raw.container_extension, "")
+        if extension = "" and (section = "vod" or section = "series") then extension = "mp4"
+        item["container_extension"] = extension
+        item["section"] = utils.textOr(raw.section, section)
+        ' Campos que o app nunca lê: fora, senão 50 mil canais não cabem no disco da Roku (o web grava o item inteiro).
+        for each unused in ["stream_type", "epg_channel_id", "custom_sid", "tv_archive", "tv_archive_duration"]
+            item.delete(unused)
+        end for
+        if utils.textOr(item.direct_source, "") = "" then item.delete("direct_source")
+        return item
+    end function
+
+    ' ---------- Formato compacto dos chunks ----------
+    ' Cada item vira uma lista de valores na ordem de itemFields() (sem repetir os nomes dos campos 50 mil vezes); o
+    ' começo comum dos links de capa fica uma vez por chunk. series_id (= stream_id) e section (= a da pasta) não são
+    ' gravados. Campo ausente vira null e continua ausente ao ler; o que não está na lista vai num objeto no fim.
+
+    function itemFields() as object
+        return ["stream_id", "name", "stream_icon", "category_id", "category_ids", "container_extension", "added", "last_modified", "num", "rating", "directUrl", "direct_source"]
+    end function
+
+    ' chunk = { p: [começos de link], i: [[valores...]] }
+    function packChunk(items as object) as object
+        packer = catalog.newPacker()
+        packed = []
+        for each item in items
+            packed.push(catalog.packRow(packer, item, ""))
+        end for
+        return { p: packer.prefixes, i: packed }
+    end function
+
+    ' Estado de um chunk em montagem: os começos de link já vistos e os campos que não vão no objeto do fim.
+    function newPacker() as object
+        prefixIndex = {}
+        prefixIndex.setModeCaseSensitive()
+        skip = { series_id: true, section: true, stream_type: true, epg_channel_id: true, custom_sid: true, tv_archive: true, tv_archive_duration: true }
+        for each field in catalog.itemFields()
+            skip[field] = true
+        end for
+        return { prefixes: [], prefixIndex: prefixIndex, skip: skip }
+    end function
+
+    ' Linha compacta de um item. Com section <> "" o item é o cru da API e a linha sai igual à de
+    ' packChunk([normalizeItem(raw, section)]), sem as duas cópias do item (montar 30 mil filmes levava ~70 s).
+    function packRow(packer as object, raw as dynamic, section as string) as object
+        row = []
+        if not utils.isObject(raw) then return row
+        normalize = section <> ""
+        for each field in catalog.itemFields()
+            value = raw[field]
+            if normalize then
+                if field = "stream_id" then
+                    if value = invalid then value = raw.series_id
+                else if field = "stream_icon" then
+                    value = utils.textOr(raw.stream_icon, utils.textOr(raw.cover, ""))
+                else if field = "container_extension" then
+                    value = utils.textOr(value, "")
+                    if value = "" and (section = "vod" or section = "series") then value = "mp4"
+                else if field = "direct_source" then
+                    if utils.textOr(value, "") = "" then value = invalid
+                end if
+            end if
+            if field = "stream_icon" and utils.isString(value) then
+                ' Última "/" saltando de barra em barra (o Mid letra a letra pesava em 30 mil capas).
+                cut = 0
+                at = Instr(1, value, "/")
+                while at > 0
+                    cut = at
+                    at = Instr(at + 1, value, "/")
+                end while
+                if cut > 0 then
+                    head = Left(value, cut)
+                    if not packer.prefixIndex.doesExist(head) then
+                        packer.prefixIndex[head] = packer.prefixes.count()
+                        packer.prefixes.push(head)
+                    end if
+                    value = [packer.prefixIndex[head], Mid(value, cut + 1)]
+                end if
+            end if
+            row.push(value)
+        end for
+        extras = {}
+        for each key in raw
+            if not packer.skip.doesExist(key) then extras[key] = raw[key]
+        end for
+        if extras.count() > 0 then row.push(extras)
+        return row
+    end function
+
+    function unpackChunk(chunk as dynamic, section as string) as object
+        items = []
+        if not utils.isObject(chunk) or GetInterface(chunk.i, "ifArray") = invalid then return items
+        fields = catalog.itemFields()
+        for each row in chunk.i
+            item = {}
+            if GetInterface(row, "ifArray") <> invalid then
+                for i = 0 to fields.count() - 1
+                    if i < row.count() and row[i] <> invalid then
+                        value = row[i]
+                        if fields[i] = "stream_icon" and GetInterface(value, "ifArray") <> invalid then value = chunk.p[value[0]] + value[1]
+                        item[fields[i]] = value
+                    end if
+                end for
+                if row.count() > fields.count() and utils.isObject(row[fields.count()]) then item.append(row[fields.count()])
+                if item.stream_id <> invalid then item["series_id"] = item.stream_id
+                item["section"] = section
+            end if
+            items.push(item)
+        end for
+        return items
+    end function
+
+    ' ---------- Espaço em disco ----------
+
+    ' Bytes livres no volume (invalid se o aparelho não informa: aí vale só a falha da gravação).
+    function freeBytes(path as string) as dynamic
+        volume = "cachefs:"
+        if Instr(1, path, ":") > 0 then volume = Left(path, Instr(1, path, ":"))
+        info = CreateObject("roFileSystem").GetVolumeInfo(volume)
+        if not utils.isObject(info) or not utils.isNumber(info.freeblocks) or not utils.isNumber(info.blocksize) then return invalid
+        return info.freeblocks * info.blocksize
+    end function
+
+    ' Só a lista ativa fica no disco: o Início (HomeTask) tira os catálogos das outras listas ao começar. Não é feito a
+    ' cada gravação: a Task de uma lista anterior ainda baixando apagaria a pasta da lista nova no meio da gravação.
+    sub pruneOtherLists(dir as string)
+        parent = catalog.DEFAULT_DIR + "/"
+        if Left(dir, Len(parent)) <> parent then return
+        fs = CreateObject("roFileSystem")
+        if not fs.exists(catalog.DEFAULT_DIR) then return
+        own = Mid(dir, Len(parent) + 1)
+        for each name in fs.getDirectoryListing(catalog.DEFAULT_DIR)
+            if name <> own then catalog.deleteTree(parent + name)
+        end for
+    end sub
+
+    ' Grava a seção em pedaços, com o índice por categoria e o de busca. Substitui o que havia.
+    ' Nunca enche o disco: antes de cada chunk confere o espaço livre (deixando DISK_RESERVE_BYTES e o que os índices
+    ' vão ocupar). Se a seção não couber inteira, passa a vir do servidor por categoria (saveRemote): a lista aparece
+    ' toda, carregada por partes (M3U: relendo a lista, ver fetchCategory). budget = limite de bytes para os testes
+    ' (-1: o espaço livre do volume).
+    ' Chamada como função solta (sem o hooks na frente): senão o m dela seria o próprio hooks, não o da Task.
+    sub reportStage(hooks as dynamic, text as string)
+        if hooks = invalid or hooks.stage = invalid then return
+        notify = hooks.stage
+        notify(text)
+    end sub
+
+    ' Fração gravada (0–1) a cada bloco: a barra da tela de carregamento (onProgress do saveSection web).
+    sub reportProgress(hooks as dynamic, fraction as float)
+        if hooks = invalid or hooks.progress = invalid then return
+        notify = hooks.progress
+        notify(fraction)
+    end sub
+
+    sub saveSection(dir as string, section as string, categories as object, streams as object, budget = -1 as double, hooks = invalid as dynamic)
+        path = catalog.sectionDir(dir, section)
+        catalog.deleteTree(path)
+        ' CreateDirectory não cria os pais: a pasta da lista fica em cachefs:/catalog, que some no reboot.
+        slash = Instr(Instr(1, dir, ":/") + 2, dir, "/")
+        while slash > 0
+            CreateDirectory(Left(dir, slash - 1))
+            slash = Instr(slash + 1, dir, "/")
+        end while
+        CreateDirectory(dir)
+        CreateDirectory(path)
+        catalog.writeProvisional(dir, section, categories, streams)
+        if hooks <> invalid and hooks.provisional <> invalid then
+            ready = hooks.provisional
+            ready(section)
+        end if
+        total = streams.count()
+        chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
+        free = budget
+        if free < 0 then free = catalog.freeBytes(dir)
+        used = 0#
+        written = 0
+        names = []
+        writtenChunks = 0
+        for n = 0 to chunkCount - 1
+            base = n * catalog.CHUNK_SIZE
+            last = base + catalog.CHUNK_SIZE - 1
+            if last > total - 1 then last = total - 1
+            packer = catalog.newPacker()
+            rows = []
+            chunkNames = []
+            for p = base to last
+                raw = streams[p]
+                rows.push(catalog.packRow(packer, raw, section))
+                name = invalid
+                if utils.isObject(raw) then name = raw.name
+                chunkNames.push(catalog.normalizeText(name))
+            end for
+            text = FormatJson({ p: packer.prefixes, i: rows })
+            need = Len(text) + (last + 1) * catalog.INDEX_BYTES_PER_ITEM
+            if budget < 0 and free <> invalid then need = need + catalog.DISK_RESERVE_BYTES
+            if free <> invalid and used + need > free then exit for
+            file = path + "/chunk-" + n.toStr() + ".json"
+            if not WriteAsciiFile(file, text) then
+                DeleteFile(file)
+                exit for
+            end if
+            used = used + Len(text)
+            written = last + 1
+            writtenChunks = n + 1
+            names.append(chunkNames)
+            catalog.reportProgress(hooks, (n + 1) / chunkCount)
+        end for
+
+        ' Não coube inteira: vem pelo servidor (os índices do que coube nem são montados).
+        if written < total then
+            catalog.saveRemote(dir, section, categories, streams, budget)
+            return
+        end if
+        index = {}
+        index.setModeCaseSensitive()
+        for p = 0 to written - 1
+            for each cat in catalog.categoriesOf(streams[p])
+                if not index.doesExist(cat) then index[cat] = []
+                index[cat].push(p)
+            end for
+        end for
+        counts = {}
+        counts.setModeCaseSensitive()
+        for each cat in index
+            counts[cat] = index[cat].count()
+        end for
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index))
+        if ok then
+            ' O índice de busca pode faltar: getSearchIndex o refaz pelos chunks (como o buildSearchIndex do web).
+            if not WriteAsciiFile(path + "/search.json", FormatJson(names)) then DeleteFile(path + "/search.json")
+            meta = { version: catalog.CATALOG_VERSION, count: written, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: writtenChunks, counts: counts, updatedAt: CreateObject("roDateTime").toISOString() }
+            ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        end if
+        ' Sem espaço nem para os índices: também vem pelo servidor.
+        if not ok then catalog.saveRemote(dir, section, categories, streams, budget)
+    end sub
+
+    ' ---------- Seção pelo servidor (não coube no disco) ----------
+    ' Fica no disco: a contagem e a ordem das categorias e, no que couber, uma versão leve dos itens (id, nome e
+    ' categoria) para a busca. A tela pede páginas como sempre: getItems busca no servidor só a categoria da página
+    ' (get_*_streams&category_id) e guarda as últimas em tmp:.
+
+    ' Itens por categoria e a ordem de "Todos" pelo servidor: a da lista de categorias, depois as que só aparecem nos itens.
+    ' heads: os HEAD_ITEMS primeiros itens crus de cada categoria (as fileiras e a 1ª página da grade sem ir ao servidor).
+    function remoteSummary(categories as object, streams as object) as object
+        counts = {}
+        counts.setModeCaseSensitive()
+        heads = {}
+        heads.setModeCaseSensitive()
+        for each raw in streams
+            for each cat in catalog.categoriesOf(raw)
+                if counts.doesExist(cat) then
+                    counts[cat] = counts[cat] + 1
+                    if counts[cat] <= catalog.HEAD_ITEMS then heads[cat].push(raw)
+                else
+                    counts[cat] = 1
+                    heads[cat] = [raw]
+                end if
+            end for
+        end for
+        order = []
+        seen = {}
+        seen.setModeCaseSensitive()
+        for each c in categories
+            id = utils.textOr(c.category_id, "")
+            if utils.isNumber(c.category_id) and c.category_id = 0 then id = "0"
+            if counts.doesExist(id) and not seen.doesExist(id) then
+                seen[id] = true
+                order.push(id)
+            end if
+        end for
+        for each id in counts
+            if not seen.doesExist(id) and id <> "none" then order.push(id)
+        end for
+        return { counts: counts, order: order, heads: heads }
+    end function
+
+    ' Grava o começo de cada categoria já normalizado (heads.json), para remoteItems servir sem rede.
+    function writeHeads(dir as string, section as string, heads as object) as boolean
+        packed = {}
+        for each cat in heads
+            items = []
+            for each raw in heads[cat]
+                items.push(catalog.normalizeItem(raw, section))
+            end for
+            packed[cat] = catalog.packChunk(items)
+        end for
+        return WriteAsciiFile(catalog.sectionDir(dir, section) + "/heads.json", FormatJson(packed))
+    end function
+
+    ' Itens [skip, skip+count) de uma categoria se o começo guardado cobre o pedido (ou a categoria inteira); senão invalid.
+    function headItems(heads as dynamic, section as string, cat as string, total as integer, skip as integer, count as integer) as dynamic
+        if not utils.isObject(heads) or not utils.isObject(heads[cat]) then return invalid
+        items = catalog.unpackChunk(heads[cat], section)
+        if skip + count > items.count() and items.count() < total then return invalid
+        result = []
+        for i = skip to items.count() - 1
+            if result.count() >= count then exit for
+            result.push(items[i])
+        end for
+        return result
+    end function
+
+    ' Ficha "pelo servidor" enquanto os blocos são gravados (numa lista grande, minutos): quem abrir a seção nesse tempo
+    ' (a aba Filmes) não espera o disco, busca no servidor só as categorias da tela. A ficha final a substitui no fim.
+    sub writeProvisional(dir as string, section as string, categories as object, streams as object)
+        path = catalog.sectionDir(dir, section)
+        summary = catalog.remoteSummary(categories, streams)
+        total = streams.count()
+        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/search.json", "[]") and catalog.writeHeads(dir, section, summary.heads)
+        if ok then WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+    end sub
+
+    sub saveRemote(dir as string, section as string, categories as object, streams as object, budget as double)
+        path = catalog.sectionDir(dir, section)
+        catalog.deleteTree(path)
+        CreateDirectory(path)
+        summary = catalog.remoteSummary(categories, streams)
+        counts = summary.counts
+        order = summary.order
+        catalog.writeHeads(dir, section, summary.heads)
+
+        total = streams.count()
+        free = budget
+        if free < 0 then free = catalog.freeBytes(dir)
+        used = 0#
+        written = 0
+        chunks = 0
+        names = []
+        index = {}
+        index.setModeCaseSensitive()
+        chunkCount = (total + catalog.CHUNK_SIZE - 1) \ catalog.CHUNK_SIZE
+        for n = 0 to chunkCount - 1
+            base = n * catalog.CHUNK_SIZE
+            last = base + catalog.CHUNK_SIZE - 1
+            if last > total - 1 then last = total - 1
+            items = []
+            for p = base to last
+                full = catalog.normalizeItem(streams[p], section)
+                lite = {}
+                if utils.isObject(full) then
+                    lite = { stream_id: full.stream_id, name: full.name, category_id: full.category_id }
+                    if full.category_ids <> invalid then lite.category_ids = full.category_ids
+                end if
+                items.push(lite)
+            end for
+            text = FormatJson(catalog.packChunk(items))
+            need = Len(text) + (last + 1) * catalog.INDEX_BYTES_PER_ITEM
+            if budget < 0 and free <> invalid then need = need + catalog.DISK_RESERVE_BYTES
+            if free <> invalid and used + need > free then exit for
+            if not WriteAsciiFile(path + "/chunk-" + n.toStr() + ".json", text) then
+                DeleteFile(path + "/chunk-" + n.toStr() + ".json")
+                exit for
+            end if
+            used = used + Len(text)
+            for p = base to last
+                for each cat in catalog.categoriesOf(streams[p])
+                    if not index.doesExist(cat) then index[cat] = []
+                    index[cat].push(p)
+                end for
+                names.push(catalog.normalizeText(items[p - base].name))
+            end for
+            written = last + 1
+            chunks = n + 1
+        end for
+        meta = { version: catalog.CATALOG_VERSION, remote: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
+        ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index)) and WriteAsciiFile(path + "/search.json", FormatJson(names))
+        if ok then ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        if not ok then
+            ' Nem a busca leve coube: a seção continua pelo servidor, só sem busca.
+            for n = 0 to chunks - 1
+                DeleteFile(path + "/chunk-" + n.toStr() + ".json")
+            end for
+            meta.chunkCount = 0
+            meta.searchCount = 0
+            WriteAsciiFile(path + "/categories.json", FormatJson(categories))
+            WriteAsciiFile(path + "/index.json", "{}")
+            WriteAsciiFile(path + "/search.json", "[]")
+            WriteAsciiFile(path + "/meta.json", FormatJson(meta))
+        end if
+        print "[catalog] Seção "; section; " não coube no disco: vem do servidor por categoria ("; total; " itens; busca em "; meta.searchCount; ")."
+    end sub
+
+    ' A seção vem do servidor (não coube no disco)?
+    function isRemote(meta as dynamic) as boolean
+        if not utils.isObject(meta) or GetInterface(meta.remote, "ifBoolean") = invalid then return false
+        return meta.remote
+    end function
+
+    ' ctx da lista ativa se for a dona desta pasta (o getItems pelo servidor precisa do endereço e das credenciais).
+    function remoteContext(dir as string) as dynamic
+        current = session.hydrate(storage.create())
+        if current = invalid then return invalid
+        ctx = catalog.contextFor(current)
+        if ctx.dir <> dir then return invalid
+        return ctx
+    end function
+
+    ' Itens [start, start+count) de uma seção pelo servidor: "Todos" percorre as categorias na ordem (sem as fora da
+    ' vista) pelas contagens e só baixa as categorias que a página toca.
+    function remoteItems(transport as object, ctx as dynamic, section as string, categoryId as string, start as integer, count as integer, hidden as object, meta as object) as object
+        result = []
+        if ctx = invalid or count <= 0 then return result
+        hiddenSet = {}
+        hiddenSet.setModeCaseSensitive()
+        for each id in hidden
+            hiddenSet[utils.textOr(id, "")] = true
+        end for
+        walk = []
+        if categoryId = catalog.ALL_CATEGORIES then
+            for each id in meta.order
+                if not hiddenSet.doesExist(id) then walk.push(id)
+            end for
+        else if not hiddenSet.doesExist(categoryId) then
+            walk.push(categoryId)
+        end if
+        skip = start
+        heads = catalog.readJsonFile(catalog.sectionDir(ctx.dir, section) + "/heads.json")
+        for each cat in walk
+            n = meta.counts[cat]
+            if n = invalid then n = 0
+            if skip >= n then
+                skip = skip - n
+            else
+                fromHead = catalog.headItems(heads, section, cat, n, skip, count - result.count())
+                if fromHead <> invalid then
+                    result.append(fromHead)
+                else
+                    items = catalog.fetchCategory(transport, ctx, section, cat)
+                    for i = skip to items.count() - 1
+                        if result.count() >= count then exit for
+                        result.push(catalog.normalizeItem(items[i], section))
+                    end for
+                end if
+                skip = 0
+                if result.count() >= count then exit for
+            end if
+        end for
+        return result
+    end function
+
+    ' Uma categoria do servidor, com os itens como vieram (normalizar só a página que vai para a tela: a categoria
+    ' inteira levava ~2 s por fileira); as últimas ficam em tmp: (some ao fechar o app).
+    function fetchCategory(transport as object, ctx as object, section as string, categoryId as string) as object
+        cacheDir = "tmp:/pulse-remote"
+        CreateDirectory(cacheDir)
+        file = cacheDir + "/" + xtream.hashText(ctx.dir + "|" + section + "|" + categoryId) + ".json"
+        cached = catalog.readJsonFile(file)
+        if GetInterface(cached, "ifArray") <> invalid then return cached
+        if ctx.type = "m3u" then
+            ' M3U não tem consulta por categoria: baixa e lê a lista de novo e fica só com esta categoria.
+            ' shortcut: uma leitura da lista inteira por categoria aberta; guardar o byte de cada categoria e pedir só o
+            ' trecho (HTTP Range) se a espera incomodar e o servidor aceitar.
+            fetched = xtream.fetchM3uText(transport, ctx.apiBase)
+            if fetched.error <> invalid then return []
+            read = xtream.readM3u(fetched.text)
+            fetched = invalid
+            if read.error <> invalid then return []
+            list = read.parsed[section + "Streams"]
+            if list = invalid then return []
+        else
+            names = catalog.actions(section)
+            response = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: names.streams, params: { category_id: categoryId }, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
+            if response.error <> invalid or GetInterface(response.data, "ifArray") = invalid then return []
+            list = response.data
+            if section = "series" then list = catalog.remapSeries(list)
+        end if
+        ' Servidor que ignora o category_id devolve a lista toda: fica só o que é desta categoria.
+        items = []
+        for each raw in list
+            for each cat in catalog.categoriesOf(raw)
+                if cat = categoryId then
+                    items.push(raw)
+                    exit for
+                end if
+            end for
+        end for
+        ' shortcut: guarda no máximo 12 categorias (o tmp: é memória); passar disso limpa tudo e recomeça.
+        listing = CreateObject("roFileSystem").getDirectoryListing(cacheDir)
+        if listing <> invalid and listing.count() >= 12 then
+            for each name in listing
+                DeleteFile(cacheDir + "/" + name)
+            end for
+        end if
+        WriteAsciiFile(file, FormatJson(items))
+        return items
+    end function
+
+    ' ---------- Leitura ----------
+
+    function getMeta(dir as string, section as string) as dynamic
+        meta = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/meta.json")
+        if not utils.isObject(meta) or meta.version <> catalog.CATALOG_VERSION then return invalid
+        return meta
+    end function
+
+    function getCategories(dir as string, section as string) as object
+        cats = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/categories.json")
+        if GetInterface(cats, "ifArray") = invalid then return []
+        return cats
+    end function
+
+    function getIndex(dir as string, section as string) as object
+        index = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/index.json")
+        if not utils.isObject(index) then return {}
+        return index
+    end function
+
+    ' Nomes normalizados da seção pela posição global (vazio se a seção não foi baixada). Sem o search.json, ou com
+    ' tamanho diferente do resumo, refaz pelos chunks e tenta gravar de novo (buildSearchIndex do web).
+    function getSearchIndex(dir as string, section as string) as object
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid then return []
+        path = catalog.sectionDir(dir, section)
+        names = catalog.readJsonFile(path + "/search.json")
+        expected = meta.count
+        if catalog.isRemote(meta) then expected = meta.searchCount
+        if GetInterface(names, "ifArray") <> invalid and names.count() = expected then return names
+        names = []
+        for n = 0 to meta.chunkCount - 1
+            chunk = catalog.unpackChunk(catalog.readJsonFile(path + "/chunk-" + n.toStr() + ".json"), section)
+            if chunk.count() > 0 then
+                for each item in chunk
+                    name = invalid
+                    if utils.isObject(item) then name = item.name
+                    names.push(catalog.normalizeText(name))
+                end for
+            end if
+        end for
+        WriteAsciiFile(path + "/search.json", FormatJson(names))
+        return names
+    end function
+
+    ' Posições bloqueadas pelas categorias fora da vista; invalid = nada escondido.
+    function blockedPositions(dir as string, section as string, hidden as object) as dynamic
+        if hidden.count() = 0 then return invalid
+        index = catalog.getIndex(dir, section)
+        blocked = {}
+        for each id in hidden
+            positions = index[utils.textOr(id, "")]
+            if positions <> invalid then
+                for each p in positions
+                    blocked[p.toStr()] = true
+                end for
+            end if
+        end for
+        return blocked
+    end function
+
+    ' Quantos itens "Todos" mostra com o filtro (invalid = sem filtro: vale o total do catálogo).
+    function visibleCount(dir as string, section as string, hidden as object) as dynamic
+        meta = catalog.getMeta(dir, section)
+        if catalog.isRemote(meta) then
+            if hidden.count() = 0 then return invalid
+            n = meta.count
+            for each id in hidden
+                hiddenCount = meta.counts[utils.textOr(id, "")]
+                if hiddenCount <> invalid then n = n - hiddenCount
+            end for
+            if n < 0 then n = 0
+            return n
+        end if
+        blocked = catalog.blockedPositions(dir, section, hidden)
+        if meta = invalid or blocked = invalid then return invalid
+        return meta.count - blocked.count()
+    end function
+
+    ' Itens visíveis por categoria com o filtro (invalid = sem filtro: valem as contagens do catálogo).
+    function visibleCategoryCounts(dir as string, section as string, hidden as object) as dynamic
+        meta = catalog.getMeta(dir, section)
+        if catalog.isRemote(meta) then
+            if hidden.count() = 0 then return invalid
+            return meta.counts
+        end if
+        blocked = catalog.blockedPositions(dir, section, hidden)
+        if blocked = invalid then return invalid
+        index = catalog.getIndex(dir, section)
+        counts = {}
+        counts.setModeCaseSensitive()
+        for each id in index
+            n = 0
+            for each p in index[id]
+                if not blocked.doesExist(p.toStr()) then n = n + 1
+            end for
+            counts[id] = n
+        end for
+        return counts
+    end function
+
+    ' Itens [start, start+count) da categoria (ALL_CATEGORIES = "Todos"), sem os das categorias fora da vista.
+    function getItems(dir as string, section as string, categoryId as string, start as integer, count as integer, hidden as object) as object
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid or count <= 0 then return []
+        if catalog.isRemote(meta) then return catalog.remoteItems(net.urlTransport(), catalog.remoteContext(dir), section, categoryId, start, count, hidden, meta)
+        blocked = catalog.blockedPositions(dir, section, hidden)
+        if categoryId = catalog.ALL_CATEGORIES then
+            candidates = invalid ' todas as posições, em ordem
+        else
+            candidates = catalog.getIndex(dir, section)[categoryId]
+            if candidates = invalid then return []
+        end if
+        positions = []
+        skipped = 0
+        total = meta.count
+        if candidates <> invalid then total = candidates.count()
+        for i = 0 to total - 1
+            p = i
+            if candidates <> invalid then p = candidates[i]
+            if blocked = invalid or not blocked.doesExist(p.toStr()) then
+                if skipped >= start then
+                    positions.push(p)
+                    if positions.count() >= count then exit for
+                else
+                    skipped = skipped + 1
+                end if
+            end if
+        end for
+        return catalog.getItemsAt(dir, section, positions)
+    end function
+
+    ' Itens nas posições globais informadas (ex.: resultados da busca), na mesma ordem.
+    function getItemsAt(dir as string, section as string, positions as object) as object
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid or positions.count() = 0 then return []
+        chunks = {}
+        items = []
+        for each p in positions
+            n = p \ meta.chunkSize
+            key = n.toStr()
+            if not chunks.doesExist(key) then chunks[key] = catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + key + ".json"), section)
+            chunk = chunks[key]
+            if GetInterface(chunk, "ifArray") <> invalid then
+                item = chunk[p mod meta.chunkSize]
+                if item <> invalid then items.push(item)
+            end if
+        end for
+        return items
+    end function
+
+    ' Item pelo id (deep link). Seção no disco: percorre os blocos. Seção pelo servidor: só o começo guardado de cada
+    ' categoria (heads.json). invalid se não achar.
+    ' shortcut: numa seção pelo servidor, item fora do começo das categorias não é achado; buscar a categoria no
+    ' servidor se o deep link precisar cobrir isso.
+    function findItem(dir as string, section as string, id as string) as dynamic
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid or id = "" then return invalid
+        lists = []
+        if catalog.isRemote(meta) then
+            heads = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/heads.json")
+            if utils.isObject(heads) then
+                for each cat in heads
+                    lists.push(catalog.unpackChunk(heads[cat], section))
+                end for
+            end if
+        else
+            for n = 0 to meta.chunkCount - 1
+                lists.push(catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + n.toStr() + ".json"), section))
+            end for
+        end if
+        for each items in lists
+            if GetInterface(items, "ifArray") <> invalid then
+                for each item in items
+                    if utils.isObject(item) and utils.textOr(item.stream_id, "") = id then return item
+                end for
+            end if
+        end for
+        return invalid
+    end function
+
+    ' Categorias para a tela: "Todos" primeiro e só as que têm itens (publish do catalogStore).
+    function publishList(dir as string, section as string) as object
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid then return []
+        list = [{ category_id: catalog.ALL_CATEGORIES, category_name: "Todos", count: meta.count }]
+        for each cat in catalog.getCategories(dir, section)
+            id = utils.textOr(cat.category_id, "")
+            if utils.isNumber(cat.category_id) and cat.category_id = 0 then id = "0"
+            count = meta.counts[id]
+            if count <> invalid and count > 0 then list.push({ category_id: id, category_name: utils.textOr(cat.category_name, ""), count: count })
+        end for
+        return list
+    end function
+
+    ' ---------- Carga (catalogStore) ----------
+
+    ' ctx das cargas para a sessão aberta. Uma pasta por lista (hash do id): trocar de lista nunca lê o catálogo da
+    ' anterior, nem o que uma carga antiga ainda em andamento gravar depois da troca.
+    function contextFor(current as object) as object
+        apiBase = utils.textOr(current.resolvedUrl, "")
+        if apiBase = "" then apiBase = utils.textOr(current.baseUrl, "")
+        dir = catalog.DEFAULT_DIR + "/" + xtream.hashText(utils.textOr(current.id, ""))
+        return { dir: dir, apiBase: apiBase, credentials: { username: current.username, password: current.password }, type: current.type }
+    end function
+
+    function actions(section as string) as object
+        if section = "live" then return { categories: "get_live_categories", streams: "get_live_streams" }
+        if section = "vod" then return { categories: "get_vod_categories", streams: "get_vod_streams" }
+        return { categories: "get_series_categories", streams: "get_series" }
+    end function
+
+    ' Lista da API; false/null de alguns painéis vira lista vazia. { list, error }
+    function requestList(transport as object, ctx as object, action as string) as object
+        result = xtream.apiRequest(transport, ctx.apiBase, ctx.credentials, { action: action, timeoutMs: catalog.CATALOG_TIMEOUT_MS })
+        if result.error <> invalid then return { list: invalid, error: result.error }
+        data = result.data
+        if data = invalid or (GetInterface(data, "ifBoolean") <> invalid and not data) then return { list: [], error: invalid }
+        if GetInterface(data, "ifArray") = invalid then return { list: invalid, error: xtream.newError("bad_response", action + " não retornou uma lista") }
+        return { list: data, error: invalid }
+    end function
+
+    ' Séries: o id vem em series_id, a capa em cover e o nome às vezes em title.
+    function remapSeries(list as object) as object
+        for i = 0 to list.count() - 1
+            item = list[i]
+            if utils.isObject(item) then
+                seriesId = item.series_id
+                if seriesId = invalid then seriesId = item.stream_id
+                item["stream_id"] = seriesId
+                item["series_id"] = seriesId
+                item["stream_icon"] = utils.textOr(item.cover, utils.textOr(item.stream_icon, ""))
+                item["name"] = utils.textOr(item.name, utils.textOr(item.title, ""))
+                item["container_extension"] = "mp4"
+                item["section"] = "series"
+            end if
+        end for
+        return list
+    end function
+
+    ' Playlist M3U: uma leitura grava as três seções (M3U não tem séries: a seção fica vazia).
+    ' hooks vão só para a seção que a tela pediu (o progresso é por seção, como o status[section] do web).
+    function importM3u(transport as object, ctx as object, section = "" as string, hooks = invalid as dynamic) as dynamic
+        fetched = xtream.fetchM3uText(transport, ctx.apiBase)
+        if fetched.error <> invalid then return fetched.error
+        read = xtream.readM3u(fetched.text)
+        if read.error <> invalid then return read.error
+        ' Prévia das duas seções antes de gravar (o Início mostra as fileiras já, como na Xtream).
+        if hooks <> invalid and hooks.parsed <> invalid then
+            parsed = hooks.parsed
+            parsed("vod", read.parsed.vodCategories, read.parsed.vodStreams)
+            parsed("live", read.parsed.liveCategories, read.parsed.liveStreams)
+        end if
+        liveHooks = invalid
+        if section = "live" then liveHooks = hooks
+        vodHooks = invalid
+        if section = "vod" then vodHooks = hooks
+        catalog.saveSection(ctx.dir, "live", read.parsed.liveCategories, read.parsed.liveStreams, -1, liveHooks)
+        catalog.saveSection(ctx.dir, "vod", read.parsed.vodCategories, read.parsed.vodStreams, -1, vodHooks)
+        catalog.saveSection(ctx.dir, "series", [], [])
+        return invalid
+    end function
+
+    function loadFailure(err as dynamic, section as string) as object
+        described = xtream.describeError(err)
+        print "[catalog] Falha ao carregar "; section; ": "; described.detail
+        return { ok: false, error: described.message, errorDetail: described.detail, list: [] }
+    end function
+
+    ' Carrega do cache se houver; senão baixa da API (ou da playlist M3U) e grava.
+    ' ctx = { dir, apiBase, credentials, type }. { ok, error, errorDetail, list }
+    ' loadSection sem baixar a mesma seção duas vezes ao mesmo tempo (o Início e a aba abrem juntos): como a promessa
+    ' em andamento do catalogStore, quem chega depois espera a primeira terminar e lê o que ela gravou.
+    ' Dono da seção no campo m.global["catalogLoad_" + seção] (criado pela MainScene; "" = livre); sem ele, carrega direto.
+    ' Dona que some (Task morta por falta de memória) perde a vez depois de maxWaitMs sem trocar de dono.
+    function loadShared(transport as object, ctx as object, section as string, force as boolean, maxWaitMs = catalog.SHARED_WAIT_MS as integer, hooks = invalid as dynamic) as object
+        field = "catalogLoad_" + section
+        if m.global = invalid or not m.global.hasField(field) then return catalog.loadSection(transport, ctx, section, force, hooks)
+        token = CreateObject("roDeviceInfo").GetRandomUUID()
+        waited = false
+        seen = m.global.getField(field)
+        clock = CreateObject("roTimespan")
+        while true
+            current = m.global.getField(field)
+            ' A dona ainda grava, mas a ficha provisória já está no disco: a seção abre sem esperar (writeProvisional).
+            if current <> "" and not force and catalog.getMeta(ctx.dir, section) <> invalid then
+                return { ok: true, error: "", errorDetail: "", list: catalog.publishList(ctx.dir, section) }
+            end if
+            if current <> seen then
+                seen = current
+                clock.mark()
+            end if
+            if current = "" or clock.totalMilliseconds() >= maxWaitMs then
+                ' Ler e gravar não é atômico entre threads: as duas gravam, a última vence, e só quem relê a própria
+                ' ficha baixa. As gravações passam pela render thread em fila, então a pausa basta para a outra chegar.
+                m.global.setField(field, token)
+                sleep(catalog.CLAIM_SETTLE_MS)
+                if m.global.getField(field) = token then exit while
+                seen = m.global.getField(field)
+                clock.mark()
+            end if
+            waited = true
+            sleep(200)
+        end while
+        ' Quem esperou não força: a lista acabou de ser baixada pela outra carga.
+        result = catalog.loadSection(transport, ctx, section, force and not waited, hooks)
+        ' Só libera se ainda for a dona (quem tomou a vez por prazo libera a própria).
+        if m.global.getField(field) = token then m.global.setField(field, "")
+        return result
+    end function
+
+    ' hooks (opcional, funções chamadas na Task que carrega):
+    '   parsed(section, categorias, itens crus): a lista recém-baixada, antes de gravar (o Início mostra a 1ª fileira);
+    '   stage(texto): a etapa da carga (state.step do catalogStore), para a tela de carregamento;
+    '   progress(fração): quanto da seção já foi gravado (state.progress), a barra da tela de carregamento;
+    '   provisional(section): a ficha provisória está no disco e a seção já abre (a aba não espera a gravação).
+    function loadSection(transport as object, ctx as object, section as string, force as boolean, hooks = invalid as dynamic) as object
+        meta = invalid
+        if not force then meta = catalog.getMeta(ctx.dir, section)
+        if meta = invalid then
+            if ctx.type = "m3u" then
+                catalog.reportStage(hooks, "Baixando e processando a playlist M3U...")
+                err = catalog.importM3u(transport, ctx, section, hooks)
+                if err <> invalid then return catalog.loadFailure(err, section)
+            else
+                names = catalog.actions(section)
+                catalog.reportStage(hooks, "Baixando categorias...")
+                cats = catalog.requestList(transport, ctx, names.categories)
+                if cats.error <> invalid then return catalog.loadFailure(cats.error, section)
+                catalog.reportStage(hooks, "Baixando a lista (pode levar alguns segundos)...")
+                streams = catalog.requestList(transport, ctx, names.streams)
+                if streams.error <> invalid then return catalog.loadFailure(streams.error, section)
+                list = streams.list
+                if section = "series" then list = catalog.remapSeries(list)
+                if hooks <> invalid and hooks.parsed <> invalid then
+                    parsed = hooks.parsed
+                    parsed(section, cats.list, list)
+                end if
+                catalog.reportStage(hooks, "Salvando no dispositivo...")
+                catalog.saveSection(ctx.dir, section, cats.list, list, -1, hooks)
+            end if
+        end if
+        return { ok: true, error: "", errorDetail: "", list: catalog.publishList(ctx.dir, section) }
+    end function
+
+end namespace

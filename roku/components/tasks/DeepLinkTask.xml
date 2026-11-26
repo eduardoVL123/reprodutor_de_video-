@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Deep link (launch.deepLink): garante a seção no disco (catalog.loadShared, a mesma carga do Início) e acha o item
+     pelo id na lista aberta. link = { section, id }; result = { section, item } (item invalid sem lista ou sem achar). -->
+<component name="DeepLinkTask" extends="Task">
+    <interface>
+        <field id="link" type="assocarray" />
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

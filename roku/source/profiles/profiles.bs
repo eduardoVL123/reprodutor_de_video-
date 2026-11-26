@@ -1,0 +1,91 @@
+import "pkg:/source/utils/types.bs"
+' Port das regras de src/stores/profileStore.js (casos em profiles.spec.bs): até 5 perfis, os padrões Principal,
+' Família e Convidado, o último escolhido lembrado no aparelho e a escolha ao abrir quando há mais de um.
+' O perfil ativo da sessão fica em m.global.profile ({ id, name, color }), posto pelo MainScene.
+namespace profiles
+
+    const PROFILES_KEY = "app:profiles"
+    const ACTIVE_KEY = "app:activeProfileId"
+    const MAX = 5
+
+    function colors() as object
+        return ["#B8F000", "#2563eb", "#10b981", "#f59e0b", "#8b5cf6", "#ec4899"]
+    end function
+
+    function defaults() as object
+        return [
+            { id: "p1", name: "Principal", color: "#B8F000" },
+            { id: "p2", name: "Família", color: "#2563eb" },
+            { id: "p3", name: "Convidado", color: "#10b981" }
+        ]
+    end function
+
+    ' Lista salva (só perfis com id e nome; corrompida vira os padrões), o ativo e se pergunta quem assiste.
+    ' { list, activeId, gateOpen }
+    function hydrate(store as object) as object
+        list = []
+        saved = store.get(profiles.PROFILES_KEY)
+        if GetInterface(saved, "ifArray") <> invalid then
+            for each p in saved
+                if utils.isObject(p) and utils.textOr(p.id, "") <> "" and utils.isString(p.name) then list.push(p)
+            end for
+        end if
+        if list.count() = 0 then
+            list = profiles.defaults()
+            store.set(profiles.PROFILES_KEY, list)
+        end if
+        activeId = utils.textOr(store.get(profiles.ACTIVE_KEY), "")
+        if profiles.find(list, activeId) = invalid then
+            activeId = list[0].id
+            store.set(profiles.ACTIVE_KEY, activeId)
+        end if
+        return { list: list, activeId: activeId, gateOpen: list.count() > 1 }
+    end function
+
+    function find(list as object, id as string) as dynamic
+        for each p in list
+            if p.id = id then return p
+        end for
+        return invalid
+    end function
+
+    function active(list as object, activeId as string) as object
+        p = profiles.find(list, activeId)
+        if p <> invalid then return p
+        if list.count() > 0 then return list[0]
+        return profiles.defaults()[0]
+    end function
+
+    ' Grava o escolhido; false se o id não é de um perfil salvo.
+    function select(store as object, id as string) as boolean
+        state = profiles.hydrate(store)
+        if profiles.find(state.list, id) = invalid then return false
+        store.set(profiles.ACTIVE_KEY, id)
+        return true
+    end function
+
+    function canAdd(list as object) as boolean
+        return list.count() < profiles.MAX
+    end function
+
+    ' Cor que o formulário do ProfileGate.vue já traz marcada.
+    function suggestedColor(list as object) as string
+        palette = profiles.colors()
+        return palette[list.count() mod palette.count()]
+    end function
+
+    ' Cria e grava (sem mexer em `list`); invalid quando já há 5.
+    function add(store as object, list as object, name as string, color as string) as dynamic
+        if not profiles.canAdd(list) then return invalid
+        cleanName = name.trim()
+        if cleanName = "" then cleanName = "Perfil " + (list.count() + 1).toStr()
+        id = "p_" + CreateObject("roDateTime").asSeconds().toStr() + "_" + Right(CreateObject("roDeviceInfo").GetRandomUUID(), 4)
+        created = { id: id, name: cleanName, color: color }
+        updated = []
+        updated.append(list)
+        updated.push(created)
+        store.set(profiles.PROFILES_KEY, updated)
+        return created
+    end function
+
+end namespace

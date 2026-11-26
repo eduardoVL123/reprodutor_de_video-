@@ -1,0 +1,72 @@
+import "pkg:/source/utils/types.bs"
+' Regras da tela do player, port de src/utils/seriesTitle.js e de trechos de src/components/VideoPlayerOverlay.vue
+' (casos em playerView.spec.bs). O PlayerScreen só desenha o que sai daqui.
+namespace playerView
+
+    const NEXT_OFFER_BEFORE_END_S = 20 ' o próximo episódio aparece nos créditos, como nos streamings
+    const OSD_HIDE_MS = 4000
+    const SAVE_EVERY_S = 10
+    const SEEK_STEP_S = 10
+
+    ' parseSeriesTitle: "Série - T2:E5 - Nome" ou "Série S02E05 Nome" → { header: "Série · T2:E5", title: "Nome" }.
+    function seriesTitle(rawName as dynamic) as object
+        if not utils.isString(rawName) then return { header: "", title: "" }
+        trimmed = rawName.trim()
+        patterns = ["^(.+?)\s*-\s*T(\d+):E(\d+)\s*-\s*(.+)$", "^(.+?)(?:\s*-)?\s*S(\d+)E(\d+)(?:\s*-)?\s*(.+)$"]
+        for each pattern in patterns
+            found = CreateObject("roRegex", pattern, "i").match(trimmed)
+            if found.count() = 5 then
+                return { header: found[1].trim() + " · T" + Int(Val(found[2])).toStr() + ":E" + Int(Val(found[3])).toStr(), title: found[4].trim() }
+            end if
+        end for
+        return { header: "", title: trimmed }
+    end function
+
+    ' checkAutoResume: retoma do salvo se passou de 15 s e faltam mais de 30 s; vídeo curto (≤ 30 s) começa do início.
+    function resumeAt(savedTime as double, duration as double) as double
+        if duration <= 30 then return 0
+        if savedTime > 15 and savedTime < duration - 30 then return savedTime
+        return 0
+    end function
+
+    ' offerNextNearEnd: segundos da contagem do próximo episódio, ou 0 quando ainda não é a hora.
+    function nextOfferSeconds(duration as double, position as double, canOffer as boolean) as integer
+        if not canOffer then return 0
+        left = duration - position
+        if duration > playerView.NEXT_OFFER_BEFORE_END_S * 2 and left > 0 and left <= playerView.NEXT_OFFER_BEFORE_END_S then
+            seconds = Int(left)
+            if seconds < left then seconds = seconds + 1
+            return seconds
+        end if
+        return 0
+    end function
+
+    ' seek ±10 s dentro do vídeo.
+    function seekTarget(position as double, duration as double, delta as double) as double
+        target = position + delta
+        if target > duration then target = duration
+        if target < 0 then target = 0
+        return target
+    end function
+
+    ' Primeira linha visível de uma lista que só desenha `visible` linhas: a escolhida (index) fica sempre à vista.
+    function listTop(index as integer, top as integer, visible as integer, count as integer) as integer
+        if index < top then top = index
+        if index > top + visible - 1 then top = index - visible + 1
+        if top > count - visible then top = count - visible
+        if top < 0 then top = 0
+        return top
+    end function
+
+    ' streamFormat do nó Video para a extensão do stream (o .ts cru é o risco R6: tenta como "ts").
+    function streamFormat(extension as string) as string
+        ext = LCase(extension)
+        if ext = "m3u8" then return "hls"
+        if ext = "mpd" then return "dash"
+        for each known in ["mp4", "mov", "m4v", "mkv", "ts", "wmv", "mp3"]
+            if ext = known then return known
+        end for
+        return "mp4"
+    end function
+
+end namespace

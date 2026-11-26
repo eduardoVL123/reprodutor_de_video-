@@ -1,0 +1,231 @@
+' Casos de tests/licenseClient.test.js (bloqueio, carência, relógio, demonstração) e o texto assinado de
+' server/license/license-rules.mjs, com o relógio passado à mão.
+namespace tests
+
+    function licenseState(fields as object) as object
+        state = licensing.emptyState()
+        state.append(fields)
+        return state
+    end function
+
+    ' Armazenamento em memória (o storage.create real grava no registro).
+    function memoryStore() as object
+        return {
+            data: {},
+            get: function(key as string) as dynamic
+                return m.data[key]
+            end function,
+            set: function(key as string, value as dynamic) as boolean
+                m.data[key] = value
+                return true
+            end function,
+            remove: function(key as string) as boolean
+                m.data.delete(key)
+                return true
+            end function
+        }
+    end function
+
+    ' Serviço de licença falso: guarda os pedidos e devolve `response` ({ status, body } ou { error }).
+    function licenseTransport(response as object) as object
+        return {
+            response: response,
+            calls: [],
+            send: function(method as string, url as string, _timeoutMs as integer, headers as object, body as string) as object
+                m.calls.push({ method: method, url: url, body: ParseJson(body) })
+                return m.response
+            end function
+        }
+    end function
+
+    @suite("licensing")
+    class LicensingTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("bloqueio (G2)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sem o serviço no build nada bloqueia; lista de demonstração nunca bloqueia")
+        function _()
+            m.assertEqual(licensing.blockReason(licensing.emptyState(), "lista.com", false, 1000#, false), "")
+            m.assertEqual(licensing.blockReason(tests.licenseState({ access: "blocked", host: "lista.com", checkedAt: 10# }), "lista.com", true, 1000#, true), "")
+        end function
+
+        @it("lista sem nenhuma resposta ainda: bloqueia verificando até o servidor responder")
+        function _()
+            m.assertEqual(licensing.blockReason(licensing.emptyState(), "lista.com", false, 1000#, true), "checking")
+        end function
+
+        @it("resposta blocked ou suspended bloqueia essa lista; trial e activated liberam")
+        function _()
+            for each access in ["blocked", "suspended"]
+                m.assertEqual(licensing.blockReason(tests.licenseState({ access: access, host: "lista.com", checkedAt: 10# }), "lista.com", false, 1000#, true), access)
+            end for
+            for each access in ["trial", "activated", "partner"]
+                m.assertEqual(licensing.blockReason(tests.licenseState({ access: access, host: "lista.com", checkedAt: 10# }), "lista.com", false, 1000#, true), "")
+            end for
+        end function
+
+        @it("o bloqueio salvo de uma lista não bloqueia outra (ela espera a própria resposta)")
+        function _()
+            m.assertEqual(licensing.blockReason(tests.licenseState({ access: "blocked", host: "outra.com", checkedAt: 10# }), "lista.com", false, 1000#, true), "checking")
+        end function
+
+        @it("servidor fora do ar e esta lista nunca confirmada: pede conexão")
+        function _()
+            m.assertEqual(licensing.blockReason(tests.licenseState({ offline: true }), "lista.com", false, 1000#, true), "offline")
+        end function
+
+        @it("carência: ativado e sem serviço libera por 7 dias; depois pede conexão")
+        function _()
+            day = 86400000#
+            t0 = 1764000000000#
+            state = tests.licenseState({ access: "activated", host: "lista.com", checkedAt: t0, serverTime: t0, activationEndsAt: t0 + 30 * day, offline: true, lastSeen: t0 })
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, t0 + 6 * day, true), "")
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, t0 + 8 * day, true), "offline")
+        end function
+
+        @it("sem serviço: teste que venceu nesse meio-tempo e relógio voltado para trás pedem conexão")
+        function _()
+            day = 86400000#
+            t0 = 1764000000000#
+            trial = tests.licenseState({ access: "trial", host: "lista.com", checkedAt: t0, serverTime: t0, trialEndsAt: t0 + 2 * day, offline: true, lastSeen: t0 })
+            m.assertEqual(licensing.blockReason(trial, "lista.com", false, t0 + day, true), "")
+            m.assertEqual(licensing.blockReason(trial, "lista.com", false, t0 + 3 * day, true), "offline")
+            m.assertEqual(licensing.blockReason(trial, "lista.com", false, t0 - 2 * day, true), "offline")
+        end function
+
+        @it("sem serviço: relógio voltado depois de já ter andado não reabre a carência")
+        function _()
+            day = 86400000#
+            t0 = 1764000000000#
+            state = tests.licenseState({ access: "activated", host: "lista.com", checkedAt: t0, serverTime: t0, activationEndsAt: t0 + 60 * day, offline: true, lastSeen: t0 + 10 * day })
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, t0 + day, true), "offline")
+        end function
+
+        @it("bloqueio salvo continua valendo sem serviço")
+        function _()
+            t0 = 1764000000000#
+            state = tests.licenseState({ access: "blocked", host: "lista.com", checkedAt: t0, serverTime: t0, offline: true, lastSeen: t0 })
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, t0 + 1000, true), "blocked")
+        end function
+
+        @it("estado salvo com checkedAt adiantado à mão não passa da hora do servidor + 24 h")
+        function _()
+            t0 = 1764000000000#
+            state = licensing.stateFrom({ access: "activated", host: "lista.com", serverTime: t0, checkedAt: t0 + 30 * 86400000#, activationEndsAt: t0 + 60 * 86400000# })
+            m.assertEqual(state.checkedAt, licensing.number(t0 + 86400000#))
+            m.assertEqual(state.serverTime, licensing.number(t0))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("texto assinado e lista")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("igual byte a byte ao licenseSignedText do servidor, com e sem nonce")
+        function _()
+            m.assertEqual(licensing.signedText({ deviceKey: "abc123", host: "lista.com:8080", access: "activated", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: 1767225600000#, serverTime: 1764000000123#, nonce: "0123456789abcdef0123456789abcdef" }), "[""pulse-license-v1"",""abc123"",""lista.com:8080"",""activated"",""K7M2QPXY"",1764547200000,1767225600000,1764000000123,""0123456789abcdef0123456789abcdef""]")
+            m.assertEqual(licensing.signedText({ deviceKey: "abc123", host: "", access: "trial", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: invalid, serverTime: 1764000000123# }), "[""pulse-license-v1"",""abc123"","""",""trial"",""K7M2QPXY"",1764547200000,null,1764000000123]")
+        end function
+
+        @it("números grandes que vêm do ParseJson (LongInteger) saem iguais")
+        function _()
+            reply = ParseJson("{""trialEndsAt"":1764547200000,""serverTime"":1764000000123}")
+            m.assertEqual(licensing.jsonNumber(reply.trialEndsAt), "1764547200000")
+            m.assertEqual(licensing.jsonNumber(reply.serverTime), "1764000000123")
+        end function
+
+        @it("domínio da lista igual ao normalizeHost: só o nome, minúsculo, sem porta; sem ponto vira vazio")
+        function _()
+            m.assertEqual(licensing.listHost({ baseUrl: "HTTP://AppScdd.Top:8080/get.php?x=1" }), "appscdd.top")
+            m.assertEqual(licensing.listHost({ baseUrl: "appscdd.top:80" }), "appscdd.top")
+            m.assertEqual(licensing.listHost({ baseUrl: "http://user:pass@a.com/x" }), "a.com")
+            m.assertEqual(licensing.listHost({ baseUrl: "http://servidor:8080" }), "")
+            m.assertEqual(licensing.listHost(invalid), "")
+        end function
+
+        @it("demonstração só com a URL exata do build e lista M3U")
+        function _()
+            demo = "https://exemplo.com/demo.m3u"
+            m.assertTrue(licensing.isDemo({ type: "m3u", baseUrl: demo }, demo))
+            m.assertFalse(licensing.isDemo({ type: "m3u", baseUrl: "https://exemplo.com/outra.m3u" }, demo))
+            m.assertFalse(licensing.isDemo({ type: "xtream", baseUrl: demo }, demo))
+            m.assertFalse(licensing.isDemo({ type: "m3u", baseUrl: demo }, ""))
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("consulta ao serviço (refresh)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o corpo leva só chave do aparelho, plataforma roku, domínio, nonce e a compra do Roku Pay")
+        function _()
+            t = tests.licenseTransport({ status: 200, body: FormatJson({ access: "trial", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: invalid, serverTime: 1764000000000# }) })
+            licensing.refresh(t, tests.memoryStore(), "https://lic.test", { baseUrl: "http://Lista.com:8080/get.php", username: "u", password: "segredo" }, "tx-123456789", 1764000000000#)
+            m.assertEqual(t.calls[0].url, "https://lic.test/v1/access")
+            body = t.calls[0].body
+            m.assertEqual(body.platform, "roku")
+            m.assertEqual(body.host, "lista.com")
+            m.assertEqual(body.transactionId, "tx-123456789")
+            m.assertEqual(Len(body.deviceKey), 64)
+            m.assertTrue(Len(body.nonce) >= 16)
+            m.assertInvalid(body.username)
+            m.assertInvalid(body.password)
+            sem = tests.licenseTransport({ status: 200, body: "{}" })
+            licensing.refresh(sem, tests.memoryStore(), "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertInvalid(sem.calls[0].body.transactionId)
+        end function
+
+        @it("resposta do serviço vira o estado salvo; reabrir o app lê o mesmo estado")
+        function _()
+            store = tests.memoryStore()
+            t = tests.licenseTransport({ status: 200, body: FormatJson({ access: "activated", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: 1767225600000#, serverTime: 1764000000000# }) })
+            state = licensing.refresh(t, store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertFalse(state.offline)
+            m.assertEqual(state.access, "activated")
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000001000#, true), "")
+            again = licensing.loadSaved(store, device.getDeviceKey(store))
+            m.assertEqual(again.access, "activated")
+            m.assertEqual(again.host, "lista.com")
+            m.assertEqual(again.activationEndsAt, licensing.number(1767225600000#))
+        end function
+
+        @it("rede fora ou erro do serviço: estado salvo continua, marcado sem serviço (vale a carência)")
+        function _()
+            store = tests.memoryStore()
+            ok = tests.licenseTransport({ status: 200, body: FormatJson({ access: "activated", code: "K7M2QPXY", trialEndsAt: 1764547200000#, activationEndsAt: 1767225600000#, serverTime: 1764000000000# }) })
+            licensing.refresh(ok, store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            for each response in [{ error: "rede" }, { status: 500, body: "" }, { status: 200, body: "não é json" }]
+                state = licensing.refresh(tests.licenseTransport(response), store, "https://lic.test", { baseUrl: "lista.com" }, "", 1764000060000#)
+                m.assertTrue(state.offline)
+                m.assertEqual(state.access, "activated")
+                m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000060000#, true), "")
+            end for
+        end function
+
+        @it("lista nova sem serviço: pede conexão (não libera sem nenhuma resposta)")
+        function _()
+            state = licensing.refresh(tests.licenseTransport({ error: "rede" }), tests.memoryStore(), "https://lic.test", { baseUrl: "lista.com" }, "", 1764000000000#)
+            m.assertEqual(licensing.blockReason(state, "lista.com", false, 1764000000000#, true), "offline")
+        end function
+
+        @it("compra que vai ao serviço: a assinatura válida mais recente; sem nenhuma, vazio")
+        function _()
+            purchases = [
+                { purchaseId: "tx-antiga", status: "Valid", purchaseDate: "2026-01-10T10:00:00" },
+                { purchaseId: "tx-cancelada", status: "Invalid", purchaseDate: "2026-11-01T10:00:00" },
+                { purchaseId: "tx-nova", status: "Valid", purchaseDate: "2026-10-01T10:00:00" },
+                { purchaseId: "", status: "Valid", purchaseDate: "2026-12-01T10:00:00" }
+            ]
+            m.assertEqual(licensing.activePurchaseId(purchases), "tx-nova")
+            m.assertEqual(licensing.activePurchaseId([]), "")
+            m.assertEqual(licensing.activePurchaseId([{ purchaseId: "tx-sem-status" }]), "tx-sem-status")
+        end function
+
+        @it("sem a chave pública no pacote a assinatura não é exigida (como sem VITE_LICENSE_PUBLIC_KEY)")
+        function _()
+            m.assertTrue(licensing.verify({ access: "activated" }, "abc", "lista.com"))
+        end function
+
+    end class
+
+end namespace

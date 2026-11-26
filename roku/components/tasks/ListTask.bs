@@ -1,0 +1,31 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/net/maskSecrets.bs"
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/xtream/m3uParser.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/device/secrets.bs"
+import "pkg:/source/session/session.bs"
+
+sub init()
+    m.top.functionName = "runAction"
+end sub
+
+sub runAction()
+    p = m.top.params
+    transport = net.urlTransport()
+    store = storage.create()
+    if p.action = "remove" then
+        result = session.removeList(transport, store, p.listId)
+    else
+        if p.action = "add" then
+            result = session.login(transport, store, p.form)
+        else
+            result = session.switchList(transport, store, p.listId)
+        end if
+        result.outcome = "changed"
+    end if
+    result.session = invalid ' a senha não precisa voltar para a render thread
+    m.top.result = result
+end sub

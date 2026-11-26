@@ -1,0 +1,78 @@
+' Casos de tests/playerStore.test.js (Minha Fila) e das regras de enqueueItem/removeFromCustomQueue do playerStore.js.
+namespace tests
+
+    @suite("favorites")
+    class FavoritesTests extends rooibos.BaseTestSuite
+
+        protected override function beforeEach()
+            m.store = storage.create("pulse-test")
+            m.store.clear()
+            m.key = favorites.keyFor("p1", "lista-1")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Minha Fila por perfil e lista")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("chave por perfil e por lista, como o scopedKey do web")
+        function _()
+            m.assertEqual(m.key, "player:customQueue:p1:lista-1")
+            m.assertEqual(favorites.keyFor(invalid, ""), "player:customQueue:default")
+        end function
+
+        @it("descarta itens inválidos da Minha Fila salva")
+        function _()
+            m.store.set(m.key, [{ name: "sem id" }, "lixo", { stream_id: 1, name: "ok", section: "vod" }])
+            list = favorites.load(m.store, m.key)
+            m.assertEqual(list.count(), 1)
+            m.assertEqual(list[0].stream_id, 1)
+        end function
+
+        @it("link M3U com usuário e senha não fica em texto no registro, e volta ao reabrir")
+        function _()
+            url = "http://srv.test/joao/s3nh4/55.ts"
+            list = favorites.add(m.store, m.key, [], { stream_id: 55, name: "Canal", directUrl: url }, "live")
+            m.assertEqual(list.count(), 1)
+            m.assertEqual(Instr(1, FormatJson(m.store.get(m.key)), "s3nh4"), 0)
+            m.assertEqual(favorites.load(m.store, m.key)[0].directUrl, url)
+        end function
+
+        @it("não repete o mesmo id na mesma seção; o mesmo id em outra seção entra")
+        function _()
+            list = favorites.add(m.store, m.key, [], { stream_id: 7, name: "Filme" }, "vod")
+            m.assertInvalid(favorites.add(m.store, m.key, list, { stream_id: "7", name: "Filme" }, "vod"))
+            list = favorites.add(m.store, m.key, list, { series_id: 7, name: "Série" }, "series")
+            m.assertEqual(list.count(), 2)
+            m.assertTrue(favorites.has(list, { stream_id: 7 }, "series"))
+            m.assertFalse(favorites.has(list, { stream_id: 7 }, "live"))
+        end function
+
+        @it("sem seção ou sem id não entra")
+        function _()
+            m.assertInvalid(favorites.add(m.store, m.key, [], { stream_id: 1, name: "x" }))
+            m.assertInvalid(favorites.add(m.store, m.key, [], { name: "x" }, "vod"))
+        end function
+
+        @it("fila cheia não aceita mais")
+        function _()
+            full = []
+            for i = 1 to favorites.MAX
+                full.push({ stream_id: i, section: "vod" })
+            end for
+            m.assertInvalid(favorites.add(m.store, m.key, full, { stream_id: 999, name: "x" }, "vod"))
+        end function
+
+        @it("tirar um favorito grava a lista sem ele; limpar apaga")
+        function _()
+            list = favorites.add(m.store, m.key, [], { stream_id: 1, name: "A" }, "vod")
+            list = favorites.add(m.store, m.key, list, { stream_id: 2, name: "B" }, "live")
+            list = favorites.remove(m.store, m.key, list, "1", "vod")
+            m.assertEqual(list.count(), 1)
+            m.assertEqual(favorites.load(m.store, m.key)[0].name, "B")
+            favorites.clear(m.store, m.key)
+            m.assertEqual(favorites.load(m.store, m.key).count(), 0)
+        end function
+
+    end class
+
+end namespace

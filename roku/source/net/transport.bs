@@ -1,0 +1,91 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/xtream/errors.bs"
+import "pkg:/source/xtream/api.bs"
+' Transporte HTTP real para xtream.* (contrato em roku/source/xtream/api.bs): o papel do fetchWithTimeout/smartFetch
+' de src/services/xtreamTransport.js. Usa roUrlTransfer: só em Task node ou na thread principal, nunca na render.
+' Testes: roku/source/net/transport.spec.bs (integração contra `npm run mock`).
+namespace net
+
+    function urlTransport() as object
+        return { get: net.transportGet, send: net.transportSend }
+    end function
+
+    ' GET com tempo limite. { status, statusText, body, finalUrl } ou { error } (XtreamError de rede/tempo).
+    ' O limite vale para a resposta inteira: o roUrlTransfer não avisa a chegada de cada pedaço como o fetch.
+    function transportGet(url as string, timeoutMs as integer, accept as string) as object
+        return net.transportSend("GET", url, timeoutMs, { "Accept": accept }, "")
+    end function
+
+    ' Pedido com método, cabeçalhos e corpo (o pareamento faz POST com JSON); mesma resposta do transportGet.
+    function transportSend(method as string, url as string, timeoutMs as integer, headers as object, body as string) as object
+        where = xtream.describeUrl(url)
+        port = CreateObject("roMessagePort")
+        xfer = CreateObject("roUrlTransfer")
+        xfer.setMessagePort(port)
+        xfer.setUrl(url)
+        xfer.setCertificatesFile("common:/certs/ca-bundle.crt")
+        for each name in headers
+            xfer.addHeader(name, headers[name])
+        end for
+        xfer.retainBodyOnError(true)
+        xfer.enableEncodings(true)
+        started = false
+        if method = "GET" then
+            started = xfer.asyncGetToString()
+        else
+            xfer.setRequest(method)
+            started = xfer.asyncPostFromString(body)
+        end if
+        if not started then
+            return { error: xtream.newError("CORS_OR_NETWORK_ERROR", { host: where.host, endpoint: where.endpoint, raw: "roUrlTransfer recusou o pedido" }) }
+        end if
+
+        msg = wait(timeoutMs, port)
+        if type(msg) <> "roUrlEvent" then
+            xfer.asyncCancel()
+            return { error: xtream.newError("TIMEOUT_ERROR", { host: where.host, endpoint: where.endpoint, timeoutSec: (timeoutMs + 500) \ 1000, raw: "Sem resposta em " + timeoutMs.toStr() + "ms" }) }
+        end if
+
+        code = msg.getResponseCode()
+        headers = msg.getResponseHeadersArray()
+        ' Resposta HTTP de verdade sempre traz cabeçalhos. Sem nenhum, o servidor nem respondeu (o simulador brs-engine
+        ' devolve 503 + ECONNREFUSED em porta fechada; o aparelho devolve código negativo do curl).
+        if code > 0 and (GetInterface(headers, "ifArray") = invalid or headers.count() = 0) then code = -7
+        if code <= 0 then
+            reason = msg.getFailureReason()
+            if code = -28 then ' CURLE_OPERATION_TIMEDOUT
+                return { error: xtream.newError("TIMEOUT_ERROR", { host: where.host, endpoint: where.endpoint, timeoutSec: (timeoutMs + 500) \ 1000, raw: reason }) }
+            end if
+            return { error: xtream.newError("CORS_OR_NETWORK_ERROR", { host: where.host, endpoint: where.endpoint, raw: "curl " + code.toStr() + ": " + reason }) }
+        end if
+        return { status: code, statusText: msg.getFailureReason(), body: msg.getString(), finalUrl: net.finalUrlFromHeaders(url, headers) }
+    end function
+
+    ' O roUrlTransfer segue os redirecionamentos sozinho e não diz onde parou; a lista de cabeçalhos traz os de cada
+    ' salto, então o último Location é o endereço final (é por ele que o link curto acha usuário e senha).
+    ' shortcut: o simulador brs-engine NÃO traz os cabeçalhos dos saltos (lá o link curto que só redireciona pede
+    ' usuário e senha). Conferir no aparelho (spike da Fase 0); se o aparelho também não trouxer, montar a base pelo
+    ' server_info da resposta do player_api.php.
+    function finalUrlFromHeaders(url as string, headers as dynamic) as string
+        current = url
+        if GetInterface(headers, "ifArray") = invalid then return current
+        for each header in headers
+            for each name in header
+                if LCase(name) = "location" and header[name] <> "" then current = net.resolveUrl(current, header[name])
+            end for
+        end for
+        return current
+    end function
+
+    ' Resolve um endereço relativo (como o Location) a partir do atual.
+    function resolveUrl(base as string, location as string) as string
+        if xtream.hasScheme(location) then return location
+        parsed = xtream.parseUrl(base)
+        if parsed = invalid then return location
+        if location.startsWith("//") then return parsed.protocol + location
+        if location.startsWith("/") then return parsed.origin + location
+        dir = parsed.pathname.mid(0, parsed.pathname.instr(-1, "/") + 1)
+        return parsed.origin + dir + location
+    end function
+
+end namespace

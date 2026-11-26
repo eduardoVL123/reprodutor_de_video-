@@ -261,3 +261,49 @@ jobs:
           path: lg-webos/*.ipk
           if-no-files-found: error
           retention-days: 30
+
+  # App Roku (docs/roku/): BrighterScript compila, bslint valida, o pacote não pode passar de 4 MB (certificação) e os
+  # testes Rooibos rodam no simulador brs-engine. O que depende de hardware (vídeo, cripto) só vale no aparelho.
+  roku:
+    name: Pacote Roku (.zip)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Lint BrightScript
+        run: npm run roku:lint
+
+      - name: Build e limite de 4 MB
+        run: npm run roku:build
+        # Os mesmos serviços dos outros apps (scripts/roku.mjs buildConfig); a chave pública RSA vira pkg:/license-rsa.pem.
+        env:
+          PULSE_LICENSE_BASE_URL: ${{ vars.PULSE_LICENSE_BASE_URL }}
+          PULSE_PAIR_BASE_URL: ${{ vars.PULSE_PAIR_BASE_URL }}
+          PULSE_DEMO_PLAYLIST_URL: ${{ vars.PULSE_DEMO_PLAYLIST_URL }}
+          PULSE_LICENSE_RSA_PUBLIC_KEY: ${{ vars.PULSE_LICENSE_RSA_PUBLIC_KEY }}
+
+      - name: Testes Rooibos no simulador
+        run: npm run roku:test
+
+      - name: Testes de integração contra o servidor falso
+        run: npm run roku:test:integration
+
+      - name: Enviar pacote Roku
+        uses: actions/upload-artifact@v4
+        with:
+          name: roku
+          path: build/roku/pulse-roku.zip
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,77 @@
+' Áudio e legendas (recurso novo da Roku; passo 5 de docs/roku/domains/06-player.md).
+namespace tests
+
+    function audioTracks() as object
+        return [
+            { Track: "1", Language: "por", Name: "" },
+            { Track: "2", Language: "eng", Name: "English" },
+            { Track: "3", Language: "eng", Name: "English" }
+        ]
+    end function
+
+    function subtitleTracks() as object
+        return [{ TrackName: "webvtt/1", Language: "pt", Description: "" }, { TrackName: "eia608/1", Language: "en", Description: "English CC" }]
+    end function
+
+    @suite("tracks")
+    class TracksTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("áudio e legendas")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("áudio: o nome da faixa ou o idioma; nomes repetidos ganham número; marca a atual")
+        function _()
+            options = tracks.audioOptions(tests.audioTracks(), "2")
+            m.assertEqual(options[0].label, "Português")
+            m.assertEqual(options[1].label, "English 1")
+            m.assertEqual(options[2].label, "English 2")
+            m.assertTrue(options[1].selected)
+            m.assertFalse(options[0].selected)
+            m.assertTrue(tracks.audioOptions(tests.audioTracks(), "")[0].selected)
+        end function
+
+        @it("legendas: Desligadas primeiro; marcada só com as legendas ligadas")
+        function _()
+            on = tracks.subtitleOptions(tests.subtitleTracks(), "webvtt/1", true)
+            m.assertEqual(on[0].label, "Desligadas")
+            m.assertEqual(on[1].label, "Português")
+            m.assertEqual(on[2].label, "English CC")
+            m.assertTrue(on[1].selected)
+            m.assertFalse(on[0].selected)
+            off = tracks.subtitleOptions(tests.subtitleTracks(), "webvtt/1", false)
+            m.assertTrue(off[0].selected)
+            m.assertFalse(off[1].selected)
+        end function
+
+        @it("o menu só aparece com mais de um áudio ou alguma legenda")
+        function _()
+            m.assertFalse(tracks.hasChoices([{ Track: "1", Language: "por" }], []))
+            m.assertTrue(tracks.hasChoices([{ Track: "1", Language: "por" }], tests.subtitleTracks()))
+            m.assertTrue(tracks.hasChoices(tests.audioTracks(), invalid))
+            m.assertFalse(tracks.hasChoices(invalid, invalid))
+        end function
+
+        @it("o idioma escolhido fica guardado por perfil e vale no próximo vídeo, mesmo com outro código (pt/por)")
+        function _()
+            store = storage.create("pulse-test")
+            store.clear()
+            key = tracks.prefsKey("p2")
+            m.assertEqual(key, "player:tracks:p2")
+            audio = tracks.audioOptions(tests.audioTracks(), "2")
+            tracks.remember(store, key, "audio", audio[0])
+            subtitles = tracks.subtitleOptions(tests.subtitleTracks(), "", false)
+            tracks.remember(store, key, "subtitle", subtitles[1])
+            prefs = store.get(key)
+            m.assertEqual(prefs, { audio: "por", subtitle: "pt" })
+            m.assertEqual(tracks.preferred(tracks.audioOptions([{ Track: "7", Language: "eng" }, { Track: "8", Language: "pt" }], "7"), prefs.audio), "8")
+            m.assertEqual(tracks.preferred(subtitles, prefs.subtitle), "webvtt/1")
+            m.assertEqual(tracks.preferred(subtitles, "ja"), "")
+            tracks.remember(store, key, "subtitle", subtitles[0])
+            m.assertEqual(store.get(key).subtitle, tracks.OFF)
+            m.assertInvalid(storage.create("pulse-test").get(tracks.prefsKey("p1")))
+        end function
+
+    end class
+
+end namespace

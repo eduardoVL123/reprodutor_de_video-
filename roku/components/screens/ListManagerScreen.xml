@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Gerenciador de Listas (port de src/components/ListManagerModal.vue, sem pareamento nem lista do site: D9):
+     listas salvas (Ativar, Excluir com confirmação, Sair da conta atual) e o formulário de nova lista. Abre por cima
+     do Início pela Conta; Voltar ou Fechar volta para lá. Quando a lista aberta muda o app recomeça no Início (ou no
+     login, sem lista), com navigate { action: "reset" }. -->
+<component name="ListManagerScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

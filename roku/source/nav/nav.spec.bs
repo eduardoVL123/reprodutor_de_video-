@@ -1,0 +1,48 @@
+' Comportamento de tests/exitConfirm.test.js e da pilha de Voltar de src/utils/spatialNavigation.js.
+namespace tests
+
+    @suite("nav")
+    class NavTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Voltar")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("em tela interna volta um nível")
+        function _()
+            m.assertEqual(nav.onBack({ stackSize: 2, dialogOpen: false }), "pop")
+            m.assertEqual(nav.onBack({ stackSize: 5, dialogOpen: false }), "pop")
+        end function
+
+        @it("na tela inicial pergunta se quer sair")
+        function _()
+            m.assertEqual(nav.onBack({ stackSize: 1, dialogOpen: false }), "askExit")
+        end function
+
+        @it("com a pergunta aberta fecha a pergunta")
+        function _()
+            m.assertEqual(nav.onBack({ stackSize: 1, dialogOpen: true }), "closeDialog")
+            m.assertEqual(nav.onBack({ stackSize: 3, dialogOpen: true }), "closeDialog")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("Sair do Pulse Player?")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("tem o mesmo texto e botões do app web, com Cancelar primeiro")
+        function _()
+            m.assertEqual(nav.EXIT_TITLE, "Sair do Pulse Player?")
+            m.assertEqual(nav.exitButtons(), ["Cancelar", "Sair"])
+        end function
+
+        @it("Cancelar fecha a pergunta e Sair encerra o app")
+        @params(0, "closeDialog")
+        @params(1, "exit")
+        @params(-1, "closeDialog")
+        function _(buttonIndex, expected)
+            m.assertEqual(nav.onExitButton(buttonIndex), expected)
+        end function
+
+    end class
+
+end namespace

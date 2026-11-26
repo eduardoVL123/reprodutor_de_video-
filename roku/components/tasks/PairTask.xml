@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Pareamento pelo celular em segundo plano: rede (roUrlTransfer) e o QR (8 máscaras) fora da render thread. -->
+<component name="PairTask" extends="Task">
+    <interface>
+        <!-- { mode: "create" | "poll", run, base, code?, secret? } -->
+        <field id="request" type="assocarray" />
+        <!-- create: createSession + qr (linhas) · poll: pollSession; sempre com mode e run -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

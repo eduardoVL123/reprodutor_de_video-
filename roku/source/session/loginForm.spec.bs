@@ -1,0 +1,112 @@
+' Comportamento de src/views/Login.vue no controle remoto (sem pareamento, como no build sem VITE_PAIR_BASE_URL).
+namespace tests
+
+    @suite("loginForm")
+    class LoginFormTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("foco")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("começa no campo do link (sem pareamento)")
+        function _()
+            m.assertEqual(loginForm.initialFocus().row, "dns")
+        end function
+
+        @it("desce pelos campos na ordem da tela e para no Entrar")
+        function _()
+            focus = loginForm.initialFocus()
+            order = []
+            for i = 1 to 6
+                focus = loginForm.onKey("down", focus, 7).focus
+                order.push(focus.row)
+            end for
+            m.assertEqual(order, ["snippets", "user", "pass", "submit", "submit", "submit"])
+        end function
+
+        @it("sobe de volta e para no campo do link")
+        function _()
+            focus = { row: "submit", snippet: 0 }
+            for i = 1 to 6
+                focus = loginForm.onKey("up", focus, 7).focus
+            end for
+            m.assertEqual(focus.row, "dns")
+        end function
+
+        @it("na fileira de atalhos, esquerda e direita andam entre eles sem sair das pontas")
+        function _()
+            focus = { row: "snippets", snippet: 0 }
+            focus = loginForm.onKey("left", focus, 7).focus
+            m.assertEqual(focus.snippet, 0)
+            for i = 1 to 9
+                focus = loginForm.onKey("right", focus, 7).focus
+            end for
+            m.assertEqual(focus.snippet, 6)
+        end function
+
+        @it("a fileira de atalhos lembra o último atalho ao voltar para ela")
+        function _()
+            focus = loginForm.onKey("down", { row: "snippets", snippet: 3 }, 7).focus
+            focus = loginForm.onKey("up", focus, 7).focus
+            m.assertEqual(focus.row, "snippets")
+            m.assertEqual(focus.snippet, 3)
+        end function
+
+        @it("OK abre o teclado do campo, aplica o atalho ou envia")
+        @params("dns", "edit")
+        @params("user", "edit")
+        @params("pass", "edit")
+        @params("snippets", "snippet")
+        @params("submit", "submit")
+        function _(row, action)
+            m.assertEqual(loginForm.onKey("OK", { row: row, snippet: 0 }, 7).action, action)
+        end function
+
+        @it("com a lista de demonstração, o botão dela fica embaixo do Entrar e o OK nele pede a demo")
+        function _()
+            focus = loginForm.onKey("down", { row: "submit", snippet: 0 }, 7, true).focus
+            m.assertEqual(focus.row, "demo")
+            m.assertEqual(loginForm.onKey("down", focus, 7, true).focus.row, "demo")
+            m.assertEqual(loginForm.onKey("up", focus, 7, true).focus.row, "submit")
+            m.assertEqual(loginForm.onKey("OK", focus, 7, true).action, "demo")
+            m.assertEqual(loginForm.onKey("down", { row: "submit", snippet: 0 }, 7).focus.row, "submit")
+        end function
+
+        @it("Voltar não é tratado aqui (a tela inicial pergunta se quer sair)")
+        function _()
+            m.assertFalse(loginForm.onKey("back", loginForm.initialFocus(), 7).handled)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("envio")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("sem link não envia: mensagem do web e foco no campo do link")
+        function _()
+            check = loginForm.validate("  ")
+            m.assertFalse(check.ok)
+            m.assertEqual(check.error, "Informe o Link Curto ou URL do Servidor.")
+            m.assertEqual(check.errorDetail, "Campo DNS vazio.")
+            m.assertEqual(check.focus, "dns")
+        end function
+
+        @it("depois do erro, o foco vai para Usuário quando faltam credenciais e para Entrar nos outros casos")
+        function _()
+            m.assertEqual(loginForm.focusAfterError("Este link exige Usuário e Senha. Preencha os campos abaixo."), "user")
+            m.assertEqual(loginForm.focusAfterError("Usuário ou senha incorretos recusados pelo servidor."), "submit")
+        end function
+
+        @it("textos dos campos iguais aos do web")
+        function _()
+            fields = loginForm.fields()
+            m.assertEqual(fields.dns.label, "Link Curto ou URL do Servidor")
+            m.assertEqual(fields.dns.placeholder, "Ex: servidor.com:8080")
+            m.assertEqual(fields.user.label, "Usuário (opcional para link curto)")
+            m.assertEqual(fields.user.placeholder, "Seu usuário")
+            m.assertEqual(fields.pass.label, "Senha (opcional para link curto)")
+            m.assertEqual(fields.pass.placeholder, "Sua senha")
+        end function
+
+    end class
+
+end namespace

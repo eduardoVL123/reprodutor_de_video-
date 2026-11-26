@@ -1,0 +1,555 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/home/home.bs"
+import "pkg:/source/details/details.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/xtream/api.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/utils/seriesPlaylist.bs"
+import "pkg:/source/player/playerState.bs"
+import "pkg:/source/parental/parental.bs"
+
+' Medidas do MediaDetailsModal.vue em px (1920×1080): px-24/py-14, título text-tv-hero, meta text-tv-sm com gap-3.5,
+' botões h-[3.4rem] com gap-3.5; série: episódios w-[17rem] (miniatura 272×153) com espaço de 1.2rem.
+const PAD_X = 96
+const META_COLOR = "0xD4D4D8FF"
+const RATING_COLOR = "0x4ADE80FF"
+const PLOT_COLOR = "0xE5E5E5FF"
+const EPISODE_WIDTH = 272
+const EPISODE_GAP = 19
+const EPISODES_TOP = 803
+const RAIL_VIEW = 1728
+
+sub init()
+    bg = m.top.createChild("Rectangle")
+    bg.color = ui.DEEP
+    bg.width = 1920
+    bg.height = 1080
+    m.art = m.top.createChild("Poster")
+    m.art.translation = [614, 0]
+    m.art.width = 1306
+    m.art.height = 1080
+    m.art.opacity = 0.6
+    m.art.loadDisplayMode = "scaleToZoom"
+    ui.panelImage(m.top, "vignette-h.png", 0, 0, 1920, 1080)
+    ui.panelImage(m.top, "vignette-v.png", 0, 0, 1920, 1080)
+    m.body = m.top.createChild("Group")
+    m.nav = spatial.create([], {}, [1920, 1080])
+    m.focusables = {}
+    m.loading = true
+    m.error = ""
+    m.seriesData = invalid
+    m.activeSeason = ""
+    m.episodeIndex = 0
+    m.episodeOffset = 0
+    ' Voltando do player: o "Continuar assistindo" mudou (botões e barra de progresso).
+    m.top.observeField("focusedChild", "onFocusBack")
+end sub
+
+sub onFocusBack()
+    if m.item = invalid or m.top.focusedChild = invalid or m.wasFocused = true then
+        m.wasFocused = m.top.focusedChild <> invalid
+        return
+    end if
+    m.wasFocused = true
+    render()
+end sub
+
+' Histórico do perfil na lista ativa (o mesmo do player).
+function loadHistory() as object
+    store = storage.create()
+    active = session.hydrate(store)
+    listId = invalid
+    if active <> invalid then listId = active.id
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    m.historyKey = playerState.historyKey(profileId, listId)
+    return playerState.loadHistory(store, m.historyKey)
+end function
+
+sub onParams()
+    params = m.top.params
+    m.item = params.item
+    m.section = params.section
+    m.info = xtream.normalizeVodInfo(invalid, m.item)
+    m.focusId = "details-play-btn"
+    if m.section = "series" then m.focusId = "series-play-btn"
+    render()
+    m.top.setFocus(true)
+    loadDetails()
+end sub
+
+sub loadDetails()
+    m.loading = true
+    m.error = ""
+    current = session.hydrate(storage.create())
+    if current = invalid then return
+    apiBase = current.resolvedUrl
+    if apiBase = invalid or apiBase = "" then apiBase = current.baseUrl
+    m.task = CreateObject("roSGNode", "DetailsTask")
+    m.task.ctx = { apiBase: apiBase, credentials: { username: current.username, password: current.password } }
+    m.task.item = m.item
+    m.task.section = m.section
+    m.task.observeField("result", "onResult")
+    m.task.control = "run"
+end sub
+
+sub onResult(event as object)
+    data = event.getData()
+    m.info = data.info
+    m.seriesData = data.seriesData
+    m.error = data.error
+    m.loading = false
+    if m.section = "series" then
+        seasons = seriesPlaylist.seasonsOf(m.seriesData)
+        ' Abre na temporada do episódio em andamento (MediaDetailsModal.vue), senão na primeira.
+        resume = playerState.seriesResume(loadHistory(), m.seriesData)
+        if resume <> invalid then
+            m.activeSeason = resume.seasonKey
+        else if seasons.count() > 0 then
+            m.activeSeason = seasons[0].key
+        end if
+    end if
+    render()
+end sub
+
+' ---------- Desenho ----------
+
+sub render()
+    m.body.removeChildrenIndex(m.body.getChildCount(), 0)
+    m.focusables = {}
+    m.navItems = []
+    m.episodeStrip = invalid
+    m.episodeCount = invalid
+    art = home.pickArtwork(m.item, m.info)
+    m.art.uri = art.url
+    if m.section = "series" then
+        renderSeries()
+    else
+        renderMovie()
+    end if
+    m.nav.items = m.navItems
+    m.nav.groupRects = { "media-details": [0, 0, 1920, 1080], "series-episodes": [0, EPISODES_TOP, 1920, 221] }
+    if m.focusables[m.focusId] = invalid then m.focusId = spatial.firstNavigable(m.nav)
+    spatial.remember(m.nav, m.focusId)
+    renderFocus()
+end sub
+
+' Marca + FILME/SÉRIE (tracking 0.25em), título em até 2 linhas e a linha de meta.
+function renderHeader(view as object, titleTop as float, titleWidth as float, metaTop as float) as float
+    mark = m.body.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 19
+    mark.height = 20
+    mark.translation = [PAD_X, 60]
+    ui.trackedText(m.body, view.badge, ui.font(700, 20), ui.NEUTRAL_400, 125, 56, 5)
+    title = ui.text(m.body, UCase(view.title), ui.font(900, 64), ui.WHITE, PAD_X, titleTop, titleWidth, 60.8)
+    title.maxLines = 2
+    x = PAD_X
+    for i = 0 to view.meta.count() - 1
+        part = view.meta[i]
+        color = META_COLOR
+        weight = 500
+        if part.kind = "rating" then
+            color = RATING_COLOR
+            weight = 700
+        end if
+        label = ui.inlineText(m.body, part.text, ui.font(weight, 20), color, x, metaTop, 28)
+        x = x + label.boundingRect().width + 14
+        ' Ponto entre nota, ano e duração/temporadas (o gênero vem sem ponto, como no web).
+        nextPart = view.meta[i + 1]
+        if part.kind <> "genre" and nextPart <> invalid and nextPart.kind <> "genre" then
+            dot = m.body.createChild("Rectangle")
+            dot.color = ui.NEUTRAL_500
+            dot.width = 4
+            dot.height = 4
+            dot.translation = [x, metaTop + 12]
+            x = x + 4 + 14
+        end if
+    end for
+    return metaTop + 28
+end function
+
+sub renderMovie()
+    ' hasMovieProgress: passou de 15 s → barra, "Continuar assistindo" e "Assistir do início".
+    movieId = favorites.plainItem(m.item, "vod").stream_id
+    saved = 0#
+    pct = 0#
+    for each entry in loadHistory()
+        if entry.section = "vod" and favorites.text(entry.stream_id) = favorites.text(movieId) then
+            saved = entry.currentTime
+            pct = entry.progressPct
+        end if
+    end for
+    view = mediaDetails.movieView(m.info, saved, pct)
+    metaBottom = renderHeader(view, 92, 704, 169)
+    if view.progress <> invalid then
+        ' w-80 h-1.5 bg-white/15 com o limão e "Em andamento · Retomar de …" (text-tv-xs, neutral-300), mt-5 gap-4.
+        ui.panel(m.body, "progress-track", PAD_X, metaBottom + 31, 320, 6)
+        fillWidth = Int(320 * view.progress.pct / 100)
+        if fillWidth >= 6 then ui.panel(m.body, "progress-fill", PAD_X, metaBottom + 31, fillWidth, 6)
+        ui.inlineText(m.body, view.progress.text, ui.font(400, 20), "0xD4D4D4FF", PAD_X + 336, metaBottom + 20, 28)
+    end if
+    ' Bloco de baixo (justify-between): botões em 970, Elenco/Direção e a sinopse acima deles.
+    buttonsTop = 970
+    bottom = buttonsTop - 32
+    cast = utils.textOr(m.info.cast, "")
+    director = utils.textOr(m.info.director, "")
+    if m.loading then
+        widths = [704, 645, 422]
+        for i = 0 to 2
+            bar = m.body.createChild("Rectangle")
+            bar.color = "0xFFFFFF14"
+            bar.width = widths[i]
+            bar.height = 16
+            bar.translation = [PAD_X, bottom - 16 - (2 - i) * 28]
+        end for
+    else
+        rows = []
+        if director <> "" then rows.unshift({ label: "Direção:", value: director })
+        if cast <> "" then rows.unshift({ label: "Elenco:", value: cast })
+        y = bottom - rows.count() * 28 - (rows.count() - 1) * 4
+        if rows.count() = 0 then y = bottom + 16
+        for each row in rows
+            head = ui.inlineText(m.body, row.label, ui.font(600, 20), ui.NEUTRAL_500, PAD_X, y, 28)
+            value = ui.text(m.body, row.value, ui.font(400, 20), ui.NEUTRAL_400, PAD_X + head.boundingRect().width + 5, y, 704 - head.boundingRect().width - 5, 28)
+            value.wrap = false
+            y = y + 32
+        end for
+        plotBottom = bottom - rows.count() * 28 - (rows.count() - 1) * 4 - 16
+        if rows.count() = 0 then plotBottom = bottom
+        plot = ui.text(m.body, utils.textOr(m.info.plot, ""), ui.font(400, 24), PLOT_COLOR, PAD_X, 0, 704, 39)
+        plot.maxLines = 4
+        plotHeight = ui.textHeight(plot, 39)
+        if plotHeight > 156 then plotHeight = 156
+        plot.translation = [PAD_X, plot.translation[1] + plotBottom - plotHeight]
+    end if
+    renderButtons(view.buttons, buttonsTop, "movie-details-actions")
+end sub
+
+sub renderSeries()
+    view = mediaDetails.seriesView(m.info, m.seriesData, playerState.seriesResume(loadHistory(), m.seriesData))
+    metaBottom = renderHeader(view, 90, 800, 163)
+    y = metaBottom + 12
+    if m.loading then
+        widths = [800, 600]
+        for i = 0 to 1
+            bar = m.body.createChild("Rectangle")
+            bar.color = "0xFFFFFF14"
+            bar.width = widths[i]
+            bar.height = 16
+            bar.translation = [PAD_X, y + i * 24]
+        end for
+        y = y + 40
+    else
+        plot = ui.text(m.body, utils.textOr(m.info.plot, ""), ui.font(400, 20), PLOT_COLOR, PAD_X, y, 800, 32.5)
+        plot.maxLines = 2
+        plotHeight = ui.textHeight(plot, 32.5)
+        if plotHeight > 65 then plotHeight = 65
+        y = y + plotHeight
+    end if
+    renderButtons(view.buttons, y + 20, "series-details-actions")
+
+    if m.loading then
+        ui.inlineText(m.body, "Carregando episódios...", ui.font(400, 20), ui.NEUTRAL_400, 0, 0, 28)
+        centerLast(640)
+        return
+    end if
+    if m.error <> "" then
+        message = ui.text(m.body, m.error, ui.font(500, 24), ui.RED_300, 160, 600, 1600, 39)
+        message.horizAlign = "center"
+        renderButtons([{ id: "series-retry-btn", label: "Tentar novamente" }], 680, "series-error-actions")
+        return
+    end if
+
+    ' Abas de temporada (a ativa em branco) e "N episódios".
+    x = PAD_X
+    for each season in view.seasons
+        active = season.key = m.activeSeason
+        group = m.body.createChild("Group")
+        group.translation = [x, 733]
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 56)
+        image = "btn-glass"
+        weight = 600
+        color = "0xD4D4D4FF"
+        if active then
+            image = "btn-primary"
+            weight = 700
+            color = ui.BLACK
+        end if
+        ' Vidro com borda de 1 px (46 de altura); a ativa em branco sem borda (44, centrada na linha).
+        border = 1
+        if active then border = 0
+        bg = ui.panel(group, image, 0, 1 - border, 10, 44 + 2 * border)
+        label = ui.inlineText(group, season.label, ui.font(weight, 20), color, 24 + border, 9, 28)
+        width = label.boundingRect().width + 48 + 2 * border
+        bg.width = width
+        ring.width = width + 10
+        group.scaleRotateCenter = [width / 2, 23]
+        addFocusable(season.id, "series-seasons", "media-details", [x, 733, width, 46], group, ring, 1.02, true)
+        x = x + width + 12
+    end for
+    episodes = mediaDetails.episodeCards(m.seriesData, m.activeSeason, utils.textOr(m.info.poster, ""), loadHistory())
+    if view.seasons.count() > 0 then ui.inlineText(m.body, mediaDetails.episodeCountText(episodes.count()), ui.font(500, 20), ui.NEUTRAL_400, x + 8, 742, 28)
+
+    if episodes.count() = 0 then
+        ui.inlineText(m.body, "Nenhum episódio encontrado para esta temporada.", ui.font(400, 20), ui.NEUTRAL_400, PAD_X, EPISODES_TOP + 32, 28)
+        return
+    end if
+    m.episodeCount = episodes.count()
+    track = m.body.createChild("Group")
+    track.translation = [PAD_X, EPISODES_TOP]
+    track.clippingRect = [-12, -16, RAIL_VIEW + 24, 221 + 40]
+    m.episodeStrip = track.createChild("Group")
+    ' Baixo entra no episódio em andamento desta temporada (activeEpisodeIndex do web), senão no E1.
+    m.activeEpisode = 0
+    resume = playerState.seriesResume(loadHistory(), m.seriesData)
+    if resume <> invalid and resume.seasonKey = m.activeSeason then m.activeEpisode = resume.episodeIndex
+    for i = 0 to episodes.count() - 1
+        renderEpisode(episodes[i], i)
+    end for
+end sub
+
+' Miniatura 16:9 com selo E<n>, título e duração embaixo (o anel e o zoom 1.08 da fileira).
+sub renderEpisode(ep as object, index as integer)
+    x = index * (EPISODE_WIDTH + EPISODE_GAP)
+    group = m.episodeStrip.createChild("Group")
+    group.translation = [x, 0]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, EPISODE_WIDTH + 10, 163)
+    ui.panel(group, "card", 0, 0, EPISODE_WIDTH, 153)
+    if home.isHttpUrl(ep.image) then
+        thumb = group.createChild("Poster")
+        thumb.translation = [1, 1]
+        thumb.width = EPISODE_WIDTH - 2
+        thumb.height = 151
+        thumb.loadDisplayMode = "scaleToZoom"
+        thumb.uri = ep.image
+    end if
+    ui.panelImage(group, "card-shade.png", 0, 0, EPISODE_WIDTH, 153)
+    ui.panel(group, "card-mask", 0, 0, EPISODE_WIDTH, 153)
+    badge = ui.panel(group, "badge", 12, 12, 10, 30)
+    badgeText = ui.inlineText(group, ep.badge, ui.font(800, 20), ui.WHITE, 21, 13, 28)
+    badge.width = badgeText.boundingRect().width + 18
+    ' Episódio começado: .tv-progress no pé da miniatura (h-1, white/25 com o limão), como no Início.
+    if ep.progress > 0 then
+        track = group.createChild("Rectangle")
+        track.color = "0xFFFFFF40"
+        track.translation = [1, 148]
+        track.width = EPISODE_WIDTH - 2
+        track.height = 4
+        fill = group.createChild("Rectangle")
+        fill.color = ui.ACCENT
+        fill.translation = [1, 148]
+        fill.width = (EPISODE_WIDTH - 2) * ep.progress / 100
+        fill.height = 4
+    end if
+    title = ui.text(group, ep.title, ui.font(700, 20), ui.WHITE, 0, 163, EPISODE_WIDTH, 28)
+    title.wrap = false
+    subtitle = ui.text(group, ep.subtitle, ui.font(400, 20), META_COLOR, 0, 193, EPISODE_WIDTH, 28)
+    subtitle.wrap = false
+    group.scaleRotateCenter = [EPISODE_WIDTH / 2, 76]
+    item = addFocusable("episode-card-" + index.toStr(), "rail-episode-card", "series-episodes", [0, EPISODES_TOP, EPISODE_WIDTH, 221], group, ring, 1.08, true)
+    item.index = index
+    item.active = index = m.activeEpisode
+end sub
+
+' Botões h-[3.4rem]: primário branco (px-8, bold) e os de vidro (px-7, medium), ícone w-4 e gap-3.
+sub renderButtons(buttons as object, top as float, row as string)
+    icons = { "details-restart-btn": "icon-restart", "details-play-btn": "icon-play", "series-play-btn": "icon-play", "details-fav-btn": "icon-heart-small", "series-fav-btn": "icon-heart-small", "details-back-btn": "icon-back", "series-back-btn": "icon-back" }
+    x = PAD_X
+    saved = isSaved()
+    for i = 0 to buttons.count() - 1
+        button = buttons[i]
+        favorite = button.id = "details-fav-btn" or button.id = "series-fav-btn"
+        ' isBookmarked do MediaDetailsModal.vue: coração cheio em limão e "Nos favoritos".
+        if favorite and saved then button = { id: button.id, label: "Nos favoritos" }
+        primary = i = 0
+        padX = 28
+        weight = 500
+        color = ui.WHITE
+        image = "btn-glass"
+        if primary then
+            padX = 32
+            weight = 700
+            color = ui.BLACK
+            image = "btn-primary"
+        end if
+        group = m.body.createChild("Group")
+        group.translation = [x, top]
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 64)
+        bg = ui.panel(group, image, 0, 0, 10, 54)
+        label = ui.inlineText(group, button.label, ui.font(weight, 20), color, 0, 13, 28)
+        ' O de vidro tem borda de 1 px (tv-btn), que entra na largura.
+        border = 1
+        if primary then border = 0
+        textX = border + padX
+        if icons[button.id] <> invalid then
+            icon = group.createChild("Poster")
+            icon.uri = "pkg:/images/ui/" + icons[button.id] + ".png"
+            icon.width = 16
+            icon.height = 16
+            icon.blendColor = color
+            if favorite and saved then
+                icon.uri = "pkg:/images/ui/icon-heart-filled.png"
+                icon.blendColor = ui.ACCENT
+            end if
+            icon.translation = [border + padX, 19]
+            textX = border + padX + 28
+        end if
+        label.translation = [textX, label.translation[1]]
+        width = textX + label.boundingRect().width + padX + border
+        bg.width = width
+        ring.width = width + 10
+        group.scaleRotateCenter = [width / 2, 27]
+        addFocusable(button.id, row, "media-details", [x, top, width, 54], group, ring, 1.02, false)
+        x = x + width + 14
+    end for
+end sub
+
+' Centraliza o último texto desenhado na faixa dos episódios (estado de carregando).
+'' ---------- Reprodução (playMovie, playSeries e playEpisodeList do MediaDetailsModal.vue) ----------
+
+sub playMovie()
+    movie = {}
+    movie.append(m.item)
+    movie.section = "vod"
+    if utils.textOr(movie.container_extension, "") = "" then movie.container_extension = utils.textOr(m.info.container_extension, "mp4")
+    ' Aberto de uma categoria: toca com a fila dela (Anterior/Próximo e o próximo automático).
+    play = m.top.params.play
+    if utils.isObject(play) then
+        play.params.catalog.item = movie
+        m.top.navigate = play
+        return
+    end if
+    m.top.navigate = playerState.openRequest(playerState.forItem(movie))
+end sub
+
+' A série inteira a partir do episódio escolhido: o próximo segue sozinho, inclusive para a outra temporada.
+sub playEpisodeList(seasonKey as string, indexInSeason as integer)
+    episode = seriesPlaylist.episodesOf(m.seriesData, seasonKey)[indexInSeason]
+    if episode = invalid then return
+    items = seriesPlaylist.buildPlaylist({ seriesData: m.seriesData, seriesName: utils.textOr(m.info.name, utils.textOr(m.item.name, "Série")), seriesId: favorites.text(favorites.plainItem(m.item, "series").stream_id), fallbackImage: utils.textOr(m.info.poster, ""), categoryId: m.item.category_id, categoryIds: m.item.category_ids })
+    startIndex = 0
+    for i = 0 to items.count() - 1
+        if favorites.text(items[i].stream_id) = favorites.text(episode.id) then startIndex = i
+    end for
+    m.top.navigate = playerState.openRequest(playerState.forPlaylist(items, startIndex))
+end sub
+
+' Continua do episódio mais recente desta série no histórico do perfil; sem histórico, o primeiro.
+sub playSeries()
+    seasons = seriesPlaylist.seasonsOf(m.seriesData)
+    if seasons.count() = 0 then return
+    resume = playerState.seriesResume(loadHistory(), m.seriesData)
+    if resume <> invalid then
+        playEpisodeList(resume.seasonKey, resume.episodeIndex)
+    else
+        playEpisodeList(seasons[0].key, 0)
+    end if
+end sub
+
+function isSaved() as boolean
+    store = storage.create()
+    return favorites.has(favorites.load(store, favorites.activeKey(store)), m.item, m.section)
+end function
+
+' toggleBookmark do MediaDetailsModal.vue.
+sub toggleFavorite()
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    if favorites.has(list, m.item, m.section) then
+        favorites.remove(store, key, list, favorites.plainItem(m.item, m.section).stream_id, m.section)
+    else
+        favorites.add(store, key, list, m.item, m.section)
+    end if
+    render()
+end sub
+
+sub centerLast(y as float)
+    label = m.body.getChild(m.body.getChildCount() - 1)
+    label.translation = [(1920 - label.boundingRect().width) / 2, y]
+end sub
+
+function addFocusable(id as string, row as string, group as string, rect as object, node as object, ring as object, zoom as float, slide as boolean) as object
+    entry = { id: id, groups: [group], row: row, rect: rect, active: false, slide: slide, scroller: false, node: node, ring: ring, zoom: zoom }
+    m.focusables[id] = entry
+    m.navItems.push(entry)
+    return entry
+end function
+
+' ---------- Foco ----------
+
+sub renderFocus()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = id = m.focusId
+        entry.ring.visible = focused
+        if focused then
+            entry.node.scale = [entry.zoom, entry.zoom]
+        else
+            entry.node.scale = [1, 1]
+        end if
+    end for
+    ' Fileira de episódios desliza para o episódio focado ficar no início (HorizontalRail).
+    if m.episodeStrip <> invalid and m.episodeCount <> invalid then
+        m.episodeStrip.translation = [home.railOffset({ index: m.episodeIndex, itemSize: EPISODE_WIDTH, gap: EPISODE_GAP, count: m.episodeCount, viewport: RAIL_VIEW }), 0]
+    end if
+end sub
+
+' Retângulos dos episódios na tela agora (a fileira desliza).
+sub refreshEpisodeRects()
+    offset = 0
+    if m.episodeStrip <> invalid then offset = m.episodeStrip.translation[0]
+    for each id in m.focusables
+        entry = m.focusables[id]
+        if entry.index <> invalid then entry.rect = [PAD_X + offset + entry.index * (EPISODE_WIDTH + EPISODE_GAP), EPISODES_TOP, EPISODE_WIDTH, 221]
+    end for
+end sub
+
+sub focusOn(id as string)
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    entry = m.focusables[id]
+    if entry <> invalid and entry.index <> invalid then m.episodeIndex = entry.index
+    renderFocus()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "up" or key = "down" or key = "left" or key = "right" then
+        refreshEpisodeRects()
+        target = spatial.navigate(m.nav, m.focusId, key)
+        if target <> "" then focusOn(target)
+        return true
+    end if
+    if key <> "OK" then return false
+    result = mediaDetails.onSelect(m.focusId, { activeSeason: m.activeSeason, episodeIndex: m.episodeIndex })
+    if result.action = "back" then
+        m.top.navigate = { action: "back" }
+    else if result.action = "season" then
+        m.activeSeason = result.season
+        m.episodeIndex = 0
+        render()
+    else if result.action = "favorite" then
+        toggleFavorite()
+    else if result.action = "play" and m.section <> "series" then
+        playMovie()
+    else if result.action = "restart" then
+        ' playFromStart: sai do "Continuar assistindo" e toca do começo.
+        history = loadHistory()
+        playerState.removeFromHistory(storage.create(), m.historyKey, history, favorites.plainItem(m.item, "vod").stream_id, "vod")
+        m.focusId = "details-play-btn"
+        playMovie()
+    else if result.action = "play" then
+        playSeries()
+    else if result.action = "episode" then
+        playEpisodeList(m.activeSeason, result.episodeIndex)
+    else if m.focusId = "series-retry-btn" then
+        loadDetails()
+        render()
+    end if
+    return true
+end function

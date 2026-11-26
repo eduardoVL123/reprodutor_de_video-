@@ -1,0 +1,64 @@
+' Beacons de abertura da certificação Roku (launch.bs).
+namespace tests
+
+    @suite("launch")
+    class LaunchTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("beacons de abertura")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("abrindo direto no Início: AppLaunchComplete só quando ele desenhou, e uma vez")
+        function _()
+            state = launch.create()
+            m.assertEqual(launch.onTop(state, "HomeScreen", false), [])
+            m.assertEqual(launch.onTop(state, "HomeScreen", true), ["AppLaunchComplete"])
+            m.assertEqual(launch.onTop(state, "HomeScreen", true), [])
+        end function
+
+        @it("perfil antes do Início: o diálogo abre uma vez e fecha antes do AppLaunchComplete")
+        function _()
+            state = launch.create()
+            m.assertEqual(launch.onTop(state, "HomeScreen", false), [])
+            m.assertEqual(launch.onTop(state, "ProfileScreen", false), ["AppDialogInitiate"])
+            ' O Início desenhou embaixo do perfil: ainda não conta (não está visível).
+            m.assertEqual(launch.onTop(state, "ProfileScreen", true), [])
+            m.assertEqual(launch.onTop(state, "HomeScreen", true), ["AppDialogComplete", "AppLaunchComplete"])
+        end function
+
+        @it("primeira abertura passa por termos e login: um único par de diálogo")
+        function _()
+            state = launch.create()
+            m.assertEqual(launch.onTop(state, "FtueScreen", false), ["AppDialogInitiate"])
+            m.assertEqual(launch.onTop(state, "LoginScreen", false), [])
+            m.assertEqual(launch.onTop(state, "PairScreen", false), [])
+            m.assertEqual(launch.onTop(state, "HomeScreen", true), ["AppDialogComplete", "AppLaunchComplete"])
+        end function
+
+        @it("depois da abertura, telas internas e outros diálogos não disparam nada")
+        function _()
+            state = launch.create()
+            launch.onTop(state, "HomeScreen", true)
+            m.assertEqual(launch.onTop(state, "ProfileScreen", true), [])
+            m.assertEqual(launch.onTop(state, "DetailsScreen", true), [])
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("deep link")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("filme, série e canal viram a seção e o id do item; o resto fica no Início")
+        function _()
+            m.assertEqual(launch.deepLink({ contentId: "1201", mediaType: "movie" }), { section: "vod", id: "1201" })
+            m.assertEqual(launch.deepLink({ contentid: "77", mediatype: "Series" }), { section: "series", id: "77" })
+            m.assertEqual(launch.deepLink({ contentId: "m3u_live_abc", mediaType: "live" }), { section: "live", id: "m3u_live_abc" })
+            m.assertInvalid(launch.deepLink({ contentId: "5", mediaType: "episode" }))
+            m.assertInvalid(launch.deepLink({ contentId: "", mediaType: "movie" }))
+            m.assertInvalid(launch.deepLink({ mediaType: "movie" }))
+            m.assertInvalid(launch.deepLink({ contentId: String(256, "x"), mediaType: "movie" }))
+            m.assertInvalid(launch.deepLink(invalid))
+        end function
+
+    end class
+
+end namespace

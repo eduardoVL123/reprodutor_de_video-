@@ -1,0 +1,79 @@
+' Casos de describeError em tests/xtreamApi.test.js e mensagens de src/services/xtreamErrors.js.
+namespace tests
+
+    @suite("xtream errors")
+    class XtreamErrorsTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("describeError")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("erro feito para o usuário passa como está")
+        function _()
+            err = xtream.newError("HTTP_ERROR", { status: 503, raw: "HTTP 503" })
+            m.assertTrue(xtream.describeError(err).message.instr("Tente de novo em alguns minutos") >= 0)
+            m.assertTrue(xtream.describeError(err).detail.instr("[HTTP_ERROR]") >= 0)
+        end function
+
+        @it("erro inesperado não vai cru para a tela e não vaza senha no detalhe")
+        function _()
+            err = { message: "QuotaExceededError em http://srv.test/get.php?username=u&password=senha-secreta" }
+            result = xtream.describeError(err)
+            m.assertEqual(result.message, xtream.UNEXPECTED_ERROR)
+            m.assertTrue(result.detail.instr("[UNEXPECTED]") >= 0)
+            m.assertTrue(result.detail.instr("senha-secreta") < 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("newError")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("mensagens iguais às do app web")
+        @params("AUTH_INVALID_CREDENTIALS", {}, "Usuário ou senha incorretos recusados pelo servidor.")
+        @params("AUTH_ACCOUNT_EXPIRED", { accountStatus: "Expired" }, "Conta inativa ou expirada no servidor (Status: Expired).")
+        @params("AUTH_ACCOUNT_EXPIRED", {}, "Conta inativa ou expirada no servidor (Status: desconhecido).")
+        @params("HTTP_ERROR", { status: 404 }, "O servidor recusou o pedido (erro 404). Confira o endereço da lista.")
+        @params("HTTP_ERROR", { status: 502 }, "O servidor da lista está com problema (erro 502). Tente de novo em alguns minutos.")
+        @params("TIMEOUT_ERROR", { timeoutSec: 15 }, "O servidor demorou mais de 15s para responder. Confira sua internet e tente de novo.")
+        @params("timeout", { timeoutSec: 15 }, "O servidor demorou mais de 15s para responder. Confira sua internet e tente de novo.")
+        @params("INVALID_INPUT", "Preencha o usuário.", "Preencha o usuário.")
+        @params("NO_SESSION", {}, "Nenhuma lista ativa. Conecte-se novamente.")
+        @params("QUALQUER", {}, "Falha ao conectar. Verifique seus dados ou a conexão com a internet.")
+        function _(code, info, expected)
+            m.assertEqual(xtream.newError(code, info).userMessage, expected)
+        end function
+
+        @it("código legado minúsculo vira o novo e o detalhe técnico mascara a senha")
+        function _()
+            err = xtream.newError("network", { host: "http://srv.test", endpoint: "/get.php", raw: "http://srv.test/get.php?password=abc" })
+            m.assertEqual(err.code, "CORS_OR_NETWORK_ERROR")
+            m.assertEqual(err.technicalDetail, "[CORS_OR_NETWORK_ERROR] Host: http://srv.test | Endpoint: /get.php | Detalhe: http://srv.test/get.php?password=***")
+            m.assertEqual(err.status, 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("describeUrl")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("caminho de API (.php) fica inteiro, com a ação")
+        function _()
+            d = xtream.describeUrl("http://srv.test:8080/painel/player_api.php?username=u&password=p&action=get_live_streams")
+            m.assertEqual(d.host, "http://srv.test:8080")
+            m.assertEqual(d.endpoint, "/painel/player_api.php?action=get_live_streams")
+        end function
+
+        @it("fora de .php só o último trecho do caminho aparece")
+        function _()
+            d = xtream.describeUrl("http://srv.test/playlist/USUARIO/SENHA/m3u_plus")
+            m.assertEqual(d.endpoint, "/***/***/***/m3u_plus")
+        end function
+
+        @it("texto que não é URL vai como host")
+        function _()
+            m.assertEqual(xtream.describeUrl("lixo").host, "lixo")
+            m.assertEqual(xtream.describeUrl("lixo").endpoint, "-")
+        end function
+
+    end class
+
+end namespace

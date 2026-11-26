@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Dados das abas TV ao vivo/Filmes/Séries (CatalogBrowser.vue + catalogStore): um pedido por Task.
+     request = { mode: "open", force } → categorias, fileiras de "Todos" (15 itens de até 12 categorias) e o destaque;
+     request = { mode: "page", categoryId, start, count } → itens da grade da categoria escolhida.
+     ctx = { dir, apiBase, credentials, type }; hidden = categorias fora da vista (controle parental). -->
+<component name="CatalogTabTask" extends="Task">
+    <interface>
+        <field id="ctx" type="assocarray" />
+        <field id="hidden" type="assocarray" />
+        <field id="parental" type="assocarray" />
+        <field id="section" type="string" />
+        <field id="request" type="assocarray" />
+        <field id="result" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

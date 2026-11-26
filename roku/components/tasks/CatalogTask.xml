@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Catálogo em segundo plano: rede, ParseJson grande e arquivos não podem rodar na render thread.
+     request = { action: "load", section, force, ctx } ou { action: "items", section, categoryId, start, count, hidden, ctx }
+     ctx = { dir, apiBase, credentials, type } (ver roku/source/catalog/catalog.bs). -->
+<component name="CatalogTask" extends="Task">
+    <interface>
+        <field id="request" type="assocarray" />
+        <!-- load: { ok, error, errorDetail, list }; items: { items } -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

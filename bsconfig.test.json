@@ -1,0 +1,18 @@
+{
+  "extends": "bsconfig.json",
+  "files": ["manifest", "source/**/*", "components/**/*", "images/**/*", "fonts/*.ttf"],
+  "stagingFolderPath": "build/roku/test-staging",
+  "outFile": "build/roku/pulse-roku-test.zip",
+  "plugins": ["rooibos-roku"],
+  "rooibos": {
+    "tags": ["!integration", "!fixme"],
+    "showOnlyFailures": false,
+    "catchCrashes": true,
+    "failFast": false,
+    "sendHomeOnFinish": true,
+    "keepAppOpen": false,
+    "colorizeOutput": false,
+    "reporters": ["console"],
+    "lineWidth": 70
+  }
+}

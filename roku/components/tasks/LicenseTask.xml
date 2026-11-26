@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Licença em segundo plano (roUrlTransfer não roda na render thread): consulta /v1/access ou manda a entrada.
+     request = { mode: "refresh" | "entry", base, transactionId } (a lista é a sessão ativa salva). -->
+<component name="LicenseTask" extends="Task">
+    <interface>
+        <field id="request" type="assocarray" />
+        <!-- refresh: { state } de licensing.refresh -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

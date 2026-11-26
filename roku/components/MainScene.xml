@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Cena raiz: pilha de telas + Voltar + "Sair do Pulse Player?" (docs/roku/domains/00-fundacao.md, passo 4). -->
+<component name="MainScene" extends="Scene">
+    <interface>
+        <!-- main.bs observa e encerra o app quando vira true. -->
+        <field id="exitApp" type="boolean" alwaysNotify="true" />
+        <!-- main.bs avisa quando a rede do aparelho cai ou volta (roDeviceInfo, link status). -->
+        <field id="offline" type="boolean" value="false" onChange="renderOffline" />
+        <!-- main.bs repassa o deep link (argumentos da abertura ou roInput): { contentId, mediaType }. -->
+        <field id="deepLink" type="assocarray" alwaysNotify="true" onChange="onDeepLink" />
+    </interface>
+    <children>
+        <Group id="screens" />
+        <Group id="offlineNotice" />
+    </children>
+</component>

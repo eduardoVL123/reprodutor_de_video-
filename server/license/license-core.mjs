@@ -8,6 +8,7 @@
 import { generateCode, createLimiter, readJsonBody, networkKey, blockKey, SECURITY_HEADERS, CORS_HEADERS, CODE_ALPHABET, PAGE_CSP } from '../pair/pair-core.mjs'
 import { DAY_MS, TRIAL_MS, accessFor, cycleFor, normalizeHost, licenseSignedText, validNonce } from './license-rules.mjs'
 import { createSigner } from './license-sign.mjs'
+import { createRokuPay, applyRokuPay, createRsaSigner, validTransactionId } from './license-roku.mjs'
 import { findDevice, insertDevice, activationEndsAt, partnerForHost, upsertEntry, hitLimit } from './license-db.mjs'
 import { createAdminRoutes } from './license-admin.mjs'
 import { createApiRoutes } from './license-api.mjs'
@@ -19,7 +20,7 @@ import { DEVICE_ANNUAL_PRICE, MIN_CREDITS, CREDIT_TIERS } from './pricing.mjs'
 
 export const DEVICE_CODE_LENGTH = 8
 export const MAX_BODY_BYTES = 4096
-export const PLATFORMS = ['android', 'tizen', 'webos', 'desktop', 'web']
+export const PLATFORMS = ['android', 'tizen', 'webos', 'roku', 'desktop', 'web']
 // newDevicesPerDay (por rede) e newDevicesGlobalPerDay (serviço todo): cortam o ataque de criar aparelhos falsos para
 // inflar os ativos de um parceiro.
 // newDevicesPerIPv4Day: no Brasil o CGNAT põe milhares de clientes atrás de um IPv4; o /64 do IPv6 é de uma casa só.
@@ -75,10 +76,15 @@ const fail = (status, error, extra) => json(status, { error }, extra)
  * `mpWebhookSecret`: assinatura secreta do webhook (MP_WEBHOOK_SECRET); vazio = webhook desligado.
  * `mpPublicKey`: chave pública do Mercado Pago (MP_PUBLIC_KEY), entregue à tela /pagar em /v1/mp-config.
  * `signingKey`: chave privada (JWK) que assina /v1/access (LICENSE_SIGNING_KEY); vazio = respostas sem assinatura.
+ * `rokuApiKey`: chave de parceiro da Roku (ROKU_API_KEY) para conferir o Roku Pay; vazio = Roku sem Roku Pay.
+ * `rsaKey`: chave privada RSA (JWK, LICENSE_RSA_KEY) da assinatura que a Roku confere (sigRsa); vazio = sem sigRsa.
+ * `rokuFetch`: fetch da API da Roku (injetável nos testes).
  */
-export function createLicenseHandler({ db, now = Date.now, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '' } = {}) {
+export function createLicenseHandler({ db, now = Date.now, adminToken = '', reportToken = '', contactUrl = '', playUrl = '', limits = LIMITS, mp = null, mpWebhookSecret = '', mpPublicKey = '', signingKey = '', rokuApiKey = '', rsaKey = '', rokuFetch = undefined } = {}) {
   const limiter = createLimiter(now)
   const sign = createSigner(signingKey)
+  const rokuPay = createRokuPay({ apiKey: rokuApiKey, fetchImpl: rokuFetch, now })
+  const signRsa = createRsaSigner(rsaKey)
   const handleCheckout = createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret: mpWebhookSecret })
   const handleAdmin = createAdminRoutes({ db, now, adminToken, json: privateJson, checkout: handleCheckout })
   const handleApi = createApiRoutes({ db, now, json, limiter, checkout: handleCheckout })
@@ -147,11 +153,19 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
       return json(200, publicState(state, now()))
     },
     '/v1/access': async (body, ip) => {
-      const result = await access(body, ip)
+      let result = await access(body, ip)
+      // Roku: a compra do Roku Pay vira (ou deixa de ser) uma ativação deste aparelho; rede fora mantém o estado.
+      const transactionId = body.platform === 'roku' && rokuPay ? validTransactionId(body.transactionId) : ''
+      if (transactionId) {
+        const outcome = await applyRokuPay(db, { deviceKey: result.device.device_key, transactionId, result: await rokuPay(transactionId), now: now() })
+        if (outcome === 'activated' || outcome === 'revoked') result = await access(body, ip)
+      }
       const reply = { access: result.access, ...publicState(result, result.at) }
-      if (!sign) return json(200, reply)
-      const sig = await sign(licenseSignedText({ ...reply, deviceKey: body.deviceKey, host: normalizeHost(body.host) || '', nonce: validNonce(body.nonce) }))
-      return json(200, { ...reply, sig })
+      const text = licenseSignedText({ ...reply, deviceKey: body.deviceKey, host: normalizeHost(body.host) || '', nonce: validNonce(body.nonce) })
+      const extra = {}
+      if (sign) extra.sig = await sign(text)
+      if (body.platform === 'roku' && signRsa) extra.sigRsa = await signRsa(text)
+      return json(200, { ...reply, ...extra })
     },
     '/v1/entry': async (body, ip) => {
       const result = await access(body, ip)

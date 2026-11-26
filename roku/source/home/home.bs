@@ -1,0 +1,185 @@
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/utils/formatTime.bs"
+' Regras do Início de src/views/Dashboard.vue, src/utils/railOffset.js e src/utils/artwork.js (casos em
+' tests/railOffset.test.js, tests/artwork.test.js e roku/source/home/home.spec.bs).
+' O destaque é o "Continuar assistindo" mais recente (recentHistoryItem) ou o primeiro item das fileiras.
+namespace home
+
+    ' Deslocamento horizontal (px, ≤ 0) de uma fileira para o item focado ficar na posição inicial, sem sobrar espaço
+    ' vazio no fim. Medidas inválidas (antes do layout) → 0. params = { index, itemSize, gap, count, viewport }
+    function railOffset(params as object) as integer
+        if not (params.itemSize > 0) or not (params.viewport > 0) or not (params.count > 0) or not (params.index > 0) then return 0
+        total = params.count * params.itemSize + (params.count - 1) * params.gap
+        maxShift = total - params.viewport
+        if maxShift < 0 then maxShift = 0
+        shift = params.index * (params.itemSize + params.gap)
+        if shift > maxShift then shift = maxShift
+        if shift > 0 then return -shift
+        return 0
+    end function
+
+    function isHttpUrl(value as dynamic) as boolean
+        return utils.isString(value) and CreateObject("roRegex", "^https?:\/\/", "i").isMatch(value)
+    end function
+
+    ' Arte de fundo só com imagens da lista: backdrop próprio → pôster → nenhuma. { url, mode }
+    function pickArtwork(item as dynamic, info as dynamic) as object
+        poster = ""
+        candidates = []
+        if utils.isObject(info) then candidates.push(info.poster)
+        if utils.isObject(item) then
+            candidates.push(item.stream_icon)
+            candidates.push(item.cover)
+        end if
+        for each candidate in candidates
+            if home.isHttpUrl(candidate) then
+                poster = candidate
+                exit for
+            end if
+        end for
+        backdrop = ""
+        if utils.isObject(info) and home.isHttpUrl(info.backdrop) then backdrop = info.backdrop
+        if backdrop <> "" and backdrop <> poster then return { url: backdrop, mode: "backdrop" }
+        if poster <> "" then return { url: poster, mode: "poster" }
+        return { url: "", mode: "none" }
+    end function
+
+    ' Textos do destaque (heroBadgeLabel, heroTitle, heroRating... do Dashboard.vue); fromHistory = o item é o
+    ' "Continuar assistindo" (recentHistoryItem).
+    function heroTexts(item as dynamic, info as dynamic, fromHistory = false as boolean) as object
+        details = {}
+        if utils.isObject(info) then details = info
+        section = ""
+        name = ""
+        if utils.isObject(item) then
+            section = utils.textOr(item.section, "")
+            name = utils.textOr(item.name, "")
+        end if
+
+        badge = "Filme da sua lista"
+        if not utils.isObject(item) then badge = "Da sua lista"
+        if section = "series" then badge = "Série da sua lista"
+        if section = "live" then badge = "Canal da sua lista"
+        if fromHistory then badge = "Continuar assistindo"
+
+        title = utils.textOr(details.name, name)
+        if title = "" then title = "PULSE PLAYER"
+
+        rating = utils.textOr(details.rating, "")
+        if rating <> "" and Val(rating) = 0 then rating = ""
+        if rating <> "" then rating = "Nota " + rating
+
+        duration = utils.textOr(details.duration, "")
+        if section = "live" then
+            duration = "Ao vivo"
+        else if duration = "" and section = "series" then
+            duration = "Série"
+        else if section <> "series" and fromHistory and utils.isObject(item) and utils.isNumber(item.currentTime) and item.currentTime > 0 then
+            duration = utils.formatTime(item.currentTime)
+        else if duration = "" then
+            duration = "Filme"
+        end if
+
+        synopsis = utils.textOr(details.plot, "")
+        if synopsis = "" or synopsis = "Sem sinopse disponível." then
+            synopsis = "Explore o catálogo da sua lista conectada."
+            if name <> "" then synopsis = "Disponível diretamente da sua lista conectada."
+            if fromHistory and section = "live" then synopsis = "Volte ao canal que você estava assistindo."
+            if fromHistory and section <> "live" then synopsis = "Retome a reprodução de onde você parou."
+        end if
+
+        playText = "Assistir agora"
+        if section = "series" then playText = "Assistir T1:E1"
+        if fromHistory then
+            playText = "Continuar assistindo"
+            if section = "series" then playText = "Continuar"
+        end if
+
+        return { badge: badge, title: title, rating: rating, year: utils.textOr(details.year, ""), duration: duration, genre: utils.textOr(details.genre, ""), synopsis: synopsis, playText: playText }
+    end function
+
+    ' recentHistoryItem: o filme ou episódio mais recente; canal só se não houver outro.
+    function recentHistoryItem(history as object) as dynamic
+        for each it in history
+            if it.section <> "live" then return it
+        end for
+        if history.count() > 0 then return history[0]
+        return invalid
+    end function
+
+    ' getRemainingText: "Faltam N min" (arredondado para cima), ou "" sem duração.
+    function remainingText(item as object) as string
+        duration = 0
+        if utils.isNumber(item.duration) then duration = item.duration
+        if duration <= 0 then return ""
+        current = 0
+        if utils.isNumber(item.currentTime) then current = item.currentTime
+        rest = duration - current
+        if rest < 0 then rest = 0
+        minutes = Int(rest / 60)
+        if minutes * 60 < rest then minutes = minutes + 1
+        return "Faltam " + minutes.toStr() + " min"
+    end function
+
+    ' Itens do menu lateral, na ordem do SideMenu.vue (as abas que ainda não existem na Roku só recebem foco).
+    function menuItems() as object
+        return [
+            { id: "search", label: "Busca", icon: "icon-search" },
+            { id: "home", label: "Início", icon: "icon-home" },
+            { id: "live", label: "TV ao vivo", icon: "icon-live" },
+            { id: "vod", label: "Filmes", icon: "icon-vod" },
+            { id: "series", label: "Séries", icon: "icon-series" },
+            { id: "favorites", label: "Favoritos", icon: "icon-heart" },
+            { id: "account", label: "Conta", icon: "icon-account" },
+            { id: "profile", label: "Trocar perfil", icon: "" }
+        ]
+    end function
+
+    ' Id do item do menu no web (SideMenu.vue): nav-<aba>, e o avatar é btn-switch-profile.
+    function menuNavId(itemId as string) as string
+        if itemId = "profile" then return "btn-switch-profile"
+        return "nav-" + itemId
+    end function
+
+    ' Focáveis do Início para a navegação espacial (roku/source/nav/spatial.bs), com os ids e linhas do web.
+    ' Retângulos na tela (o conteúdo rola; o menu não). p = { scroll, menuOpen, menuX, menuWidth,
+    '   menu: [{ id, top, active }], heroY, hero: [{ id, x, width }], railX, gap, headerRight,
+    '   rails: [{ section, top, count, cardWidth, cardHeight, offset, seeAllWidth }] }
+    function navItems(p as object) as object
+        list = []
+        for each entry in p.menu
+            list.push({ id: entry.id, groups: ["side-menu"], row: "", rect: [p.menuX, entry.top, p.menuWidth, 56], active: entry.active, slide: false, scroller: false })
+        end for
+        for each button in p.hero
+            list.push(home.vitrineItem(button.id, "hero-actions", [button.x, p.heroY - p.scroll, button.width, 52], false))
+        end for
+        for each rail in p.rails
+            ' Só o "Limpar histórico" recebe foco: o "Ver todos ›" do título tem tabindex -1 no web (o cartão no fim da
+            ' fileira faz o mesmo).
+            if rail.section = "history" then list.push(home.vitrineItem("home-see-all-" + rail.section, "header-" + rail.section, [p.headerRight - rail.seeAllWidth, rail.top - 12 - p.scroll, rail.seeAllWidth, 52], false))
+            for i = 0 to rail.count - 1
+                x = p.railX + i * (rail.cardWidth + p.gap) + rail.offset
+                list.push(home.vitrineItem(rail.section + "-card-" + i.toStr(), "rail-" + rail.section + "-card", [x, rail.top + 56 - p.scroll, rail.cardWidth, rail.cardHeight], true))
+            end for
+        end for
+        ' "Tentar novamente" do aviso de lista que não carregou (home-error), acima das fileiras.
+        if p.retry <> invalid then list.push(home.vitrineItem("home-retry", "home-error", [p.retry[0], p.retry[1] - p.scroll, p.retry[2], p.retry[3]], false))
+        sideWidth = 112
+        if p.menuOpen then sideWidth = 304
+        return { items: list, groupRects: { "side-menu": [0, 0, sideWidth, 1080], "home-vitrine": [112, 0, 1808, 1080] } }
+    end function
+
+    ' Focável do conteúdo do Início (data-focus-group="home-vitrine", rolável).
+    function vitrineItem(id as string, row as string, rect as object, slide as boolean) as object
+        return { id: id, groups: ["home-vitrine"], row: row, rect: rect, active: false, slide: slide, scroller: true }
+    end function
+
+    ' Cartão "Ver todos" no fim de cada fileira.
+    function seeAllCard(section as string) as object
+        name = "Ver todos os filmes"
+        if section = "series" then name = "Ver todas as séries"
+        if section = "live" then name = "Explorar canais"
+        return { isSeeAll: true, section: section, name: name }
+    end function
+
+end namespace

@@ -1,0 +1,103 @@
+import "pkg:/source/utils/types.bs"
+' Áudio e legendas do player (recurso novo da Roku, pedido em 2026-11-18; o web não tem): as opções saem das faixas
+' que o stream traz (availableAudioTracks / availableSubtitleTracks do nó Video) e o idioma escolhido fica guardado
+' por perfil para o próximo vídeo. Legenda liga e desliga pelo modo global da Roku (cert. 4.8). Casos em tracks.spec.bs.
+namespace tracks
+
+    const PREFS_PREFIX = "player:tracks"
+    const OFF = "off"
+
+    function prefsKey(profileId as dynamic) as string
+        return tracks.PREFS_PREFIX + ":" + utils.textOr(profileId, "default")
+    end function
+
+    ' Nome do idioma para a tela (código ISO 639 de 2 ou 3 letras).
+    function languageName(code as dynamic) as string
+        names = { pt: "Português", por: "Português", en: "Inglês", eng: "Inglês", es: "Espanhol", spa: "Espanhol", fr: "Francês", fre: "Francês", fra: "Francês", de: "Alemão", ger: "Alemão", deu: "Alemão", it: "Italiano", ita: "Italiano", ja: "Japonês", jpn: "Japonês" }
+        text = LCase(utils.textOr(code, ""))
+        if names[text] <> invalid then return names[text]
+        return UCase(text)
+    end function
+
+    ' Mesmo idioma com códigos diferentes ("pt" e "por").
+    function sameLanguage(a as dynamic, b as dynamic) as boolean
+        x = LCase(utils.textOr(a, ""))
+        y = LCase(utils.textOr(b, ""))
+        if x = "" or y = "" then return false
+        return x = y or tracks.languageName(x) = tracks.languageName(y)
+    end function
+
+    ' [{ id, label, language, selected }] das faixas de áudio; nome repetido ganha o número para dar para diferenciar.
+    function audioOptions(available as dynamic, current as dynamic) as object
+        options = []
+        if GetInterface(available, "ifArray") = invalid then return options
+        for i = 0 to available.count() - 1
+            t = available[i]
+            label = utils.textOr(t.Name, tracks.languageName(t.Language))
+            if label = "" then label = "Faixa " + (i + 1).toStr()
+            options.push({ id: utils.textOr(t.Track, (i + 1).toStr()), label: label, language: utils.textOr(t.Language, ""), selected: utils.textOr(t.Track, "") = utils.textOr(current, "") })
+        end for
+        ' Sem a faixa atual informada (o stream ainda não disse), a primeira é a padrão do stream.
+        anySelected = false
+        for each o in options
+            if o.selected then anySelected = true
+        end for
+        if not anySelected and options.count() > 0 then options[0].selected = true
+        counts = {}
+        for each o in options
+            counts[o.label] = utils.textOr(counts[o.label], "0").toInt() + 1
+        end for
+        seen = {}
+        for each o in options
+            if counts[o.label] > 1 then
+                seen[o.label] = utils.textOr(seen[o.label], "0").toInt() + 1
+                o.label = o.label + " " + seen[o.label].toStr()
+            end if
+        end for
+        return options
+    end function
+
+    ' "Desligadas" primeiro e as legendas do stream; a marcada é a faixa atual com as legendas ligadas.
+    function subtitleOptions(available as dynamic, current as dynamic, enabled as boolean) as object
+        options = [{ id: tracks.OFF, label: "Desligadas", language: "", selected: not enabled }]
+        if GetInterface(available, "ifArray") = invalid then return options
+        for i = 0 to available.count() - 1
+            t = available[i]
+            label = utils.textOr(t.Description, tracks.languageName(t.Language))
+            if label = "" then label = "Legenda " + (i + 1).toStr()
+            id = utils.textOr(t.TrackName, "")
+            options.push({ id: id, label: label, language: utils.textOr(t.Language, ""), selected: enabled and id <> "" and id = utils.textOr(current, "") })
+        end for
+        return options
+    end function
+
+    ' O menu só aparece se há o que escolher: mais de um áudio ou alguma legenda.
+    function hasChoices(audio as dynamic, subtitles as dynamic) as boolean
+        audioCount = 0
+        if GetInterface(audio, "ifArray") <> invalid then audioCount = audio.count()
+        subtitleCount = 0
+        if GetInterface(subtitles, "ifArray") <> invalid then subtitleCount = subtitles.count()
+        return audioCount > 1 or subtitleCount > 0
+    end function
+
+    ' Faixa do idioma guardado, ou "" se o stream não tem esse idioma (fica a padrão do stream).
+    function preferred(options as object, language as dynamic) as string
+        for each o in options
+            if o.id <> tracks.OFF and tracks.sameLanguage(o.language, language) then return o.id
+        end for
+        return ""
+    end function
+
+    ' Guarda o idioma da escolha ("off" nas legendas desligadas); { audio, subtitle }.
+    sub remember(store as object, key as string, kind as string, option as object)
+        prefs = store.get(key)
+        if not utils.isObject(prefs) then prefs = {}
+        if kind = "subtitle" and option.id = tracks.OFF then
+            prefs.subtitle = tracks.OFF
+        else
+            prefs[kind] = option.language
+        end if
+        store.set(key, prefs)
+    end sub
+
+end namespace

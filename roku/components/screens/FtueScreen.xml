@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Primeiro acesso: Termos de Uso e Aviso Legal (port de src/views/FTUE.vue). Obrigatório: Voltar não sai daqui. -->
+<component name="FtueScreen" extends="Group">
+    <interface>
+        <!-- Pedido de navegação para a MainScene: { action: "replace", screen } ou { action: "exit" } -->
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

@@ -92,6 +92,26 @@ describe('página do celular', () => {
     expect($('done').textContent).toContain('Enviado!')
   })
 
+  it('sessão sem chave (Roku): envia a lista em base64url sem cifrar', async () => {
+    let posted = null
+    const { $ } = await openPage({
+      fetchImpl: async (url, init) => {
+        if (init && init.method === 'POST') {
+          posted = JSON.parse(init.body)
+          return reply(204)
+        }
+        return reply(200, { pub: null, plain: true })
+      },
+    })
+    await fill($, { link: 'http://srv.com/lista.m3u', name: 'Sala' })
+
+    await submit($)
+
+    const text = atob(posted.box.replace(/-/g, '+').replace(/_/g, '/'))
+    expect(JSON.parse(text)).toEqual({ dns: 'http://srv.com/lista.m3u', username: '', password: '', label: 'Sala' })
+    expect($('done').hidden).toBe(false)
+  })
+
   it('aceita o código digitado em minúsculas e com hífen', async () => {
     const tv = await newTv()
     const { $, fetchMock } = await openPage({ path: '/', fetchImpl: async (_u, init) => (init && init.method === 'POST' ? reply(204) : reply(200, { pub: tv.pub })) })
@@ -172,12 +192,35 @@ describe('página do celular', () => {
     expect(fetchMock.mock.calls.every(([, init]) => !init || init.method !== 'POST')).toBe(true)
   })
 
-  it('navegador sem WebCrypto: explica e não deixa enviar', async () => {
+  it('navegador sem WebCrypto: TV com chave explica e não envia nada', async () => {
     vi.stubGlobal('crypto', {})
-    const { $ } = await openPage({ fetchImpl: async () => reply(200, {}) })
+    const { $, fetchMock } = await openPage({ fetchImpl: async () => reply(200, { pub: 'B'.padEnd(87, 'A') }) })
+    await fill($, { link: 'http://srv.com/lista.m3u' })
+
+    await submit($)
 
     expect($('msg').textContent).toContain('https')
-    expect($('send').disabled).toBe(true)
+    expect(fetchMock.mock.calls.every(([, init]) => !init || init.method !== 'POST')).toBe(true)
+  })
+
+  it('navegador sem WebCrypto (endereço http da rede de casa): a TV Roku recebe mesmo assim', async () => {
+    vi.stubGlobal('crypto', {})
+    let posted = null
+    const { $ } = await openPage({
+      fetchImpl: async (url, init) => {
+        if (init && init.method === 'POST') {
+          posted = JSON.parse(init.body)
+          return reply(204)
+        }
+        return reply(200, { pub: null, plain: true })
+      },
+    })
+    await fill($, { link: 'http://srv.com/lista.m3u' })
+
+    await submit($)
+
+    expect(posted.box).toMatch(/^[A-Za-z0-9_-]+$/)
+    expect($('done').hidden).toBe(false)
   })
 
   it('mostra a página em inglês quando o celular está em inglês', async () => {

@@ -1,0 +1,1066 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/home/home.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/account/account.bs"
+import "pkg:/source/profiles/profiles.bs"
+import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
+import "pkg:/source/player/playerState.bs"
+import "pkg:/source/config.bs"
+import "pkg:/source/device/device.bs"
+import "pkg:/source/license/licensing.bs"
+
+' Medidas da aba Início do web em px (1920×1080): menu w-[7rem] (aberto w-[19rem]), conteúdo a partir de x 176,
+' destaque com a capa à direita (w-[68%], opacidade 0.35) e .tv-vignette, fileiras com cartões 168×252 (canais 256×144)
+' e espaço de 16; do fim dos cartões ao título seguinte, a folga de baixo da fileira (24) + space-y-7 (28).
+const CONTENT_X = 176
+const RAIL_WIDTH = 1648
+const RAIL_GAP = 16
+const RAILS_TOP = 480
+const RAIL_SPACING = 52
+const META_COLOR = "0xD4D4D8FF"
+const BADGE_COLOR = "0xD4D4D4FF"
+const RATING_COLOR = "0x4ADE80FF"
+
+sub init()
+    m.focusId = "hero-play"
+    m.tab = "home"
+    m.catalogTab = invalid
+    m.top.observeField("focusedChild", "onFocusChanged")
+    m.global.observeField("profile", "onProfileChanged")
+    m.global.observeField("parental", "onParentalChanged")
+    m.rails = []
+    m.heroItem = invalid
+    ' Sem histórico (instalação nova) o loadHistory não define: o onHero quebrava com "and" em Invalid e o app fechava.
+    m.heroFromHistory = false
+    m.heroInfo = invalid
+    m.heroButtons = []
+    ' Seções que falharam ao carregar (failedSections do Dashboard.vue): { section, error } na ordem em que falharam.
+    m.failed = []
+    m.retryButton = invalid
+    m.scroll = 0
+    m.maxScroll = 0
+    m.nav = spatial.create([], {}, [1920, 1080])
+
+    m.content = m.top.createChild("Group")
+    ' Arte do destaque e .tv-vignette dentro do destaque (overflow-hidden até 496 px), rolando com o conteúdo.
+    heroClip = m.content.createChild("Group")
+    heroClip.clippingRect = [112, 0, 1808, 496]
+    m.heroArt = heroClip.createChild("Poster")
+    m.heroArt.translation = [660, -12]
+    m.heroArt.width = 1291
+    m.heroArt.height = 521
+    m.heroArt.opacity = 0.35
+    m.heroArt.loadDisplayMode = "scaleToZoom"
+    ui.panelImage(heroClip, "vignette-h.png", 112, 0, 1808, 496)
+    ui.panelImage(heroClip, "vignette-v.png", 112, 0, 1808, 496)
+    m.hero = m.content.createChild("Group")
+    m.railsGroup = m.content.createChild("Group")
+    m.menu = m.top.createChild("Group")
+
+    renderHero()
+    renderMenu()
+    spatial.remember(m.nav, m.focusId)
+    m.top.setFocus(true)
+    startLoading()
+    startLicense()
+end sub
+
+' ---------- Licença (useLicenseWatch do web) ----------
+
+' Abrir o Início decide pelo estado salvo: bloqueia (ou nunca foi confirmado para esta lista) → tela de bloqueio, que
+' confere sozinha com a compra do Roku Pay; libera → confirma em segundo plano e de novo a cada 6 h.
+' shortcut: aqui a consulta vai sem a compra do Roku Pay; quando o período pago vence, o servidor bloqueia, a tela de
+' bloqueio manda a compra e a renovação libera na hora. Buscar as compras aqui se esse vaivém incomodar.
+sub startLicense()
+    if not config.licenseEnabled() then return
+    store = storage.create()
+    active = session.hydrate(store)
+    if active = invalid then return
+    saved = licensing.loadSaved(store, device.getDeviceKey(store))
+    reason = licensing.blockReason(saved, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), true)
+    m.licenseTimer = m.top.createChild("Timer")
+    m.licenseTimer.duration = licensing.RECHECK_S
+    m.licenseTimer.repeat = true
+    m.licenseTimer.observeField("fire", "refreshLicense")
+    m.licenseTimer.control = "start"
+    if reason <> "" then
+        ' Ainda no init: a cena só ouve o navigate depois que a tela entra na pilha.
+        m.pendingActivation = reason
+        m.activationTimer = m.top.createChild("Timer")
+        m.activationTimer.duration = 0.1
+        m.activationTimer.observeField("fire", "onActivationTimer")
+        m.activationTimer.control = "start"
+    else
+        refreshLicense()
+    end if
+end sub
+
+sub onActivationTimer()
+    if utils.textOr(m.pendingActivation, "") <> "" then showActivation(m.pendingActivation)
+end sub
+
+sub refreshLicense()
+    m.licenseTask = CreateObject("roSGNode", "LicenseTask")
+    m.licenseTask.request = { mode: "refresh", base: config.licenseBaseUrl(), transactionId: "" }
+    m.licenseTask.observeField("result", "onLicense")
+    m.licenseTask.control = "run"
+end sub
+
+sub onLicense(event as object)
+    state = event.getData().state
+    active = session.hydrate(storage.create())
+    reason = licensing.blockReason(state, licensing.listHost(active), licensing.isDemo(active, config.demoPlaylistUrl()), licensing.nowMs(), true)
+    if reason <> "" then
+        showActivation(reason)
+        return
+    end if
+    m.licensePartner = state.access = "partner"
+    scheduleEntry()
+end sub
+
+' Entrada (R4): lista de parceiro aberta por mais de 10 s, uma por abertura, e só com a lista carregada (alguma seção
+' chegou), para o parceiro não pagar por quem só viu erro (useLicenseWatch do web).
+sub scheduleEntry()
+    if m.licensePartner <> true or m.listLoaded <> true or m.entryTimer <> invalid then return
+    m.entryTimer = m.top.createChild("Timer")
+    m.entryTimer.duration = licensing.ENTRY_DELAY_S
+    m.entryTimer.observeField("fire", "sendEntry")
+    m.entryTimer.control = "start"
+end sub
+
+sub sendEntry()
+    task = CreateObject("roSGNode", "LicenseTask")
+    task.request = { mode: "entry", base: config.licenseBaseUrl() }
+    task.control = "run"
+    m.entryTask = task
+end sub
+
+' Abre por cima do Início quando ele está na frente: no init a cena ainda não ouve o navigate, e com outra tela na
+' frente (detalhes, player) fica pendente até voltar.
+sub showActivation(reason as string)
+    if m.activationShown = true then return
+    if m.top.focusedChild = invalid then
+        m.pendingActivation = reason
+        return
+    end if
+    m.pendingActivation = ""
+    m.activationShown = true
+    m.top.navigate = { action: "push", screen: "ActivationScreen", params: { reason: reason } }
+end sub
+
+' ---------- Dados ----------
+
+sub startLoading()
+    store = storage.create()
+    current = session.hydrate(store)
+    if current = invalid then return
+    loadHistory()
+    m.task = CreateObject("roSGNode", "HomeTask")
+    m.task.ctx = catalog.contextFor(current)
+    m.task.parental = parental.activeContext(store)
+    m.loadedFor = loadKey()
+    ' O destaque é o "Continuar assistindo" mais recente (recentHistoryItem); a Task busca os detalhes dele.
+    if m.heroFromHistory then m.task.heroItem = m.heroItem
+    m.task.observeField("rail", "onRail")
+    m.task.observeField("saved", "onSaved")
+    m.task.observeField("hero", "onHero")
+    m.task.control = "run"
+end sub
+
+'' Controle parental mudou (ou outro perfil, com outras escolhas): categoria escondida/bloqueada some do Início
+' (useParentalFilter → loadCatalogShowcase do web). O catálogo já está no disco: só relê as fileiras.
+sub reloadRails()
+    ' Com a carga ainda baixando, duas Tasks gravariam o mesmo catálogo ao mesmo tempo: espera ela terminar.
+    if m.task <> invalid and m.task.state = "run" then
+        m.task.observeField("state", "onTaskState")
+        m.reloadPending = true
+        return
+    end if
+    m.reloadPending = false
+    if m.task <> invalid then
+        m.task.unobserveField("rail")
+        m.task.unobserveField("saved")
+        m.task.unobserveField("hero")
+        m.task.unobserveField("state")
+    end if
+    m.rails = []
+    m.failed = []
+    m.heroItem = invalid
+    m.heroInfo = invalid
+    m.heroFromHistory = false
+    renderRails()
+    startLoading()
+end sub
+
+' ---------- Continuar assistindo ----------
+
+' visibleHistory do Dashboard.vue: o histórico do perfil na lista, sem o que o controle parental tira e sem seção
+' cujo catálogo não está no disco. A fileira vai na frente e o destaque passa a ser o item mais recente.
+sub loadHistory()
+    store = storage.create()
+    current = session.hydrate(store)
+    if current = invalid then return
+    dir = catalog.contextFor(current).dir
+    profileId = invalid
+    if utils.isObject(m.global.profile) then profileId = m.global.profile.id
+    m.historyKey = playerState.historyKey(profileId, current.id)
+    blocked = parental.hiddenMap(parental.activeContext(store), dir)
+    for each section in ["live", "vod", "series"]
+        if catalog.getMeta(dir, section) = invalid then blocked.delete(section)
+    end for
+    visible = []
+    for each entry in playerState.loadHistory(store, m.historyKey)
+        if parental.allows(blocked, entry) then visible.push(entry)
+    end for
+    rails = []
+    for each rail in m.rails
+        if rail.section <> "history" then rails.push(rail)
+    end for
+    if visible.count() > 0 then rails.unshift({ section: "history", items: visible })
+    m.rails = rails
+    recent = home.recentHistoryItem(visible)
+    if recent <> invalid then
+        ' Mesmo item de antes: os detalhes já buscados ficam (relê o histórico quando uma seção chega ao disco, e
+        ' zerar aqui deixava o destaque sem sinopse nem nota).
+        sameHero = m.heroFromHistory = true and utils.isObject(m.heroItem) and favorites.same(recent, m.heroItem)
+        if not sameHero then m.heroInfo = invalid
+        m.heroItem = recent
+        m.heroFromHistory = true
+    else if m.heroFromHistory then
+        m.heroItem = invalid
+        m.heroFromHistory = false
+    end if
+    renderHero()
+    renderRails()
+end sub
+
+' "Limpar histórico" (player.clearHistory do web).
+sub clearHistory()
+    storage.create().remove(m.historyKey)
+    m.focusId = "hero-play"
+    reloadRails()
+end sub
+
+' playHistoryItem: episódio toca a série inteira a partir dele (o player monta a fila com a série); o resto, o item.
+sub playHistoryItem(item as object)
+    m.top.navigate = { action: "push", screen: "PlayerScreen", params: { history: item } }
+end sub
+
+sub onTaskState()
+    if m.reloadPending = true and m.task.state <> "run" then reloadRails()
+end sub
+
+sub onParentalChanged()
+    if loadKey() <> m.loadedFor then reloadRails()
+end sub
+
+' Perfil e escolhas do controle parental com que as fileiras foram carregadas. Escolher na "Quem está assistindo?" o
+' mesmo perfil que a carga já usa não recarrega nada (antes o Início baixava e desenhava tudo duas vezes).
+function loadKey() as string
+    profileId = ""
+    if utils.isObject(m.global.profile) then profileId = utils.textOr(m.global.profile.id, "")
+    return profileId + "|" + FormatJson(parental.activeContext(storage.create()))
+end function
+
+sub onRail(event as object)
+    drawRail(event.getData())
+    ' A primeira resposta (fileira ou aviso) já está desenhada: o Início está pronto para o AppLaunchComplete.
+    if not m.top.ready then m.top.ready = true
+end sub
+
+sub drawRail(data as object)
+    if not data.ok then
+        ' A seção ficou sem fileira: o aviso aparece em cima, como o homeError do web.
+        m.failed.push({ section: data.section, error: utils.textOr(data.error, "") })
+        renderRails()
+        return
+    end if
+    m.listLoaded = true
+    scheduleEntry()
+    if data.items.count() = 0 then return
+    items = []
+    items.append(data.items)
+    items.push(home.seeAllCard(data.section))
+    rail = { section: data.section, items: items }
+    m.rails.push(rail)
+    ' Só a fileira nova é desenhada (refazer todas a cada chegada travava o controle por segundos).
+    appendRail(rail)
+    ' A seção chegou ao disco: o histórico dela passa pelo filtro do controle parental agora.
+    if historyHas(data.section) then loadHistory()
+end sub
+
+' A fileira foi antes de gravar (previewRail); agora que está no disco, o histórico dela pode entrar.
+sub onSaved(event as object)
+    if historyHas(event.getData()) then loadHistory()
+end sub
+
+' O histórico do perfil tem item desta seção? Sem isso, reler o histórico (e redesenhar tudo) não muda nada.
+function historyHas(section as string) as boolean
+    if m.historyKey = invalid then return false
+    for each entry in playerState.loadHistory(storage.create(), m.historyKey)
+        if utils.isObject(entry) and entry.section = section then return true
+    end for
+    return false
+end function
+
+sub onHero(event as object)
+    data = event.getData()
+    ' Com o "Continuar assistindo" no destaque, só os detalhes dele valem (a Task não troca o item).
+    if m.heroFromHistory and not (utils.isObject(data.item) and favorites.same(data.item, m.heroItem)) then return
+    m.heroItem = data.item
+    m.heroInfo = data.info
+    renderHero()
+end sub
+
+' ---------- Destaque ----------
+
+sub renderHero()
+    m.hero.removeChildrenIndex(m.hero.getChildCount(), 0)
+    texts = home.heroTexts(m.heroItem, m.heroInfo, m.heroFromHistory = true)
+    art = home.pickArtwork(m.heroItem, m.heroInfo)
+    m.heroArt.uri = art.url
+
+    mark = m.hero.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 19
+    mark.height = 20
+    mark.translation = [CONTENT_X, 115]
+    ui.trackedText(m.hero, UCase(texts.badge), ui.font(700, 20), BADGE_COLOR, 205, 111, 4.4)
+
+    title = ui.text(m.hero, UCase(texts.title), ui.font(900, 64), ui.WHITE, CONTENT_X, 153, 1100, 61)
+    title.wrap = false
+
+    ' Nota · ano · duração  gênero
+    x = CONTENT_X
+    parts = []
+    if texts.rating <> "" then parts.push({ text: texts.rating, color: RATING_COLOR, weight: 700, dot: true })
+    if texts.year <> "" then parts.push({ text: texts.year, color: META_COLOR, weight: 500, dot: true })
+    parts.push({ text: texts.duration, color: META_COLOR, weight: 500, dot: false })
+    if texts.genre <> "" then parts.push({ text: texts.genre, color: META_COLOR, weight: 500, dot: false })
+    for each part in parts
+        label = ui.inlineText(m.hero, part.text, ui.font(part.weight, 20), part.color, x, 227, 28)
+        x = x + label.boundingRect().width + 12
+        if part.dot then
+            dot = m.hero.createChild("Rectangle")
+            dot.color = "0x737373FF"
+            dot.width = 4
+            dot.height = 4
+            dot.translation = [x, 239]
+            x = x + 4 + 12
+        end if
+    end for
+
+    synopsis = ui.text(m.hero, texts.synopsis, ui.font(400, 20), META_COLOR, CONTENT_X, 269, 544, 32.5)
+    synopsis.maxLines = 3
+
+    m.heroButtons = []
+    x = 174
+    x = addHeroButton("hero-play", "icon-play", texts.playText, true, x) + 12
+    infoText = "Mais informações"
+    if utils.isObject(m.heroItem) and m.heroItem.section = "series" then infoText = "Episódios"
+    x = addHeroButton("hero-info", "icon-info", infoText, false, x) + 12
+    ' isHeroBookmarked do Dashboard.vue: coração cheio em limão e "Nos favoritos".
+    if heroSaved() then
+        addHeroButton("hero-mylist", "icon-heart-filled", "Nos favoritos", false, x, ui.ACCENT)
+    else
+        addHeroButton("hero-mylist", "icon-heart-small", "Favoritos", false, x)
+    end if
+    renderFocus()
+end sub
+
+' Botão do destaque: primário branco (px-7, bold) ou de vidro (px-6, medium), h-[3.2rem], ícone w-4 e o texto.
+function heroSaved() as boolean
+    if not utils.isObject(m.heroItem) then return false
+    store = storage.create()
+    return favorites.has(favorites.load(store, favorites.activeKey(store)), m.heroItem, utils.textOr(m.heroItem.section, "vod"))
+end function
+
+' handleHeroBookmark do Dashboard.vue: tira se já está, senão guarda.
+sub toggleHeroFavorite()
+    if not utils.isObject(m.heroItem) then return
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    section = utils.textOr(m.heroItem.section, "vod")
+    if favorites.has(list, m.heroItem, section) then
+        favorites.remove(store, key, list, m.heroItem.stream_id, section)
+    else
+        favorites.add(store, key, list, m.heroItem, section)
+    end if
+    renderHero()
+    refreshNav()
+end sub
+
+function addHeroButton(id as string, icon as string, text as string, primary as boolean, x as float, iconColor = "" as string) as float
+    group = m.hero.createChild("Group")
+    group.translation = [x, 388]
+    ring = group.createChild("Poster")
+    ring.uri = "pkg:/images/ui/focus-ring.9.png"
+    bg = group.createChild("Poster")
+    padX = 24
+    weight = 500
+    color = ui.WHITE
+    bg.uri = "pkg:/images/ui/btn-glass.9.png"
+    if primary then
+        padX = 28
+        weight = 700
+        color = ui.BLACK
+        bg.uri = "pkg:/images/ui/btn-primary.9.png"
+    end if
+    iconNode = group.createChild("Poster")
+    iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+    iconNode.width = 16
+    iconNode.height = 16
+    iconNode.blendColor = color
+    if iconColor <> "" then iconNode.blendColor = iconColor
+    label = group.createChild("Label")
+    label.font = ui.font(weight, 20)
+    label.color = color
+    label.text = text
+    width = padX + 16 + 11 + label.boundingRect().width + padX
+    height = 52
+    bg.width = width
+    bg.height = height
+    iconNode.translation = [padX, (height - 16) / 2]
+    label.translation = [padX + 16 + 11, (height - label.boundingRect().height) / 2]
+    ring.translation = [-5, -5]
+    ring.width = width + 10
+    ring.height = height + 10
+    group.scaleRotateCenter = [width / 2, height / 2]
+    m.heroButtons.push({ id: id, group: group, ring: ring, x: x, width: width })
+    return x + width
+end function
+
+' ---------- Fileiras ----------
+
+sub renderRails()
+    m.railsGroup.removeChildrenIndex(m.railsGroup.getChildCount(), 0)
+    m.railsBottom = RAILS_TOP
+    m.retryButton = invalid
+    if m.failed.count() > 0 then m.railsBottom = buildHomeError(m.railsBottom)
+    for each rail in m.rails
+        m.railsBottom = buildRail(rail, m.railsBottom)
+    end for
+    finishRails()
+end sub
+
+' Aviso "Não foi possível carregar sua lista" (space-y-2): título text-tv-row, a mensagem da primeira seção que
+' falhou em text-tv-sm neutral-400 e "Tentar novamente" (.tv-btn-primary mt-2). Devolve o y das fileiras.
+function buildHomeError(y as float) as float
+    ui.text(m.railsGroup, "Não foi possível carregar sua lista", ui.font(700, 28), ui.WHITE, CONTENT_X, y, RAIL_WIDTH, 36).wrap = false
+    message = ui.text(m.railsGroup, m.failed[0].error, ui.font(400, 20), ui.NEUTRAL_400, CONTENT_X, y + 44, RAIL_WIDTH, 28)
+    buttonY = y + 44 + ui.textHeight(message, 28) + 16
+    m.retryButton = m.railsGroup.createChild("PulseButton")
+    m.retryButton.variant = "primary"
+    m.retryButton.text = "Tentar novamente"
+    m.retryButton.translation = [CONTENT_X, buttonY]
+    m.retryRect = [CONTENT_X, buttonY, m.retryButton.buttonWidth, 50]
+    return buttonY + 50 + RAIL_SPACING
+end function
+
+' Tentar novamente (retryHome): recarrega o Início; o que já está no disco volta na hora e a seção que falhou baixa de novo.
+sub retryHome()
+    m.focusId = "hero-play"
+    reloadRails()
+end sub
+
+' Desenha uma fileira que acabou de chegar embaixo das outras.
+sub appendRail(rail as object)
+    if m.railsBottom = invalid then m.railsBottom = RAILS_TOP
+    m.railsBottom = buildRail(rail, m.railsBottom)
+    finishRails()
+end sub
+
+' Altura do conteúdo: fim da última fileira + folga de baixo dela (24) + pb-20 (80).
+sub finishRails()
+    m.maxScroll = 0
+    if m.rails.count() > 0 then m.maxScroll = m.railsBottom - RAIL_SPACING + 24 + 80 - 1080
+    if m.maxScroll < 0 then m.maxScroll = 0
+    renderFocus()
+end sub
+
+' Título, "Ver todos" e cartões de uma fileira a partir de y; devolve o y da próxima.
+function buildRail(rail as object, y as float) as float
+    live = rail.section = "live"
+    rail.top = y
+    titleX = CONTENT_X
+    if live then
+        broadcast = m.railsGroup.createChild("Poster")
+        broadcast.uri = "pkg:/images/ui/icon-broadcast.png"
+        broadcast.width = 20
+        broadcast.height = 20
+        broadcast.blendColor = ui.ACCENT
+        broadcast.translation = [CONTENT_X, y + 4]
+        titleX = CONTENT_X + 30
+    end if
+    history = rail.section = "history"
+    titleText = "Filmes da sua lista"
+    if rail.section = "series" then titleText = "Séries da sua lista"
+    if live then titleText = "Canais da sua lista"
+    if history then titleText = "Continuar assistindo"
+    title = ui.text(m.railsGroup, titleText, ui.font(700, 20), ui.WHITE, titleX, y, 800, 28)
+    title.wrap = false
+    ' Botão "Ver todos ›" (px-3 py-3 -mx-3 -my-3, gap-1) alinhado à direita da fileira.
+    seeAll = "Ver todos"
+    if live then seeAll = "Explorar canais"
+    headerRight = CONTENT_X + RAIL_WIDTH + 12
+    if history then
+        ' "Limpar histórico" (text-tv-xs, neutral-400) no lugar do "Ver todos".
+        more = ui.inlineText(m.railsGroup, "Limpar histórico", ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+        moreWidth = more.boundingRect().width
+        more.translation = [headerRight - 12 - moreWidth, more.translation[1]]
+        rail.seeAllWidth = moreWidth + 24
+    else
+        ui.inlineText(m.railsGroup, "›", ui.font(400, 20), ui.NEUTRAL_400, headerRight - 18, y, 28)
+        more = ui.inlineText(m.railsGroup, seeAll, ui.font(400, 20), ui.NEUTRAL_400, 0, y, 28)
+        moreWidth = more.boundingRect().width
+        more.translation = [headerRight - 22 - moreWidth, more.translation[1]]
+        rail.seeAllWidth = moreWidth + 34
+    end if
+    rail.seeAllRing = ui.squareRing(m.railsGroup, headerRight - rail.seeAllWidth, y - 12, rail.seeAllWidth, 52)
+    if rail.offset = invalid then rail.offset = 0
+
+    cardWidth = 168
+    cardHeight = 252
+    if live or history then
+        cardWidth = 256
+        cardHeight = 144
+    end if
+    rail.cardWidth = cardWidth
+    rail.cardHeight = cardHeight
+    track = m.railsGroup.createChild("Group")
+    track.translation = [CONTENT_X, y + 56]
+    ' overflow-hidden da fileira: sobra 12 px dos lados e 16/24 em cima/embaixo para o cartão focado crescer.
+    track.clippingRect = [-12, -16, RAIL_WIDTH + 24, cardHeight + 40]
+    strip = track.createChild("Group")
+    rail.strip = strip
+    rail.cards = []
+    for i = 0 to rail.items.count() - 1
+        item = rail.items[i]
+        if history then
+            card = buildHistoryCard(strip, item, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+        else
+            card = buildCard(strip, item, live, i * (cardWidth + RAIL_GAP), cardWidth, cardHeight)
+        end if
+        rail.cards.push(card)
+    end for
+    return y + 56 + cardHeight + RAIL_SPACING
+end function
+
+' Cartão de pôster 2:3 (ou canal 16:9) com o anel de foco e o zoom 1.08 do .tv-rail-item.
+function buildCard(parent as object, item as object, live as boolean, x as float, width as float, height as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, 0]
+    ring = group.createChild("Poster")
+    ring.uri = "pkg:/images/ui/focus-ring-12.9.png"
+    ring.translation = [-5, -5]
+    ring.width = width + 10
+    ring.height = height + 10
+    ui.panel(group, "card", 0, 0, width, height)
+    if item.isSeeAll = true then
+        circleSize = 48
+        iconSize = 24
+        if live then
+            circleSize = 40
+            iconSize = 20
+        end if
+        label = group.createChild("Label")
+        label.font = ui.font(700, 20)
+        label.color = ui.WHITE
+        label.text = item.name
+        label.width = width - 32
+        label.wrap = true
+        label.horizAlign = "center"
+        labelHeight = label.boundingRect().height
+        top = (height - (circleSize + 12 + labelHeight)) / 2
+        circle = group.createChild("Poster")
+        circle.uri = "pkg:/images/ui/glass-circle.png"
+        circle.width = circleSize
+        circle.height = circleSize
+        circle.translation = [(width - circleSize) / 2, top]
+        chevron = group.createChild("Poster")
+        chevron.uri = "pkg:/images/ui/icon-chevron-right.png"
+        chevron.width = iconSize
+        chevron.height = iconSize
+        chevron.translation = [(width - iconSize) / 2, top + (circleSize - iconSize) / 2]
+        label.translation = [16, top + circleSize + 12]
+    else if live then
+        buildLiveCard(group, item, width, height)
+    else
+        art = group.createChild("Poster")
+        art.translation = [1, 1]
+        art.width = width - 2
+        art.height = height - 2
+        art.loadDisplayMode = "scaleToZoom"
+        if home.isHttpUrl(item.stream_icon) then art.uri = item.stream_icon
+        ui.panelImage(group, "card-shade.png", 0, 0, width, height)
+        ui.panel(group, "card-mask", 0, 0, width, height)
+        name = ui.text(group, UCase(utils.textOr(item.name, "")), ui.font(900, 20), ui.WHITE, 12, height - 10 - 28, width - 24, 28)
+        name.wrap = false
+    end if
+    group.scaleRotateCenter = [width / 2, height / 2]
+    return { group: group, ring: ring }
+end function
+
+' Cartão do "Continuar assistindo" (w-[16rem] h-[9rem]): capa, degradê, selo (AO VIVO ou "Faltam N min"), nome em
+' maiúsculas embaixo e a barra de progresso limão (tv-progress) fora dos canais.
+function buildHistoryCard(parent as object, item as object, x as float, width as float, height as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, 0]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, width + 10, height + 10)
+    ui.panel(group, "card", 0, 0, width, height)
+    art = group.createChild("Poster")
+    art.translation = [1, 1]
+    art.width = width - 2
+    art.height = height - 2
+    art.loadDisplayMode = "scaleToZoom"
+    if home.isHttpUrl(item.stream_icon) then art.uri = item.stream_icon
+    ui.panelImage(group, "card-shade.png", 0, 0, width, height)
+    ui.panel(group, "card-mask", 0, 0, width, height)
+    live = item.section = "live"
+    label = "AO VIVO"
+    if not live then label = home.remainingText(item)
+    if label <> "" then
+        badge = ui.panel(group, "badge", 12, 12, 10, 34)
+        color = ui.WHITE
+        if live then
+            badge.uri = "pkg:/images/ui/badge-lime.9.png"
+            color = ui.TEXT_ON_ACCENT
+        end if
+        letters = ui.inlineText(group, label, ui.font(700, 20), color, 20, 15, 28)
+        badge.width = letters.boundingRect().width + 16
+    end if
+    name = ui.text(group, UCase(utils.textOr(item.name, "")), ui.font(900, 20), ui.WHITE, 12, height - 10 - 28 - 4, width - 24, 28)
+    name.wrap = false
+    if not live then
+        track = group.createChild("Rectangle")
+        track.color = "0xFFFFFF40"
+        track.translation = [1, height - 5]
+        track.width = width - 2
+        track.height = 4
+        pct = item.progressPct
+        if not utils.isNumber(pct) then pct = 0
+        if pct > 100 then pct = 100
+        fill = group.createChild("Rectangle")
+        fill.color = ui.ACCENT
+        fill.translation = [1, height - 5]
+        fill.width = (width - 2) * pct / 100
+        fill.height = 4
+    end if
+    group.scaleRotateCenter = [width / 2, height / 2]
+    return { group: group, ring: ring }
+end function
+
+' Cartão de canal (p-4): nome + selo AO VIVO, "Transmissão contínua", "Canal N · Ao vivo" e a barra de 2 px.
+sub buildLiveCard(group as object, item as object, width as float, height as float)
+    badge = group.createChild("Rectangle")
+    badge.color = ui.ACCENT
+    badgeLabel = group.createChild("Label")
+    badgeLabel.font = ui.font(700, 20)
+    badgeLabel.color = ui.TEXT_ON_ACCENT
+    badgeLabel.text = "AO VIVO"
+    badgeWidth = badgeLabel.boundingRect().width + 16
+    badge.width = badgeWidth
+    badge.height = 32
+    badge.translation = [width - 16 - badgeWidth, 14]
+    badgeLabel.translation = [width - 16 - badgeWidth + 8, 16]
+    name = ui.text(group, UCase(utils.textOr(item.name, "Canal")), ui.font(900, 20), ui.WHITE, 16, 16, width - 32 - badgeWidth - 8, 28)
+    name.wrap = false
+    ui.text(group, "Transmissão contínua", ui.font(500, 20), ui.WHITE, 16, height - 16 - 2 - 4 - 28 - 2 - 28, width - 32, 28).wrap = false
+    schedule = "Canal " + utils.textOr(item.num, "") + " · Ao vivo"
+    ui.text(group, schedule, ui.font(400, 20), ui.NEUTRAL_400, 16, height - 16 - 2 - 4 - 28, width - 32, 28).wrap = false
+    track = group.createChild("Rectangle")
+    track.color = "0xFFFFFF1A"
+    track.width = width - 32
+    track.height = 2
+    track.translation = [16, height - 16 - 2]
+    progress = group.createChild("Rectangle")
+    progress.color = ui.ACCENT
+    progress.width = (width - 32) * 0.4
+    progress.height = 2
+    progress.translation = [16, height - 16 - 2]
+end sub
+
+' ---------- Menu lateral ----------
+
+sub renderMenu()
+    m.menu.removeChildrenIndex(m.menu.getChildCount(), 0)
+    open = isMenuId(m.focusId)
+    width = 112
+    padX = 12
+    if open then
+        width = 304
+        padX = 24
+        ui.panelImage(m.menu, "menu-open.png", 0, 0, 360, 1080)
+    else
+        ui.panelImage(m.menu, "menu-fade.png", 0, 0, width, 1080)
+    end if
+
+    mark = m.menu.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 30
+    mark.height = 32
+    mark.translation = [padX + 12, 68]
+    if open then
+        pulse = ui.inlineText(m.menu, "PULSE", ui.font(900, 24), "0xF4F7EEFF", padX + 54, 72, 24)
+        ui.inlineText(m.menu, "PLAYER", ui.font(900, 24), ui.ACCENT, padX + 54 + pulse.boundingRect().width + 4, 72, 24)
+    end if
+
+    m.menuNodes = []
+    items = home.menuItems()
+    tops = [136, 200, 264, 328, 392, 456, 904, 968]
+    for i = 0 to items.count() - 1
+        item = items[i]
+        y = tops[i]
+        active = item.id = m.tab
+        focused = open and home.menuNavId(item.id) = m.focusId
+        group = m.menu.createChild("Group")
+        group.translation = [padX, y]
+        itemWidth = width - 2 * padX
+        if focused then
+            ring = ui.panel(group, "focus-ring-12", -5, -5, itemWidth + 10, 66)
+            group.scaleRotateCenter = [itemWidth / 2, 28]
+            group.scale = [1.02, 1.02]
+        end if
+        if active then ui.panel(group, "nav-active", 0, 0, itemWidth, 56)
+        color = ui.NEUTRAL_400
+        if active or focused then color = ui.WHITE
+        weight = 400
+        if active then weight = 700
+        if item.id = "profile" then
+            buildAvatar(group)
+            if open then
+                ui.text(group, currentProfile().name, ui.font(500, 20), ui.WHITE, 60, 0, itemWidth - 72, 28).wrap = false
+                ui.text(group, "Trocar perfil", ui.font(400, 20), ui.NEUTRAL_400, 60, 28, itemWidth - 72, 28).wrap = false
+            end if
+        else
+            icon = group.createChild("Poster")
+            icon.uri = "pkg:/images/ui/" + item.icon + ".png"
+            icon.width = 24
+            icon.height = 24
+            icon.blendColor = color
+            icon.translation = [16, 16]
+            if open then ui.text(group, item.label, ui.font(weight, 20), color, 60, 14, itemWidth - 72, 28).wrap = false
+        end if
+    end for
+end sub
+
+' Avatar do perfil ativo (w-8 rounded-lg, cor do perfil e a inicial em font-black).
+sub buildAvatar(group as object)
+    profile = currentProfile()
+    avatar = ui.panel(group, "avatar", 12, 12, 32, 32)
+    avatar.blendColor = account.rokuColor(profile.color)
+    ui.panel(group, "avatar-border", 12, 12, 32, 32)
+    letter = ui.text(group, account.avatarLetter(profile.name), ui.font(900, 20), account.avatarTextColor(profile.color), 12, 14, 32, 28)
+    letter.horizAlign = "center"
+end sub
+
+function currentProfile() as object
+    if m.global.profile <> invalid then return m.global.profile
+    return profiles.defaults()[0]
+end function
+
+' Perfil escolhido (onProfileSelected do web): o menu mostra o novo e, no Início, o foco vai para o Assistir.
+sub onProfileChanged()
+    if loadKey() <> m.loadedFor then reloadRails()
+    if m.tab = "home" then
+        m.focusId = "hero-play"
+        spatial.remember(m.nav, m.focusId)
+    end if
+    renderMenu()
+    renderFocus()
+end sub
+
+' ---------- Foco ----------
+
+function isMenuId(id as string) as boolean
+    return Left(id, 4) = "nav-" or id = "btn-switch-profile"
+end function
+
+' Retângulos dos focáveis agora (rolagem e deslize das fileiras), para a navegação espacial do web.
+sub refreshNav()
+    menu = []
+    tops = [136, 200, 264, 328, 392, 456, 904, 968]
+    entries = home.menuItems()
+    for i = 0 to entries.count() - 1
+        menu.push({ id: home.menuNavId(entries[i].id), top: tops[i], active: entries[i].id = m.tab })
+    end for
+    open = isMenuId(m.focusId)
+    menuX = 12
+    menuWidth = 88
+    if open then
+        menuX = 24
+        menuWidth = 256
+    end if
+    rails = []
+    for each rail in m.rails
+        if rail.seeAllWidth <> invalid then rails.push({ section: rail.section, top: rail.top, count: rail.items.count(), cardWidth: rail.cardWidth, cardHeight: rail.cardHeight, offset: rail.offset, seeAllWidth: rail.seeAllWidth })
+    end for
+    retry = invalid
+    if m.retryButton <> invalid then retry = m.retryRect
+    layout = home.navItems({ scroll: m.scroll, menuOpen: open, menuX: menuX, menuWidth: menuWidth, menu: menu, heroY: 388, hero: m.heroButtons, railX: CONTENT_X, gap: RAIL_GAP, headerRight: CONTENT_X + RAIL_WIDTH + 12, rails: rails, retry: retry })
+    m.nav.items = layout.items
+    m.nav.groupRects = layout.groupRects
+end sub
+
+' OK: "Mais informações" e os cartões de filme e série abrem os detalhes (openDetails do Dashboard.vue); no menu,
+' Início, Busca, TV ao vivo, Filmes, Séries e Conta trocam a aba. Assistir (filme) e os canais tocam (handleHeroPlay e
+' handleCardPlay do web); Trocar perfil abre a escolha de perfil; o coração do destaque guarda ou tira dos Favoritos.
+function onSelect() as boolean
+    if m.focusId = "hero-mylist" then
+        toggleHeroFavorite()
+        return true
+    end if
+    if m.focusId = "btn-switch-profile" then
+        m.top.navigate = { action: "push", screen: "ProfileScreen" }
+        return true
+    end if
+    if isMenuId(m.focusId) then
+        menuTab = Mid(m.focusId, 5)
+        if menuTab = "live" or menuTab = "vod" or menuTab = "series" or menuTab = "search" or menuTab = "account" or menuTab = "favorites" then openTab(menuTab)
+        if menuTab = "home" then showHome("nav-home")
+        return true
+    end if
+    if m.focusId = "home-see-all-history" then
+        clearHistory()
+        return true
+    end if
+    if m.focusId = "home-retry" then
+        retryHome()
+        return true
+    end if
+    ' "Ver todos ›" / "Explorar canais ›" no título da fileira abre a aba dela (activeTab do Dashboard.vue).
+    if Left(m.focusId, 13) = "home-see-all-" then
+        openTab(Mid(m.focusId, 14))
+        return true
+    end if
+    if Left(m.focusId, 13) = "history-card-" then
+        for each rail in m.rails
+            if rail.section = "history" then playHistoryItem(rail.items[Int(Val(Mid(m.focusId, 14)))])
+        end for
+        return true
+    end if
+    if m.focusId = "hero-play" and m.heroFromHistory = true then
+        playHistoryItem(m.heroItem)
+        return true
+    end if
+    ' "Mais informações" de um episódio do histórico abre a série dele.
+    if m.focusId = "hero-info" and m.heroFromHistory = true and m.heroItem.section = "series" and utils.textOr(m.heroItem.seriesId, "") <> "" then
+        series = { stream_id: m.heroItem.seriesId, series_id: m.heroItem.seriesId, name: playerState.seriesNameFromEpisode(m.heroItem.name), stream_icon: m.heroItem.stream_icon, category_id: m.heroItem.category_id, section: "series" }
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: { item: series, section: "series" } }
+        return true
+    end if
+    item = invalid
+    index = 0
+    if m.focusId = "hero-info" or m.focusId = "hero-play" then item = m.heroItem
+    for each rail in m.rails
+        prefix = rail.section + "-card-"
+        if Left(m.focusId, Len(prefix)) = prefix then
+            index = Int(Val(Mid(m.focusId, Len(prefix) + 1)))
+            item = rail.items[index]
+        end if
+    end for
+    ' handleHeroInfo do web: sem filme nem série no destaque, "Mais informações" abre Minhas listas.
+    if m.focusId = "hero-info" then
+        heroSection = ""
+        if utils.isObject(item) then heroSection = utils.textOr(item.section, "")
+        if heroSection <> "vod" and heroSection <> "series" then
+            m.top.navigate = { action: "push", screen: "ListManagerScreen" }
+            return true
+        end if
+    end if
+    if not utils.isObject(item) then return true
+    ' Cartão "Ver todos os filmes / Ver todas as séries / Explorar canais" no fim da fileira: a aba da seção.
+    if item.isSeeAll = true then
+        openTab(item.section)
+        return true
+    end if
+    section = utils.textOr(item.section, "")
+    if section = "live" or (m.focusId = "hero-play" and section = "vod") then
+        playFromAll(section, item, index)
+        return true
+    end if
+    if section = "vod" or section = "series" then
+        params = { item: item, section: section }
+        ' Filme de uma fileira: "Assistir" nos detalhes segue a fileira (a de "Todos") com Anterior/Próximo.
+        if section = "vod" and Left(m.focusId, Len("vod-card-")) = "vod-card-" then params.play = allRequest(section, item, index)
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: params }
+    end if
+    return true
+end function
+
+'' playFromCatalog em "Todos": a fileira são os primeiros itens, então a posição nela é a posição na categoria
+' (CH+/CH- certos).
+sub playFromAll(section as string, item as object, index as integer)
+    request = allRequest(section, item, index)
+    if request <> invalid then m.top.navigate = request
+end sub
+
+function allRequest(section as string, item as object, index as integer) as dynamic
+    store = storage.create()
+    active = session.hydrate(store)
+    if active = invalid then return invalid
+    dir = catalog.contextFor(active).dir
+    hidden = parental.hiddenMap(parental.activeContext(store), dir)[section]
+    return playerState.catalogRequest(dir, section, catalog.ALL_CATEGORIES, item, index, invalid, hidden)
+end function
+
+' focusEl do web: lembra o foco, desliza a fileira até o cartão e rola o conteúdo (o destaque volta ao topo).
+sub focusOn(id as string)
+    wasMenu = isMenuId(m.focusId)
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    for each rail in m.rails
+        prefix = rail.section + "-card-"
+        if Left(id, Len(prefix)) = prefix and rail.cardWidth <> invalid then
+            index = Val(Mid(id, Len(prefix) + 1))
+            rail.offset = home.railOffset({ index: index, itemSize: rail.cardWidth, gap: RAIL_GAP, count: rail.items.count(), viewport: RAIL_WIDTH })
+        end if
+    end for
+    if Left(id, 5) = "hero-" then
+        m.scroll = 0
+    else if not isMenuId(id) then
+        refreshNav()
+        item = spatial.byId(m.nav, id)
+        if item <> invalid then m.scroll = spatial.scrollTarget(item.rect[1] + m.scroll, item.rect[3], 1080, m.scroll, m.maxScroll)
+    end if
+    if wasMenu or isMenuId(id) then renderMenu()
+    renderFocus()
+end sub
+
+sub renderFocus()
+    if m.retryButton <> invalid then m.retryButton.focused = m.focusId = "home-retry"
+    for each button in m.heroButtons
+        focused = button.id = m.focusId
+        button.ring.visible = focused
+        if focused then
+            button.group.scale = [1.02, 1.02]
+        else
+            button.group.scale = [1, 1]
+        end if
+    end for
+    for each rail in m.rails
+        if rail.cards <> invalid then
+            prefix = rail.section + "-card-"
+            for i = 0 to rail.cards.count() - 1
+                focused = m.focusId = prefix + i.toStr()
+                rail.cards[i].ring.visible = focused
+                if focused then
+                    rail.cards[i].group.scale = [1.08, 1.08]
+                else
+                    rail.cards[i].group.scale = [1, 1]
+                end if
+            end for
+            if rail.strip <> invalid then rail.strip.translation = [rail.offset, 0]
+            if rail.seeAllRing <> invalid then rail.seeAllRing.visible = m.focusId = "home-see-all-" + rail.section
+        end if
+    end for
+    m.content.translation = [0, -m.scroll]
+end sub
+
+' ---------- Abas TV ao vivo, Filmes e Séries (CatalogTab) ----------
+
+' Troca a aba (activeTab do Dashboard.vue): o conteúdo do Início some e a aba entra no lugar, com o menu por cima.
+' section = "live"|"vod"|"series" (CatalogTab), "search" (SearchTab) ou "account" (AccountTab).
+sub openTab(section as string)
+    if m.catalogTab <> invalid and m.tab <> section then closeTab()
+    m.tab = section
+    m.content.visible = false
+    if m.catalogTab = invalid then
+        if section = "search" then
+            m.catalogTab = CreateObject("roSGNode", "SearchTab")
+        else if section = "account" then
+            m.catalogTab = CreateObject("roSGNode", "AccountTab")
+        else if section = "favorites" then
+            m.catalogTab = CreateObject("roSGNode", "FavoritesTab")
+        else
+            m.catalogTab = CreateObject("roSGNode", "CatalogTab")
+        end if
+        m.top.insertChild(m.catalogTab, m.top.getChildCount() - 1)
+        m.catalogTab.observeField("exit", "onTabExit")
+        m.catalogTab.observeField("navigate", "onTabNavigate")
+        if m.catalogTab.hasField("section") then m.catalogTab.section = section
+    end if
+    m.focusId = "tab"
+    renderMenu()
+    m.catalogTab.setFocus(true)
+end sub
+
+sub closeTab()
+    if m.catalogTab = invalid then return
+    ' A busca encerra a Task que segura o cache de nomes.
+    if m.catalogTab.hasField("stop") then m.catalogTab.stop = true
+    m.top.removeChild(m.catalogTab)
+    m.catalogTab = invalid
+end sub
+
+' Voltar numa aba que não é o Início volta ao Início com o foco no menu (tabBackAction do web).
+sub showHome(focusId as string)
+    closeTab()
+    m.tab = "home"
+    m.content.visible = true
+    m.focusId = focusId
+    spatial.remember(m.nav, focusId)
+    renderMenu()
+    renderFocus()
+    m.top.setFocus(true)
+end sub
+
+' Esquerda na borda da aba: entra no menu no item lembrado ou no da aba ativa (rememberedIn do web).
+sub onTabExit()
+    target = m.nav.groupMemory["side-menu"]
+    if target = invalid then target = "nav-" + m.tab
+    m.focusId = target
+    renderMenu()
+    ' O pai focar não tira o foco da aba (no simulador): solta primeiro.
+    m.catalogTab.setFocus(false)
+    m.top.setFocus(true)
+end sub
+
+sub onTabNavigate(event as object)
+    data = event.getData()
+    ' "Favoritos" da Conta troca a aba (emit('navigate', 'favorites') do AccountScreen.vue).
+    if data.action = "tab" then
+        openTab(data.tab)
+        return
+    end if
+    m.top.navigate = data
+end sub
+
+' Voltando dos detalhes a MainScene foca o Início: devolve o foco para a aba se era lá que ele estava.
+sub onFocusChanged()
+    ' Voltando do player ou dos detalhes para o Início: o "Continuar assistindo" pode ter mudado.
+    hasFocus = m.top.focusedChild <> invalid
+    ' A tela de bloqueio fechou (licença liberada): a próxima consulta pode abri-la de novo.
+    if hasFocus then m.activationShown = false
+    if hasFocus and utils.textOr(m.pendingActivation, "") <> "" then showActivation(m.pendingActivation)
+    if hasFocus and m.hadFocus = false and m.tab = "home" then loadHistory()
+    m.hadFocus = hasFocus
+    if m.focusId <> "tab" or m.catalogTab = invalid or m.top.focusedChild = invalid then return
+    if m.top.focusedChild.subtype() = "HomeScreen" then m.catalogTab.setFocus(true)
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "back" and m.tab <> "home" then
+        showHome("nav-home")
+        return true
+    end if
+    if key = "right" and m.tab <> "home" and isMenuId(m.focusId) then
+        m.focusId = "tab"
+        renderMenu()
+        m.catalogTab.setFocus(true)
+        return true
+    end if
+    if key = "OK" then return onSelect()
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    refreshNav()
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then focusOn(target)
+    return true
+end function

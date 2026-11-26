@@ -30,3 +30,6 @@ build/
 .wrangler/
 .mp-integrate-progress.md
 server/license/.data/
+
+# graphify (grafo local do código)
+graphify-out/

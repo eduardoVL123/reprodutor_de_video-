@@ -1,0 +1,963 @@
+import "pkg:/source/ui/ui.bs"
+import "pkg:/source/utils/types.bs"
+import "pkg:/source/home/home.bs"
+import "pkg:/source/nav/spatial.bs"
+import "pkg:/source/catalog/catalog.bs"
+import "pkg:/source/catalog/catalogTab.bs"
+import "pkg:/source/catalog/grid.bs"
+import "pkg:/source/ui/gridItem.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/favorites/favorites.bs"
+import "pkg:/source/parental/parental.bs"
+import "pkg:/source/player/playerState.bs"
+
+' Medidas do CatalogBrowser.vue em px (1920×1080): seção de x 152 a 1824 (pl-10/pr-24) e y 56 (py-14); cabeçalho
+' de 75 px; conteúdo rolável de y 131 a 1024; fileiras com px-6 (x 176) e cartões 176×264 com gap-4.
+const SECTION_LEFT = 152
+const SECTION_RIGHT = 1824
+const CONTENT_TOP = 131
+const CONTENT_HEIGHT = 893
+const STRIP_X = 280
+const STRIP_WIDTH = 1175
+const POSTER_W = 176
+const POSTER_H = 264
+const LIVE_W = 288
+const LIVE_H = 208
+const CARD_GAP = 16
+const TRACK_WIDTH = 1624
+const NEUTRAL_300 = "0xD4D4D4FF"
+
+sub init()
+    m.contentClip = m.top.createChild("Group")
+    m.contentClip.clippingRect = [SECTION_LEFT, CONTENT_TOP, SECTION_RIGHT - SECTION_LEFT, CONTENT_HEIGHT]
+    m.scrollGroup = m.contentClip.createChild("Group")
+    m.header = m.top.createChild("Group")
+    m.nav = spatial.create([], {}, [1920, 1080])
+    m.focusables = {}
+    m.state = "loading"
+    m.error = ""
+    m.categories = []
+    m.rows = []
+    m.heroItem = invalid
+    m.heroInfo = invalid
+    m.activeCategory = "all"
+    m.catScroll = 0
+    m.rowScroll = {}
+    m.scroll = 0
+    m.gridItems = {}
+    m.gridCount = 0
+    m.gridScroll = 0
+    m.focusId = "cat-0"
+    m.top.observeField("focusedChild", "onFocusChanged")
+end sub
+
+' Entrou ou saiu o foco (menu ↔ aba): o anel só aparece com a aba focada.
+sub onFocusChanged()
+    renderFocus()
+end sub
+
+sub onSection()
+    m.section = m.top.section
+    m.layout = catalogTab.gridLayout(m.section)
+    current = session.hydrate(storage.create())
+    m.ctx = invalid
+    if current <> invalid then
+        m.ctx = catalog.contextFor(current)
+        m.sessionType = utils.textOr(current.type, "")
+    end if
+    m.parentalCtx = parental.activeContext(storage.create())
+    m.hidden = []
+    m.allCategories = []
+    m.pendingCategory = ""
+    load(false)
+end sub
+
+' ---------- Dados ----------
+
+sub load(force as boolean)
+    m.state = "loading"
+    m.loadingStep = ""
+    m.loadingPercent = 0
+    render()
+    requestData({ mode: "open", force: force })
+end sub
+
+sub requestData(params as object)
+    if m.ctx = invalid then return
+    task = CreateObject("roSGNode", "CatalogTabTask")
+    task.ctx = m.ctx
+    task.section = m.section
+    ' Escolhas do controle parental (a abertura filtra) e os ids já fora da vista (as páginas da grade).
+    task.parental = m.parentalCtx
+    hidden = {}
+    hidden[m.section] = m.hidden
+    task.hidden = hidden
+    task.request = params
+    task.observeField("result", "onResult")
+    task.control = "run"
+    if m.tasks = invalid then m.tasks = []
+    m.tasks.push(task)
+end sub
+
+sub onResult(event as object)
+    data = event.getData()
+    ' A Task terminou: sai da lista para não acumular página após página. O "open" bom ainda manda o "hero" (ou o
+    ' "done"), e pode chegar antes de a gravação acabar (early): soltar a Task aí interromperia a gravação.
+    final = data.mode = "page" or data.mode = "hero" or data.mode = "done" or (data.mode = "open" and data.ok <> true)
+    if final then releaseTask(event.getRoSGNode())
+    if data.mode = "stage" then
+        ' Etapa da carga no lugar do "Carregando catálogo..." (state.step do CatalogBrowser.vue).
+        m.loadingStep = utils.textOr(data.text, "")
+        if m.state = "loading" then renderContent()
+        return
+    end if
+    if data.mode = "progress" then
+        m.loadingPercent = data.percent
+        if m.state = "loading" then renderContent()
+        return
+    end if
+    if data.mode = "open" then
+        if not data.ok then
+            m.state = "error"
+            m.error = data.error
+            m.focusId = "catalog-retry"
+        else
+            m.state = "ready"
+            m.categories = data.categories
+            m.hidden = data.hidden
+            if m.hidden = invalid then m.hidden = []
+            m.allCategories = data.allCategories
+            m.rows = withFavoritesRow(data.rows)
+            m.heroItem = data.heroItem
+            m.heroInfo = invalid
+            if not isFocusIn("cat-") then m.focusId = "cat-" + activeCategoryIndex().toStr()
+        end if
+        render()
+        ' Fechou o Controle parental: o foco volta ao botão, que só existe com a aba pronta.
+        if m.restoreFocus <> invalid and m.restoreFocus <> "" and m.focusables[m.restoreFocus] <> invalid then
+            m.focusId = m.restoreFocus
+            renderFocus()
+        end if
+        m.restoreFocus = ""
+        ' Desbloqueou com o PIN: abre a categoria (unlockCategory do web).
+        if m.state = "ready" and m.pendingCategory <> "" then
+            categoryId = m.pendingCategory
+            m.pendingCategory = ""
+            chooseCategory(categoryId)
+        end if
+    else if data.mode = "hero" then
+        m.heroInfo = data.info
+        render()
+    else if data.mode = "page" and data.categoryId = m.activeCategory then
+        ' Resposta chegou: a página pode ser pedida de novo. Vazia (leitura falhou) não redesenha, senão pediria em laço;
+        ' a próxima tecla tenta outra vez.
+        if m.pendingPage = data.start then m.pendingPage = -1
+        if data.items.count() = 0 then return
+        ' Só a página nova e as vizinhas ficam na memória: rolar uma categoria de 50 mil não guarda tudo.
+        low = data.start - 2 * data.items.count()
+        high = data.start + 3 * data.items.count()
+        kept = {}
+        for each key in m.gridItems
+            if key.toInt() >= low and key.toInt() < high then kept[key] = m.gridItems[key]
+        end for
+        m.gridItems = kept
+        for i = 0 to data.items.count() - 1
+            m.gridItems[(data.start + i).toStr()] = data.items[i]
+        end for
+        renderContent()
+        renderFocus()
+    end if
+end sub
+
+sub releaseTask(task as object)
+    for i = 0 to m.tasks.count() - 1
+        if m.tasks[i].isSameNode(task) then
+            m.tasks.delete(i)
+            return
+        end if
+    end for
+end sub
+
+function activeCategoryIndex() as integer
+    for i = 0 to m.categories.count() - 1
+        if m.categories[i].category_id = m.activeCategory then return i
+    end for
+    return 0
+end function
+
+function isFocusIn(prefix as string) as boolean
+    return Left(m.focusId, Len(prefix)) = prefix
+end function
+
+function showGrid() as boolean
+    return m.activeCategory <> "all"
+end function
+
+' ---------- Desenho ----------
+
+sub render()
+    renderHeader()
+    renderContent()
+    if m.focusables[m.focusId] = invalid and not isGridId(m.focusId) then m.focusId = spatial.firstNavigable(m.nav)
+    renderFocus()
+end sub
+
+sub resetFocusables(prefix as string)
+    if m.focusables = invalid then m.focusables = {}
+    for each id in m.focusables
+        if m.focusables[id].part = prefix then m.focusables.delete(id)
+    end for
+end sub
+
+sub renderHeader()
+    m.header.removeChildrenIndex(m.header.getChildCount(), 0)
+    resetFocusables("header")
+    bg = m.header.createChild("Rectangle")
+    bg.color = "0x0B0F0CE6"
+    bg.width = SECTION_RIGHT - SECTION_LEFT
+    bg.height = 75
+    bg.translation = [SECTION_LEFT, 56]
+    line = m.header.createChild("Rectangle")
+    line.color = "0xFFFFFF0F"
+    line.width = SECTION_RIGHT - SECTION_LEFT
+    line.height = 1
+    line.translation = [SECTION_LEFT, 130]
+    ui.inlineText(m.header, catalogTab.title(m.section), ui.font(900, 24), ui.WHITE, 176, 77, 32)
+    if m.state <> "ready" then return
+
+    ' Botões da direita (px-6): Atualizar lista e Controle parental.
+    x = SECTION_RIGHT - 24
+    x = headerButton("catalog-refresh", "icon-refresh", "Atualizar lista", x) - 16
+    headerButton("catalog-parental", "icon-lock", "Controle parental", x)
+
+    ' Categorias (rounded-full, gap-2), recortadas na faixa; a ativa em limão.
+    strip = m.header.createChild("Group")
+    strip.clippingRect = [STRIP_X, 56, STRIP_WIDTH, 75]
+    m.catStrip = strip.createChild("Group")
+    m.catStrip.translation = [-m.catScroll, 0]
+    x = STRIP_X + 8
+    m.catRects = []
+    for i = 0 to m.categories.count() - 1
+        cat = m.categories[i]
+        active = cat.category_id = m.activeCategory
+        group = m.catStrip.createChild("Group")
+        border = 1
+        image = "pill"
+        color = NEUTRAL_300
+        if active then
+            border = 0
+            image = "pill-active"
+            color = ui.TEXT_ON_ACCENT
+        end if
+        group.translation = [x, 76 + 1 - border]
+        ring = ui.panel(group, "focus-ring-pill", -5, -5, 10, 32 + 2 * border + 10)
+        pill = ui.panel(group, image, 0, 0, 10, 32 + 2 * border)
+        ' Bloqueada: cadeado antes do nome (o web usa o emoji 🔒 com mr-1.5).
+        textX = 16 + border
+        if parental.isLocked(m.parentalCtx, m.section, cat) then
+            lock = group.createChild("Poster")
+            lock.uri = "pkg:/images/ui/icon-lock.png"
+            lock.width = 16
+            lock.height = 16
+            lock.blendColor = color
+            lock.translation = [textX, 8]
+            textX = textX + 22
+        end if
+        label = ui.inlineText(group, utils.textOr(cat.category_name, ""), ui.font(500, 14), color, textX, 6, 20)
+        width = textX + label.boundingRect().width + 16 + border
+        pill.width = width
+        ring.width = width + 10
+        group.scaleRotateCenter = [width / 2, 16]
+        if active then group.scale = [1.02, 1.02]
+        m.catRects.push({ x: x - STRIP_X, width: width })
+        entry = addFocusable("cat-" + i.toStr(), "header", "categories", "catalog-content", [x - m.catScroll, 76, width, 34], group, ring, 1.02)
+        entry.slide = true
+        entry.active = active
+        entry.pinScale = active
+        x = x + width + 8
+    end for
+    m.catContentWidth = x - STRIP_X + 32
+    ' Máscara da direita: a última categoria some em degradê (2.5rem).
+    ui.panelImage(m.header, "strip-fade.png", STRIP_X + STRIP_WIDTH - 40, 56, 40, 74)
+end sub
+
+function headerButton(id as string, icon as string, text as string, right as float) as float
+    group = m.header.createChild("Group")
+    ring = ui.panel(group, "focus-ring", -5, -5, 10, 48)
+    bg = ui.panel(group, "btn-soft", 0, 0, 10, 38)
+    iconNode = group.createChild("Poster")
+    iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+    iconNode.width = 16
+    iconNode.height = 16
+    iconNode.blendColor = NEUTRAL_300
+    iconNode.translation = [17, 11]
+    label = ui.inlineText(group, text, ui.font(500, 14), NEUTRAL_300, 41, 9, 20)
+    width = 41 + label.boundingRect().width + 17
+    bg.width = width
+    ring.width = width + 10
+    group.translation = [right - width, 74]
+    group.scaleRotateCenter = [width / 2, 19]
+    addFocusable(id, "header", "header-actions", "catalog-content", [right - width, 74, width, 38], group, ring, 1.02)
+    return right - width
+end function
+
+sub renderContent()
+    m.scrollGroup.removeChildrenIndex(m.scrollGroup.getChildCount(), 0)
+    resetFocusables("content")
+    m.railStrips = {}
+    if m.state = "loading" then
+        loadingText = "Carregando catálogo..."
+        if utils.textOr(m.loadingStep, "") <> "" then loadingText = m.loadingStep
+        label = ui.inlineText(m.scrollGroup, loadingText, ui.font(400, 24), NEUTRAL_300, 0, 560, 39)
+        label.translation = [SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - label.boundingRect().width) / 2, label.translation[1]]
+        ' Barra da gravação (w-[30rem] h-2, bg-white/10 e o limão), 24 px abaixo do texto (gap-6).
+        if m.loadingPercent > 0 then
+            barX = SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - 480) / 2
+            ui.panel(m.scrollGroup, "loading-track", barX, 623, 480, 8)
+            fillWidth = Int(480 * m.loadingPercent / 100)
+            if fillWidth >= 8 then ui.panel(m.scrollGroup, "progress-fill", barX, 623, fillWidth, 8)
+        end if
+        m.contentHeight = CONTENT_HEIGHT
+        return
+    end if
+    if m.state = "error" then
+        message = ui.text(m.scrollGroup, m.error, ui.font(700, 28), ui.WHITE, SECTION_LEFT + 236, 500, 1200, 39)
+        message.horizAlign = "center"
+        group = m.scrollGroup.createChild("Group")
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 62)
+        bg = ui.panel(group, "btn-primary", 0, 0, 10, 52)
+        label = ui.inlineText(group, "Tentar novamente", ui.font(600, 20), ui.BLACK, 28, 12, 28)
+        width = label.boundingRect().width + 56
+        bg.width = width
+        ring.width = width + 10
+        x = SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - width) / 2
+        group.translation = [x, 580]
+        addFocusable("catalog-retry", "content", "retry", "catalog-content", [x, 580, width, 52], group, ring, 1.02)
+        m.contentHeight = CONTENT_HEIGHT
+        return
+    end if
+    if showGrid() then
+        renderGrid()
+        return
+    end if
+
+    y = CONTENT_TOP
+    if m.section <> "live" and m.heroItem <> invalid then
+        renderHero()
+        y = CONTENT_TOP + 448 + 16
+    end if
+    if m.rows.count() = 0 then
+        renderEmpty(y)
+        return
+    end if
+    for each row in m.rows
+        row.top = y
+        row.node = invalid
+        y = y + rowPitch()
+    end for
+    m.contentHeight = y - 32 + 96 - CONTENT_TOP
+    updateRows()
+end sub
+
+' Título (28) + mb-3 (12) + faixa (py-3 + cartão) + space-y-8 (32).
+function rowPitch() as integer
+    if m.section = "live" then return 40 + LIVE_H + 24 + 32
+    return 40 + POSTER_H + 24 + 32
+end function
+
+' Só as fileiras perto da tela existem (uma a mais em cima e embaixo): desenhar as 12 de uma vez prendia a render
+' thread por segundos. As que saem da janela são removidas, com os focáveis delas.
+sub updateRows()
+    if showGrid() or m.state <> "ready" then return
+    windowTop = CONTENT_TOP + m.scroll - rowPitch()
+    windowBottom = CONTENT_TOP + m.scroll + CONTENT_HEIGHT + rowPitch()
+    for each row in m.rows
+        inside = row.top < windowBottom and row.top + rowPitch() > windowTop
+        if inside and row.node = invalid then
+            row.node = renderRow(row, row.top)
+        else if not inside and row.node <> invalid then
+            m.scrollGroup.removeChild(row.node)
+            row.node = invalid
+            gone = []
+            for each id in m.focusables
+                entry = m.focusables[id]
+                if (entry.categoryId <> invalid and entry.categoryId = row.category_id) or id = "see-all-" + row.category_id then gone.push(id)
+            end for
+            for each id in gone
+                m.focusables.delete(id)
+            end for
+        end if
+    end for
+end sub
+
+sub renderEmpty(y as float)
+    message = catalogTab.emptyMessage(m.section, m.sessionType, m.activeCategory)
+    title = ui.text(m.scrollGroup, message.title, ui.font(500, 28), ui.NEUTRAL_400, SECTION_LEFT, y + 80, SECTION_RIGHT - SECTION_LEFT, 39)
+    title.horizAlign = "center"
+    if message.detail <> "" then
+        detail = ui.text(m.scrollGroup, message.detail, ui.font(400, 20), ui.NEUTRAL_400, SECTION_LEFT + 24, y + 131, SECTION_RIGHT - SECTION_LEFT - 48, 28)
+        detail.horizAlign = "center"
+    end if
+    ' Numa categoria vazia, "Ver todas as categorias" (tv-btn-primary mt-4) volta para Todos.
+    if m.activeCategory <> catalog.ALL_CATEGORIES then
+        group = m.scrollGroup.createChild("Group")
+        ring = ui.panel(group, "focus-ring", -5, -5, 10, 62)
+        bg = ui.panel(group, "btn-primary", 0, 0, 10, 52)
+        label = ui.inlineText(group, "Ver todas as categorias", ui.font(600, 20), ui.BLACK, 28, 12, 28)
+        width = label.boundingRect().width + 56
+        bg.width = width
+        ring.width = width + 10
+        x = SECTION_LEFT + (SECTION_RIGHT - SECTION_LEFT - width) / 2
+        top = y + 80 + 39 + 16
+        group.translation = [x, top]
+        addFocusable("catalog-all-categories", "content", "empty", "catalog-content", [x, top, width, 52], group, ring, 1.02)
+    end if
+    m.contentHeight = CONTENT_HEIGHT
+end sub
+
+' Destaque (só Filmes e Séries): arte à direita (70%, opacidade 0.45) com os degradês e o conteúdo embaixo.
+sub renderHero()
+    clip = m.scrollGroup.createChild("Group")
+    clip.clippingRect = [SECTION_LEFT, CONTENT_TOP, SECTION_RIGHT - SECTION_LEFT, 448]
+    art = home.pickArtwork(m.heroItem, m.heroInfo)
+    if art.url <> "" then
+        poster = clip.createChild("Poster")
+        poster.uri = art.url
+        poster.translation = [654, CONTENT_TOP]
+        poster.width = 1170
+        poster.height = 448
+        poster.opacity = 0.45
+        poster.loadDisplayMode = "scaleToZoom"
+    end if
+    ui.panelImage(clip, "hero-fade-r.png", SECTION_LEFT, CONTENT_TOP, SECTION_RIGHT - SECTION_LEFT, 448)
+    ui.panelImage(clip, "hero-fade-t.png", SECTION_LEFT, CONTENT_TOP, SECTION_RIGHT - SECTION_LEFT, 448)
+
+    texts = catalogTab.heroTexts(m.section, m.heroItem, m.heroInfo)
+    ' De baixo para cima (justify-end, pb-10, space-y-3): botões, sinopse, meta, título, selo.
+    buttonsTop = CONTENT_TOP + 448 - 40 - 44
+    synopsis = ui.text(m.scrollGroup, texts.synopsis, ui.font(400, 14), NEUTRAL_300, 184, 0, 576, 22.75)
+    synopsis.maxLines = 3
+    synopsisHeight = ui.textHeight(synopsis, 22.75)
+    if synopsisHeight > 68.25 then synopsisHeight = 68.25
+    synopsisTop = buttonsTop - 8 - 12 - synopsisHeight
+    synopsis.translation = [184, synopsis.translation[1] + synopsisTop]
+    metaTop = synopsisTop - 12 - 20
+    parts = []
+    if texts.rating <> "" then parts.push({ text: texts.rating, color: ui.ACCENT, weight: 700 })
+    if texts.year <> "" then parts.push({ text: texts.year, color: NEUTRAL_300, weight: 500 })
+    parts.push({ text: texts.duration, color: NEUTRAL_300, weight: 500 })
+    if texts.genre <> "" then parts.push({ text: texts.genre, color: NEUTRAL_300, weight: 500 })
+    x = 184
+    for i = 0 to parts.count() - 1
+        label = ui.inlineText(m.scrollGroup, parts[i].text, ui.font(parts[i].weight, 14), parts[i].color, x, metaTop, 20)
+        x = x + label.boundingRect().width + 10
+        if i < parts.count() - 1 then
+            dot = m.scrollGroup.createChild("Rectangle")
+            dot.color = ui.NEUTRAL_500
+            dot.width = 4
+            dot.height = 4
+            dot.translation = [x, metaTop + 8]
+            x = x + 14
+        end if
+    end for
+    title = ui.text(m.scrollGroup, UCase(texts.title), ui.font(900, 48), ui.WHITE, 184, 0, 672, 60)
+    title.maxLines = 2
+    titleHeight = ui.textHeight(title, 60)
+    if titleHeight > 120 then titleHeight = 120
+    titleTop = metaTop - 12 - titleHeight
+    title.translation = [184, title.translation[1] + titleTop]
+    badgeTop = titleTop - 12 - 16
+    mark = m.scrollGroup.createChild("Poster")
+    mark.uri = "pkg:/images/ui/brand-mark.png"
+    mark.width = 15
+    mark.height = 16
+    mark.translation = [184, badgeTop]
+    ui.trackedText(m.scrollGroup, texts.badge, ui.font(700, 12), ui.ACCENT, 207, badgeTop, 3)
+
+    x = 184
+    x = heroButton("catalog-hero-play", "icon-play", "Assistir", x, true) + 12
+    x = heroButton("catalog-hero-info", "icon-info", "Mais informações", x, false) + 12
+    ' isFeaturedBookmarked do CatalogBrowser.vue: coração cheio em limão.
+    if favorites.has(loadFavorites(), m.heroItem, m.section) then
+        heroButton("catalog-hero-mylist", "icon-heart-filled", "", x, false, ui.ACCENT)
+    else
+        heroButton("catalog-hero-mylist", "icon-heart-small", "", x, false)
+    end if
+end sub
+
+function loadFavorites() as object
+    store = storage.create()
+    return favorites.load(store, favorites.activeKey(store))
+end function
+
+' TV ao vivo: os canais favoritos numa fileira "Favoritos" no topo (loadCategoryRows do CatalogBrowser.vue).
+function withFavoritesRow(rows as object) as object
+    if m.section <> "live" then return rows
+    result = []
+    channels = []
+    ' Canal de categoria escondida/bloqueada fica fora dos Favoritos também (auditoria RFC-025, item 9).
+    blocked = { live: m.hidden }
+    for each item in loadFavorites()
+        if item.section = "live" and parental.allows(blocked, item) then channels.push(item)
+    end for
+    if channels.count() > 0 then result.push({ category_id: "favorites", category_name: "Favoritos", items: channels })
+    for each row in rows
+        if row.category_id <> "favorites" then result.push(row)
+    end for
+    return result
+end function
+
+' handleToggleBookmark do CatalogBrowser.vue.
+sub toggleHeroFavorite()
+    if not utils.isObject(m.heroItem) then return
+    store = storage.create()
+    key = favorites.activeKey(store)
+    list = favorites.load(store, key)
+    if favorites.has(list, m.heroItem, m.section) then
+        favorites.remove(store, key, list, favorites.plainItem(m.heroItem, m.section).stream_id, m.section)
+    else
+        favorites.add(store, key, list, m.heroItem, m.section)
+    end if
+    m.rows = withFavoritesRow(m.rows)
+    render()
+end sub
+
+function heroButton(id as string, icon as string, text as string, x as float, primary as boolean, iconColor = "" as string) as float
+    top = CONTENT_TOP + 448 - 40 - 44
+    group = m.scrollGroup.createChild("Group")
+    group.translation = [x, top]
+    ring = ui.panel(group, "focus-ring", -5, -5, 10, 54)
+    image = "btn-hero"
+    color = ui.WHITE
+    if primary then
+        image = "btn-primary"
+        color = ui.BLACK
+    end if
+    bg = ui.panel(group, image, 0, 0, 10, 44)
+    iconNode = group.createChild("Poster")
+    iconNode.uri = "pkg:/images/ui/" + icon + ".png"
+    iconNode.width = 16
+    iconNode.height = 16
+    iconNode.blendColor = color
+    if iconColor <> "" then iconNode.blendColor = iconColor
+    width = 44
+    if text = "" then
+        iconNode.translation = [14, 14]
+    else
+        padX = 21
+        weight = 500
+        if primary then
+            padX = 24
+            weight = 700
+        end if
+        iconNode.translation = [padX, 14]
+        label = ui.inlineText(group, text, ui.font(weight, 14), color, padX + 24, 12, 20)
+        width = padX + 24 + label.boundingRect().width + padX
+    end if
+    bg.width = width
+    ring.width = width + 10
+    group.scaleRotateCenter = [width / 2, 22]
+    addFocusable(id, "content", "catalog-hero-actions", "catalog-content", [x, top, width, 44], group, ring, 1.02)
+    return x + width
+end function
+
+' Fileira de uma categoria: título, "Ver todos ›" e a faixa com rolagem lateral (py-3 px-3).
+function renderRow(row as object, top as float) as object
+    live = m.section = "live"
+    rowGroup = m.scrollGroup.createChild("Group")
+    ui.inlineText(rowGroup, utils.textOr(row.category_name, ""), ui.font(700, 20), ui.WHITE, 180, top, 28)
+    seeAllId = "see-all-" + row.category_id
+    if row.category_id <> "favorites" then
+        group = rowGroup.createChild("Group")
+        group.translation = [1676, top - 12]
+        ring = ui.panel(group, "focus-ring", -5, -5, 130, 62)
+        ui.inlineText(group, "Ver todos ›", ui.font(400, 20), ui.NEUTRAL_400, 12, 12, 28)
+        group.scaleRotateCenter = [60, 26]
+        addFocusable(seeAllId, "content", "header-" + row.category_id, "catalog-content", [1676, top - 12, 120, 52], group, ring, 1.02)
+    end if
+    cardW = POSTER_W
+    cardH = POSTER_H
+    if live then
+        cardW = LIVE_W
+        cardH = LIVE_H
+    end if
+    trackTop = top + 40
+    clip = rowGroup.createChild("Group")
+    clip.clippingRect = [176, trackTop, TRACK_WIDTH, cardH + 24]
+    strip = clip.createChild("Group")
+    scrollX = m.rowScroll[row.category_id]
+    if scrollX = invalid then scrollX = 0
+    strip.translation = [-scrollX, 0]
+    m.railStrips[row.category_id] = { node: strip, count: row.items.count(), cardW: cardW }
+    nowSecs = CreateObject("roDateTime").AsSeconds()
+    for i = 0 to row.items.count() - 1
+        item = row.items[i]
+        x = 188 + i * (cardW + CARD_GAP)
+        if live then
+            node = liveCard(strip, item, x, trackTop + 12)
+        else
+            node = posterCard(strip, item, x, trackTop + 12, catalogTab.newBadge(m.section, item, nowSecs))
+        end if
+        entry = addFocusable("item-" + row.category_id + "-" + i.toStr(), "content", "rail-" + row.category_id, "catalog-content", [x - scrollX, trackTop + 12, cardW, cardH], node.group, node.ring, 1.02)
+        entry.slide = true
+        entry.item = item
+        entry.index = i
+        entry.categoryId = row.category_id
+        entry.baseX = x
+    end for
+    return rowGroup
+end function
+
+function posterCard(parent as object, item as object, x as float, y as float, badge as string) as object
+    group = parent.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, POSTER_W + 10, POSTER_H + 10)
+    ui.panel(group, "card", 0, 0, POSTER_W, POSTER_H)
+    image = utils.textOr(item.stream_icon, utils.textOr(item.cover, ""))
+    if home.isHttpUrl(image) then
+        art = group.createChild("Poster")
+        art.width = POSTER_W
+        art.height = POSTER_H
+        art.loadDisplayMode = "scaleToZoom"
+        art.uri = image
+    else
+        initial = ui.inlineText(group, UCase(Left(utils.textOr(item.name, "?"), 1)), ui.font(700, 24), ui.NEUTRAL_500, 0, 110, 32)
+        initial.translation = [(POSTER_W - initial.boundingRect().width) / 2, initial.translation[1]]
+    end if
+    ui.panelImage(group, "title-shade.png", 0, POSTER_H - 54, POSTER_W, 54)
+    ui.panel(group, "card-mask", 0, 0, POSTER_W, POSTER_H)
+    if badge <> "" then
+        tag = ui.panel(group, "badge-lime", 8, 8, 10, 18)
+        text = ui.inlineText(group, badge, ui.font(900, 10), ui.TEXT_ON_ACCENT, 14, 10, 14)
+        tag.width = text.boundingRect().width + 12
+    end if
+    name = ui.text(group, utils.textOr(item.name, ""), ui.font(600, 14), ui.WHITE, 10, POSTER_H - 10 - 20, POSTER_W - 20, 20)
+    name.wrap = false
+    group.scaleRotateCenter = [POSTER_W / 2, POSTER_H / 2]
+    return { group: group, ring: ring }
+end function
+
+function liveCard(parent as object, item as object, x as float, y as float) as object
+    group = parent.createChild("Group")
+    group.translation = [x, y]
+    ring = ui.panel(group, "focus-ring-12", -5, -5, LIVE_W + 10, LIVE_H + 10)
+    ui.panel(group, "card", 0, 0, LIVE_W, LIVE_H)
+    image = utils.textOr(item.stream_icon, "")
+    if home.isHttpUrl(image) then
+        art = group.createChild("Poster")
+        art.translation = [1, 1]
+        art.width = LIVE_W - 2
+        art.height = 162
+        art.loadDisplayMode = "scaleToZoom"
+        art.uri = image
+    else
+        mark = group.createChild("Poster")
+        mark.uri = "pkg:/images/ui/brand-mark.png"
+        mark.width = 38
+        mark.height = 40
+        mark.opacity = 0.4
+        mark.translation = [(LIVE_W - 38) / 2, 61]
+    end if
+    ui.panelImage(group, "card-shade.png", 1, 1, LIVE_W - 2, 162)
+    ui.panel(group, "card-mask", 0, 0, LIVE_W, LIVE_H)
+    tag = ui.panel(group, "badge-red", 9, 9, 10, 18)
+    text = ui.inlineText(group, "● AO VIVO", ui.font(900, 10), ui.WHITE, 15, 11, 14)
+    tag.width = text.boundingRect().width + 12
+    name = ui.text(group, utils.textOr(item.name, "Ao vivo"), ui.font(700, 14), ui.WHITE, 13, 176, LIVE_W - 26, 20)
+    name.wrap = false
+    group.scaleRotateCenter = [LIVE_W / 2, LIVE_H / 2]
+    return { group: group, ring: ring }
+end function
+
+' ---------- Grade da categoria escolhida ----------
+
+function isGridId(id as string) as boolean
+    return Left(id, 5) = "item-" and Instr(6, id, "-") = 0
+end function
+
+function gridIndexOf(id as string) as integer
+    if not isGridId(id) then return -1
+    return Int(Val(Mid(id, 6)))
+end function
+
+sub renderGrid()
+    g = m.layout
+    m.contentHeight = CONTENT_HEIGHT
+    if m.gridCount = 0 then
+        renderEmpty(CONTENT_TOP)
+        return
+    end if
+    rows = grid.visibleRows(g, m.gridCount, m.gridScroll)
+    first = rows.first * g.columns
+    last = (rows.last + 1) * g.columns - 1
+    if last > m.gridCount - 1 then last = m.gridCount - 1
+    missing = false
+    for index = first to last
+        if m.gridItems[index.toStr()] = invalid then missing = true
+    end for
+    if missing and m.pendingPage <> first then
+        m.pendingPage = first
+        requestData({ mode: "page", categoryId: m.activeCategory, start: first, count: last - first + 1 })
+    end if
+    for index = first to last
+        rect = grid.slotRect(g, index)
+        x = 176 + rect[0]
+        y = CONTENT_TOP + rect[1] - m.gridScroll
+        item = m.gridItems[index.toStr()]
+        node = gridItem.cell(m.scrollGroup, item, g.variant, index, x, y, rect[2], rect[3])
+        entry = addFocusable("item-" + index.toStr(), "content", "grid", "content", [x, y, rect[2], rect[3]], node.group, node.ring, 1.02)
+        entry.item = item
+        entry.index = index
+    end for
+end sub
+
+' ---------- Foco ----------
+
+function addFocusable(id as string, part as string, row as string, group as string, rect as object, node as object, ring as object, zoom as float) as object
+    entry = { id: id, groups: [group], row: row, rect: rect, active: false, slide: false, scroller: part = "content", node: node, ring: ring, zoom: zoom, part: part }
+    m.focusables[id] = entry
+    return entry
+end function
+
+sub renderFocus()
+    for each id in m.focusables
+        entry = m.focusables[id]
+        focused = id = m.focusId and m.top.focusedChild <> invalid
+        entry.ring.visible = focused
+        if focused or entry.pinScale = true then ' pinScale: a categoria ativa fica em scale-[1.02]
+            entry.node.scale = [entry.zoom, entry.zoom]
+        else
+            entry.node.scale = [1, 1]
+        end if
+    end for
+    m.scrollGroup.translation = [0, -m.scroll]
+    if showGrid() then m.scrollGroup.translation = [0, 0]
+end sub
+
+' Itens com os retângulos na tela agora (rolagem vertical, deslize das fileiras e da barra).
+sub refreshNav()
+    items = []
+    for each id in m.focusables
+        entry = m.focusables[id]
+        if entry.part = "content" and not showGrid() then
+            x = entry.rect[0]
+            if entry.baseX <> invalid then
+                scrollX = m.rowScroll[entry.categoryId]
+                if scrollX = invalid then scrollX = 0
+                x = entry.baseX - scrollX
+            end if
+            entry.screenRect = [x, entry.rect[1] - m.scroll, entry.rect[2], entry.rect[3]]
+        else
+            entry.screenRect = entry.rect
+        end if
+        items.push({ id: id, groups: entry.groups, row: entry.row, rect: entry.screenRect, active: entry.active, slide: entry.slide, scroller: entry.scroller })
+    end for
+    m.nav.items = items
+    m.nav.groupRects = { "catalog-content": [SECTION_LEFT, 56, SECTION_RIGHT - SECTION_LEFT, 968], "content": [176, CONTENT_TOP, TRACK_WIDTH, CONTENT_HEIGHT] }
+end sub
+
+sub focusOn(id as string)
+    m.focusId = id
+    spatial.remember(m.nav, id)
+    entry = m.focusables[id]
+    if entry <> invalid and Left(id, 4) = "cat-" and m.catRects <> invalid then
+        rect = m.catRects[Int(Val(Mid(id, 5)))]
+        m.catScroll = catalogTab.nearestScroll(m.catScroll, rect.x, rect.width, STRIP_WIDTH - 40, m.catContentWidth, 8)
+        renderHeader()
+    else if entry <> invalid and entry.baseX <> invalid then
+        strip = m.railStrips[entry.categoryId]
+        contentWidth = 24 + strip.count * (strip.cardW + CARD_GAP) - CARD_GAP
+        scrollX = m.rowScroll[entry.categoryId]
+        if scrollX = invalid then scrollX = 0
+        m.rowScroll[entry.categoryId] = catalogTab.nearestScroll(scrollX, entry.baseX - 176, strip.cardW, TRACK_WIDTH, contentWidth, 12)
+        strip.node.translation = [-m.rowScroll[entry.categoryId], 0]
+    end if
+    if entry <> invalid and entry.part = "content" and not showGrid() then
+        maxScroll = m.contentHeight - CONTENT_HEIGHT
+        if maxScroll < 0 then maxScroll = 0
+        m.scroll = spatial.scrollTarget(entry.rect[1] - CONTENT_TOP, entry.rect[3], CONTENT_HEIGHT, m.scroll, maxScroll)
+        updateRows()
+    end if
+    renderFocus()
+end sub
+
+sub focusGrid(index as integer)
+    newScroll = grid.scrollToIndex(m.layout, m.gridScroll, index)
+    m.focusId = "item-" + index.toStr()
+    if newScroll <> m.gridScroll then
+        m.gridScroll = newScroll
+        renderContent()
+    end if
+    renderFocus()
+end sub
+
+sub chooseCategory(categoryId as string)
+    m.activeCategory = categoryId
+    m.gridItems = {}
+    m.gridScroll = 0
+    m.pendingPage = -1
+    m.gridCount = 0
+    for each cat in m.categories
+        if cat.category_id = categoryId then m.gridCount = cat.count
+    end for
+    m.scroll = 0
+    m.focusId = "cat-" + activeCategoryIndex().toStr()
+    render()
+end sub
+
+function onKeyEvent(key as string, press as boolean) as boolean
+    if not press then return false
+    if key = "OK" then return onSelect()
+    if key <> "up" and key <> "down" and key <> "left" and key <> "right" then return false
+    index = gridIndexOf(m.focusId)
+    if index >= 0 then
+        nextIndex = grid.target(m.layout.columns, m.gridCount, index, key)
+        if nextIndex >= 0 then
+            focusGrid(nextIndex)
+            return true
+        end if
+    end if
+    ' Baixo nas categorias vai para o "Assistir" do destaque, ou para o primeiro cartão (registerKeyHandler do web).
+    if key = "down" and isFocusIn("cat-") and not showGrid() then
+        if m.focusables["catalog-hero-play"] <> invalid then
+            focusOn("catalog-hero-play")
+            return true
+        end if
+        if m.rows.count() > 0 then
+            focusOn("item-" + m.rows[0].category_id + "-0")
+            return true
+        end if
+    end if
+    if key = "down" and isFocusIn("cat-") and showGrid() and m.gridCount > 0 then
+        focusGrid(0)
+        return true
+    end if
+    refreshNav()
+    target = spatial.navigate(m.nav, m.focusId, key)
+    if target <> "" then
+        focusOn(target)
+    else if key = "left" then
+        m.top.exit = "left"
+    end if
+    return true
+end function
+
+'' playFromCatalog: a fila é a janela da categoria em volta do item (total = a contagem já sem o que está fora da vista).
+sub playFrom(categoryId as string, item as object, index as integer)
+    m.top.navigate = catalogPlay(categoryId, item, index)
+end sub
+
+function catalogPlay(categoryId as string, item as object, index as integer) as object
+    total = 1
+    for each cat in m.categories
+        if cat.category_id = categoryId and cat.count <> invalid then total = cat.count
+    end for
+    return playerState.catalogRequest(m.ctx.dir, m.section, categoryId, item, index, total, m.hidden)
+end function
+
+' ---------- Controle parental ----------
+
+' "unlock": PIN da categoria bloqueada; "manage": o Controle parental da aba (todas as categorias, menos "Todos").
+sub openParental(mode as string, category as dynamic)
+    managed = []
+    for each cat in m.allCategories
+        if cat.category_id <> catalog.ALL_CATEGORIES then managed.push(cat)
+    end for
+    ' Na cena, por cima do menu do Início também (fixed inset-0 do web).
+    m.parentalDialog = CreateObject("roSGNode", "ParentalDialog")
+    m.top.getScene().appendChild(m.parentalDialog)
+    m.parentalDialog.observeField("done", "onParentalDone")
+    m.parentalDialog.request = { mode: mode, section: m.section, category: category, categories: managed }
+    m.parentalDialog.setFocus(true)
+end sub
+
+' Mudou uma categoria ou desbloqueou: recarrega a aba com as escolhas novas (as fileiras de "Todos" saem/entram).
+sub onParentalDone(event as object)
+    data = event.getData()
+    m.top.getScene().removeChild(m.parentalDialog)
+    m.parentalDialog = invalid
+    m.top.setFocus(true)
+    if data.result = "unlocked" or data.changed = true then
+        m.restoreFocus = m.focusId
+        m.parentalCtx = parental.activeContext(storage.create())
+        if data.result = "unlocked" then
+            cat = m.categories[Int(Val(Mid(m.focusId, 5)))]
+            if cat <> invalid then m.pendingCategory = cat.category_id
+        end if
+        load(false)
+    else
+        renderFocus()
+    end if
+end sub
+
+function onSelect() as boolean
+    if isFocusIn("cat-") then
+        cat = m.categories[Int(Val(Mid(m.focusId, 5)))]
+        if cat <> invalid and parental.isLocked(m.parentalCtx, m.section, cat) then
+            openParental("unlock", cat)
+        else if cat <> invalid then
+            chooseCategory(cat.category_id)
+        end if
+        return true
+    end if
+    if m.focusId = "catalog-parental" then
+        openParental("manage", invalid)
+        return true
+    end if
+    if isFocusIn("see-all-") then
+        chooseCategory(Mid(m.focusId, 9))
+        return true
+    end if
+    if m.focusId = "catalog-refresh" or m.focusId = "catalog-retry" then
+        load(true)
+        return true
+    end if
+    if m.focusId = "catalog-all-categories" then
+        chooseCategory(catalog.ALL_CATEGORIES)
+        return true
+    end if
+    if m.focusId = "catalog-hero-mylist" then
+        toggleHeroFavorite()
+        return true
+    end if
+    ' "Assistir" do destaque de filme: toca a partir da categoria ativa (handlePlayFeatured do web).
+    if m.focusId = "catalog-hero-play" and m.section = "vod" and m.heroItem <> invalid then
+        playFrom(m.activeCategory, m.heroItem, 0)
+        return true
+    end if
+    item = invalid
+    if m.focusId = "catalog-hero-info" or (m.focusId = "catalog-hero-play" and m.section = "series") then item = m.heroItem
+    entry = m.focusables[m.focusId]
+    if entry <> invalid and entry.item <> invalid then item = entry.item
+    ' Canal toca na hora, com a posição na categoria para o zapping (handleSelectItem do web).
+    if item <> invalid and m.section = "live" and entry <> invalid then
+        if entry.categoryId = "favorites" then
+            m.top.navigate = playerState.openRequest(playerState.forItem(item))
+        else
+            categoryId = m.activeCategory
+            if entry.categoryId <> invalid then categoryId = entry.categoryId
+            index = gridIndexOf(m.focusId)
+            if entry.index <> invalid then index = entry.index
+            playFrom(categoryId, item, index)
+        end if
+        return true
+    end if
+    if item <> invalid and m.section <> "live" then
+        params = { item: item, section: m.section }
+        ' Filme: "Assistir" nos detalhes toca com a fila da categoria (playFromCatalog do MediaDetailsModal.vue).
+        if m.section = "vod" then
+            if m.focusId = "catalog-hero-info" then
+                params.play = catalogPlay(m.activeCategory, item, 0)
+            else if entry <> invalid and entry.categoryId <> "favorites" then
+                categoryId = m.activeCategory
+                if entry.categoryId <> invalid then categoryId = entry.categoryId
+                index = gridIndexOf(m.focusId)
+                if entry.index <> invalid then index = entry.index
+                if index >= 0 then params.play = catalogPlay(categoryId, item, index)
+            end if
+        end if
+        m.top.navigate = { action: "push", screen: "DetailsScreen", params: params }
+    end if
+    return true
+end function

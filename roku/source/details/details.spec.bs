@@ -1,0 +1,79 @@
+' Casos de tests/mediaDetailsModal.test.js (mesmos dados do mock) e dos textos de src/components/MediaDetailsModal.vue.
+namespace tests
+
+    function seriesInfoMock() as object
+        return ParseJson("{""info"":{""name"":""Maré Alta"",""plot"":""Uma vila de pescadores..."",""rating"":""9.1"",""releasedate"":""2023"",""genre"":""Suspense"",""backdrop_path"":[""http://srv.test/backdrop.jpg""]},""episodes"":{""1"":[{""id"":1001,""season"":1,""episode_num"":1,""title"":""O Começo"",""info"":{""duration_secs"":2880}},{""id"":1002,""season"":1,""episode_num"":2,""title"":""O Barco"",""info"":{""duration_secs"":3000}}],""2"":[{""id"":2001,""season"":2,""episode_num"":1,""title"":""O Farol"",""info"":{""duration_secs"":3120}}]}}")
+    end function
+
+    function movieInfoMock() as object
+        return { name: "O Último Horizonte", plot: "Uma navegadora parte...", rating: "8.4", year: "2024", duration: "2h 14min", genre: "Aventura", backdrop: "http://srv.test/movie_backdrop.jpg", poster: "http://srv.test/movie_poster.jpg", cast: "", director: "" }
+    end function
+
+    @suite("mediaDetails")
+    class DetailsTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("MediaDetailsModal — visual 2.0 e episódios em fileira")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("no filme, renderiza os botões de ação e dados do filme")
+        function _()
+            view = mediaDetails.movieView(tests.movieInfoMock())
+            m.assertEqual(view.buttons, [{ id: "details-play-btn", label: "Assistir agora" }, { id: "details-fav-btn", label: "Favoritos" }, { id: "details-back-btn", label: "Voltar" }])
+            m.assertEqual(view.title, "O Último Horizonte")
+            m.assertEqual(view.badge, "FILME")
+            m.assertEqual(view.meta, [{ text: "Nota 8.4", kind: "rating" }, { text: "2024", kind: "text" }, { text: "2h 14min", kind: "text" }, { text: "Aventura", kind: "genre" }])
+        end function
+
+        @it("filme sem nota, ano nem duração: só o padrão Longa-metragem")
+        function _()
+            view = mediaDetails.movieView({ name: "X", rating: "0", year: "", duration: "", genre: "" })
+            m.assertEqual(view.meta, [{ text: "Longa-metragem", kind: "text" }])
+        end function
+
+        @it("na série, renderiza temporadas e episódios na fileira com duração e botão do primeiro episódio")
+        function _()
+            data = tests.seriesInfoMock()
+            view = mediaDetails.seriesView(xtream.normalizeVodInfo({ info: data.info }, { name: "Maré Alta" }), data)
+            m.assertEqual(view.buttons[0], { id: "series-play-btn", label: "Assistir T1:E1" })
+            m.assertEqual(view.buttons[1].id, "series-fav-btn")
+            m.assertEqual(view.buttons[2].id, "series-back-btn")
+            m.assertEqual(view.meta, [{ text: "Nota 9.1", kind: "rating" }, { text: "2023", kind: "text" }, { text: "2 temporadas", kind: "text" }, { text: "Suspense", kind: "genre" }])
+            m.assertEqual(view.seasons, [{ key: "1", number: 1, id: "season-tab-1", label: "Temporada 1" }, { key: "2", number: 2, id: "season-tab-2", label: "Temporada 2" }])
+            episodes = mediaDetails.episodeCards(data, "1")
+            m.assertEqual(episodes.count(), 2)
+            m.assertEqual(episodes[0], { id: "episode-card-0", badge: "E1", title: "O Começo", subtitle: "48 min", image: "", progress: 0 })
+            m.assertEqual(mediaDetails.episodeCountText(episodes.count()), "2 episódios")
+            m.assertEqual(mediaDetails.episodeCountText(1), "1 episódio")
+        end function
+
+        @it("episódio começado: barra com o progresso e 'faltam N min' no lugar da duração")
+        function _()
+            history = [{ stream_id: "1002", section: "series", currentTime: 1250, duration: 3000, progressPct: 42 }, { stream_id: 1001, section: "vod", currentTime: 600, progressPct: 20 }]
+            episodes = mediaDetails.episodeCards(tests.seriesInfoMock(), "1", "", history)
+            ' 3000 - 1250 = 1750 s → 29,2 min → faltam 30 (Math.ceil do web).
+            m.assertEqual(episodes[1].subtitle, "faltam 30 min")
+            m.assertEqual(episodes[1].progress, 42)
+            ' Filme com o mesmo id não conta: só o histórico de série.
+            m.assertEqual(episodes[0].subtitle, "48 min")
+            m.assertEqual(episodes[0].progress, 0)
+        end function
+
+        @it("ao trocar de temporada, a fileira de episódios volta para o primeiro episódio")
+        function _()
+            data = tests.seriesInfoMock()
+            m.assertEqual(mediaDetails.onSelect("season-tab-2", { activeSeason: "1", episodeIndex: 1 }), { action: "season", season: "2", episodeIndex: 0 })
+            m.assertEqual(mediaDetails.episodeCards(data, "2")[0].title, "O Farol")
+        end function
+
+        @it("clicar em Voltar fecha a tela")
+        function _()
+            m.assertEqual(mediaDetails.onSelect("details-back-btn", {}).action, "back")
+            m.assertEqual(mediaDetails.onSelect("series-back-btn", {}).action, "back")
+            m.assertEqual(mediaDetails.onSelect("details-play-btn", {}).action, "play")
+            m.assertEqual(mediaDetails.onSelect("episode-card-1", {}), { action: "episode", episodeIndex: 1 })
+        end function
+
+    end class
+
+end namespace

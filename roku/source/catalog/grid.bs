@@ -1,0 +1,82 @@
+' Grade virtualizada: gridTarget de src/utils/spatialNavigation.js e a conta de src/components/GridView.vue (casos em
+' grid.spec.bs). g = { columns, rowHeight, gap, pad, width, height } em px (rowHeight/gap/pad já em px; pad = 1rem).
+namespace grid
+
+    ' Próximo índice dentro da grade, ou -1 para a navegação geométrica sair dela (ex.: para o menu ou as categorias).
+    function target(columns as integer, count as integer, index as integer, direction as string) as integer
+        cols = columns
+        if cols < 1 then cols = 1
+        if index < 0 or index >= count then return -1
+        col = index mod cols
+        if direction = "right" then
+            if col < cols - 1 and index + 1 < count then return index + 1
+            return -1
+        end if
+        if direction = "left" then
+            if col > 0 then return index - 1
+            return -1
+        end if
+        if direction = "up" then
+            if index - cols >= 0 then return index - cols
+            return -1
+        end if
+        if direction <> "down" then return -1
+        ' Baixo: se a linha seguinte for incompleta, vai para o último item dela.
+        if index + cols < count then return index + cols
+        lastRow = (count - 1) \ cols
+        if index \ cols < lastRow then return count - 1
+        return -1
+    end function
+
+    function pitch(g as object) as float
+        return g.rowHeight + g.gap
+    end function
+
+    function rowCount(g as object, count as integer) as integer
+        return (count + g.columns - 1) \ g.columns
+    end function
+
+    function contentHeight(g as object, count as integer) as integer
+        rows = grid.rowCount(g, count)
+        if rows = 0 then return 0
+        return Cint(rows * grid.pitch(g) - g.gap + g.pad * 2)
+    end function
+
+    ' scrollToIndex: rola só o necessário para a linha do item caber com o respiro (pad).
+    function scrollToIndex(g as object, scrollTop as integer, index as integer) as integer
+        row = index \ g.columns
+        top = g.pad + row * grid.pitch(g)
+        bottom = top + g.rowHeight
+        if top - g.pad < scrollTop then
+            goal = top - g.pad
+            if goal < 0 then goal = 0
+            return Cint(goal)
+        end if
+        if bottom + g.pad > scrollTop + g.height then return Cint(bottom + g.pad - g.height)
+        return scrollTop
+    end function
+
+    ' Linhas desenhadas: as visíveis mais uma (poolRows do GridView).
+    function visibleRows(g as object, count as integer, scrollTop as integer) as object
+        total = grid.rowCount(g, count)
+        pool = Int((g.height + grid.pitch(g) - 1) / grid.pitch(g)) + 1
+        raw = scrollTop - g.pad
+        if raw < 0 then raw = 0
+        first = Int(raw / grid.pitch(g))
+        maxFirst = total - pool
+        if maxFirst < 0 then maxFirst = 0
+        if first > maxFirst then first = maxFirst
+        last = first + pool - 1
+        if last > total - 1 then last = total - 1
+        return { first: first, last: last }
+    end function
+
+    ' [x, y, largura, altura] do item dentro do conteúdo da grade (slotStyle).
+    function slotRect(g as object, index as integer) as object
+        row = index \ g.columns
+        col = index mod g.columns
+        width = (g.width - (g.pad * 2 + g.gap * (g.columns - 1))) / g.columns
+        return [Int(g.pad + col * (width + g.gap) + 0.5), Int(g.pad + row * grid.pitch(g) + 0.5), Int(width), g.rowHeight]
+    end function
+
+end namespace

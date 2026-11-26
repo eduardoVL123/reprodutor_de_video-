@@ -1,0 +1,219 @@
+' Casos de tests/railOffset.test.js, tests/artwork.test.js e das regras do destaque e do foco de src/views/Dashboard.vue.
+namespace tests
+
+    function railRow() as object
+        ' Fileira de 10 itens de 200px com 20px de espaço, numa janela de 1000px: largura total 2180px.
+        return { itemSize: 200, gap: 20, count: 10, viewport: 1000 }
+    end function
+
+    function withIndex(base as object, index as integer) as object
+        copy = {}
+        copy.append(base)
+        copy.index = index
+        return copy
+    end function
+
+    ' Início como no web a 1920×1080 (sem rolar): menu fechado, os três botões do destaque e as fileiras de
+    ' filmes, séries e canais com 21 itens cada. vodOffset desliza só a fileira de filmes.
+    function homeSpatial(vodOffset as integer) as object
+        menu = []
+        tops = [136, 200, 264, 328, 392, 456, 904, 968]
+        names = home.menuItems()
+        for i = 0 to names.count() - 1
+            menu.push({ id: home.menuNavId(names[i].id), top: tops[i], active: names[i].id = "home" })
+        end for
+        layout = home.navItems({
+            scroll: 0, menuOpen: false, menuX: 12, menuWidth: 88, menu: menu, heroY: 388,
+            hero: [{ id: "hero-play", x: 176, width: 209 }, { id: "hero-info", x: 399, width: 236 }, { id: "hero-mylist", x: 649, width: 158 }],
+            railX: 176, gap: 16, headerRight: 1836,
+            rails: [
+                { section: "vod", top: 480, count: 21, cardWidth: 168, cardHeight: 252, offset: vodOffset, seeAllWidth: 119 },
+                { section: "series", top: 840, count: 21, cardWidth: 168, cardHeight: 252, offset: 0, seeAllWidth: 119 },
+                { section: "live", top: 1200, count: 21, cardWidth: 256, cardHeight: 144, offset: 0, seeAllWidth: 166 }
+            ]
+        })
+        return spatial.create(layout.items, layout.groupRects, [1920, 1080])
+    end function
+
+    @suite("home")
+    class HomeTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("railOffset — deslocamento da fileira deslizante")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("o primeiro item fica no início")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 0)), 0)
+        end function
+
+        @it("o item focado vai para a posição inicial da fileira")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 3)), -660)
+        end function
+
+        @it("no fim, não deixa espaço vazio à direita")
+        function _()
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 9)), -1180)
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), 7)), -1180)
+        end function
+
+        @it("fileira que cabe inteira na tela não desliza")
+        function _()
+            m.assertEqual(home.railOffset({ itemSize: 200, gap: 20, count: 3, viewport: 1000, index: 2 }), 0)
+        end function
+
+        @it("ignora medidas inválidas (antes do layout existir)")
+        function _()
+            m.assertEqual(home.railOffset({ itemSize: 0, gap: 20, count: 10, viewport: 0, index: 5 }), 0)
+            m.assertEqual(home.railOffset(tests.withIndex(tests.railRow(), -1)), 0)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("pickArtwork — arte do destaque só com imagens da lista")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("fundo próprio do servidor vence o pôster")
+        function _()
+            art = home.pickArtwork({ stream_icon: "http://i.test/p.jpg" }, { backdrop: "http://i.test/b.jpg", poster: "http://i.test/p.jpg" })
+            m.assertEqual(art, { url: "http://i.test/b.jpg", mode: "backdrop" })
+        end function
+
+        @it("fundo igual ao pôster conta como só pôster")
+        function _()
+            art = home.pickArtwork({}, { backdrop: "http://i.test/p.jpg", poster: "http://i.test/p.jpg" })
+            m.assertEqual(art.mode, "poster")
+        end function
+
+        @it("sem imagem http (comum em M3U) usa o fundo neutro")
+        function _()
+            m.assertEqual(home.pickArtwork({ stream_icon: "logo.png" }, invalid), { url: "", mode: "none" })
+            m.assertEqual(home.pickArtwork(invalid, invalid).mode, "none")
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("destaque (sem histórico ainda)")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("filme: selo, botão e duração como no web")
+        function _()
+            hero = home.heroTexts({ section: "vod", name: "Rambo" }, { name: "Rambo II", rating: "7.5", year: "1985", duration: "1h 36min", genre: "Ação", plot: "Sinopse." })
+            m.assertEqual(hero.badge, "Filme da sua lista")
+            m.assertEqual(hero.title, "Rambo II")
+            m.assertEqual(hero.rating, "Nota 7.5")
+            m.assertEqual(hero.year, "1985")
+            m.assertEqual(hero.duration, "1h 36min")
+            m.assertEqual(hero.genre, "Ação")
+            m.assertEqual(hero.synopsis, "Sinopse.")
+            m.assertEqual(hero.playText, "Assistir agora")
+        end function
+
+        @it("série e canal mudam selo, duração e botão")
+        function _()
+            series = home.heroTexts({ section: "series", name: "S" }, {})
+            m.assertEqual(series.badge, "Série da sua lista")
+            m.assertEqual(series.duration, "Série")
+            m.assertEqual(series.playText, "Assistir T1:E1")
+            live = home.heroTexts({ section: "live", name: "Canal" }, {})
+            m.assertEqual(live.badge, "Canal da sua lista")
+            m.assertEqual(live.duration, "Ao vivo")
+        end function
+
+        @it("nota zero some; sinopse padrão vira o texto da lista")
+        function _()
+            hero = home.heroTexts({ section: "vod", name: "X" }, { rating: "0", plot: "Sem sinopse disponível." })
+            m.assertEqual(hero.rating, "")
+            m.assertEqual(hero.synopsis, "Disponível diretamente da sua lista conectada.")
+            m.assertEqual(hero.duration, "Filme")
+        end function
+
+        @it("sem nenhum item: marca e convite para explorar")
+        function _()
+            hero = home.heroTexts(invalid, invalid)
+            m.assertEqual(hero.badge, "Da sua lista")
+            m.assertEqual(hero.title, "PULSE PLAYER")
+            m.assertEqual(hero.synopsis, "Explore o catálogo da sua lista conectada.")
+        end function
+
+        @it("fileiras ganham o cartão final do web")
+        function _()
+            m.assertEqual(home.seeAllCard("vod").name, "Ver todos os filmes")
+            m.assertEqual(home.seeAllCard("series").name, "Ver todas as séries")
+            m.assertEqual(home.seeAllCard("live").name, "Explorar canais")
+            m.assertTrue(home.seeAllCard("vod").isSeeAll)
+        end function
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("foco no Início")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("menu na ordem do SideMenu.vue")
+        function _()
+            labels = []
+            for each item in home.menuItems()
+                labels.push(item.label)
+            end for
+            m.assertEqual(labels, ["Busca", "Início", "TV ao vivo", "Filmes", "Séries", "Favoritos", "Conta", "Trocar perfil"])
+        end function
+
+        @it("do botão Mais informações desce para o cartão logo abaixo (geometria do web)")
+        function _()
+            state = tests.homeSpatial(0)
+            m.assertEqual(spatial.navigate(state, "hero-info", "down"), "vod-card-1")
+            m.assertEqual(spatial.navigate(state, "hero-play", "down"), "vod-card-0")
+        end function
+
+        @it("com uma seção que não carregou, o Tentar novamente fica entre o destaque e a primeira fileira")
+        function _()
+            layout = home.navItems({
+                scroll: 0, menuOpen: false, menuX: 12, menuWidth: 88, menu: [], heroY: 388,
+                hero: [{ id: "hero-play", x: 176, width: 209 }, { id: "hero-info", x: 399, width: 236 }],
+                railX: 176, gap: 16, headerRight: 1836, retry: [176, 512, 220, 50],
+                rails: [{ section: "series", top: 640, count: 21, cardWidth: 168, cardHeight: 252, offset: 0, seeAllWidth: 119 }]
+            })
+            state = spatial.create(layout.items, layout.groupRects, [1920, 1080])
+            m.assertEqual(spatial.navigate(state, "hero-play", "down"), "home-retry")
+            m.assertEqual(spatial.navigate(state, "home-retry", "down"), "series-card-0")
+            m.assertEqual(spatial.navigate(state, "home-retry", "up"), "hero-play")
+        end function
+
+        @it("Esquerda no conteúdo abre o menu no item ativo (Início) e Direita volta para onde estava")
+        function _()
+            state = tests.homeSpatial(0)
+            spatial.remember(state, "hero-info")
+            m.assertEqual(spatial.navigate(state, "hero-play", "left"), "nav-home")
+            m.assertEqual(spatial.navigate(state, "nav-home", "right"), "hero-info")
+        end function
+
+        @it("no menu, Cima e Baixo andam pelos itens e não caem no conteúdo")
+        function _()
+            state = tests.homeSpatial(0)
+            m.assertEqual(spatial.navigate(state, "nav-home", "up"), "nav-search")
+            m.assertEqual(spatial.navigate(state, "nav-search", "up"), "")
+            m.assertEqual(spatial.navigate(state, "nav-account", "down"), "btn-switch-profile")
+        end function
+
+        @it("Baixo de uma fileira volta ao cartão lembrado da fileira de baixo")
+        function _()
+            state = tests.homeSpatial(0)
+            spatial.remember(state, "series-card-4")
+            m.assertEqual(spatial.navigate(state, "vod-card-0", "down"), "series-card-4")
+        end function
+
+        @it("o Ver todos do título da fileira não recebe foco (tabindex -1 no web): Cima não para nele")
+        function _()
+            ' Fileira de 21 cartões deslizada até o fim (−2200): o cartão final fica em x 1656, embaixo do Ver todos.
+            state = tests.homeSpatial(-2200)
+            target = spatial.navigate(state, "vod-card-20", "up")
+            m.assertNotEqual(target, "home-see-all-vod")
+            m.assertNotEqual(target, "")
+        end function
+
+        @it("Voltar e OK não mexem no foco")
+        function _()
+            m.assertEqual(spatial.navigate(tests.homeSpatial(0), "hero-play", "back"), "")
+        end function
+
+    end class
+
+end namespace

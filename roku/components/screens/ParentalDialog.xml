@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Controle parental por cima da aba do catálogo: o PinDialog.vue ("Categoria bloqueada") e o ParentalModal.vue (PIN,
+     lista Visível/Bloqueada/Escondida e Trocar PIN). request = { mode: "unlock"|"manage", section, category,
+     categories (sem "Todos") }. done = { result: "unlocked"|"closed", changed } quando fecha. -->
+<component name="ParentalDialog" extends="Group">
+    <interface>
+        <field id="request" type="assocarray" onChange="onRequest" />
+        <field id="done" type="assocarray" alwaysNotify="true" />
+    </interface>
+</component>

@@ -1,0 +1,74 @@
+import "pkg:/source/xtream/errors.bs"
+' Regras da tela de login de src/views/Login.vue no controle remoto (casos em roku/source/session/loginForm.spec.bs).
+' Foco: { row: "dns"|"snippets"|"user"|"pass"|"submit", snippet: índice do atalho lembrado }.
+namespace loginForm
+
+    ' hasDemo: com a lista de demonstração no build, "Experimentar com vídeos de demonstração" fica embaixo do Entrar.
+    function rows(hasDemo = false as boolean) as object
+        order = ["dns", "snippets", "user", "pass", "submit"]
+        if hasDemo then order.push("demo")
+        return order
+    end function
+
+    function fields() as object
+        return {
+            dns: { label: "Link Curto ou URL do Servidor", placeholder: "Ex: servidor.com:8080" },
+            user: { label: "Usuário (opcional para link curto)", placeholder: "Seu usuário" },
+            pass: { label: "Senha (opcional para link curto)", placeholder: "Sua senha" }
+        }
+    end function
+
+    ' Sem pareamento o foco começa no campo do link (com pareamento, seria do painel do celular).
+    function initialFocus() as object
+        return { row: "dns", snippet: 0 }
+    end function
+
+    function rowIndex(row as string, hasDemo = false as boolean) as integer
+        order = loginForm.rows(hasDemo)
+        for i = 0 to order.count() - 1
+            if order[i] = row then return i
+        end for
+        return 0
+    end function
+
+    ' { focus, action ("edit"|"snippet"|"submit"|"demo"|""), handled }
+    function onKey(key as string, focus as object, snippetCount as integer, hasDemo = false as boolean) as object
+        order = loginForm.rows(hasDemo)
+        index = loginForm.rowIndex(focus.row, hasDemo)
+        nextFocus = { row: focus.row, snippet: focus.snippet }
+        if key = "down" then
+            if index < order.count() - 1 then nextFocus.row = order[index + 1]
+            return { focus: nextFocus, action: "", handled: true }
+        end if
+        if key = "up" then
+            if index > 0 then nextFocus.row = order[index - 1]
+            return { focus: nextFocus, action: "", handled: true }
+        end if
+        if (key = "left" or key = "right") and focus.row = "snippets" then
+            if key = "left" and focus.snippet > 0 then nextFocus.snippet = focus.snippet - 1
+            if key = "right" and focus.snippet < snippetCount - 1 then nextFocus.snippet = focus.snippet + 1
+            return { focus: nextFocus, action: "", handled: true }
+        end if
+        if key = "OK" then
+            action = "edit"
+            if focus.row = "snippets" then action = "snippet"
+            if focus.row = "submit" then action = "submit"
+            if focus.row = "demo" then action = "demo"
+            return { focus: nextFocus, action: action, handled: true }
+        end if
+        return { focus: nextFocus, action: "", handled: key = "left" or key = "right" }
+    end function
+
+    ' Antes de enviar: o link é obrigatório. { ok, error, errorDetail, focus }
+    function validate(dns as string) as object
+        if dns.trim() = "" then return { ok: false, error: "Informe o Link Curto ou URL do Servidor.", errorDetail: "Campo DNS vazio.", focus: "dns" }
+        return { ok: true, error: "", errorDetail: "", focus: "" }
+    end function
+
+    ' Depois de um erro: falta usuário/senha leva ao campo Usuário; o resto volta ao Entrar.
+    function focusAfterError(errorMessage as string) as string
+        if errorMessage = xtream.MISSING_CREDENTIALS_ERROR then return "user"
+        return "submit"
+    end function
+
+end namespace

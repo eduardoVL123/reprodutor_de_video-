@@ -16,7 +16,7 @@ const CORNER_RADIUS = 57.6 / BOX // cantos do ícone oficial
 const SAMPLES = 3 // supersampling por eixo (bordas suaves)
 
 // pulse-symbol-small.svg: ['M'|'L', x, y] e ['A', raio, x, y] (arco pequeno, sentido horário).
-const SYMBOL_PATHS = [
+export const SYMBOL_PATHS = [
   [['M', 56, 118], ['L', 56, 67.71], ['A', 16, 80, 53.86], ['L', 191.1, 118], ['L', 130.42, 118], ['L', 126.95, 124],
     ['L', 103.86, 84], ['L', 84.23, 118]],
   [['M', 56, 138], ['L', 95.77, 138], ['L', 103.86, 124], ['L', 126.95, 164], ['L', 141.96, 138], ['L', 191.1, 138],
@@ -26,7 +26,7 @@ const SYMBOL_PATHS = [
 const OPTICAL = { scale: 1.04, dx: -0.49, dy: -5.12 }
 
 /** Pontos do arco SVG (rx = ry, sem rotação, arco pequeno, sentido horário) do ponto atual até (x2, y2). */
-function arcPoints([x1, y1], r, x2, y2, steps = 16) {
+export function arcPoints([x1, y1], r, x2, y2, steps = 16) {
   const hx = (x1 - x2) / 2
   const hy = (y1 - y2) / 2
   const k = Math.sqrt(Math.max(0, (r * r - hx * hx - hy * hy) / (hx * hx + hy * hy)))
@@ -52,7 +52,7 @@ const POLYGONS = SYMBOL_PATHS.map((commands) => {
   return points.map(([x, y]) => [x * OPTICAL.scale + OPTICAL.dx, y * OPTICAL.scale + OPTICAL.dy])
 })
 
-function insidePolygon(points, x, y) {
+export function insidePolygon(points, x, y) {
   let inside = false
   for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
     const [xi, yi] = points[i]
@@ -83,7 +83,7 @@ function chunk(type, data) {
   return out
 }
 
-function encodePng(width, height, raw) {
+export function encodePng(width, height, raw) {
   const header = Buffer.alloc(13)
   header.writeUInt32BE(width, 0)
   header.writeUInt32BE(height, 4)
@@ -155,6 +155,11 @@ const OUTPUTS = [
   ['platforms/tizen/icon.png', { width: 117, height: 117 }],
   ['platforms/webos/icon.png', { width: 80, height: 80 }],
   ['platforms/webos/largeIcon.png', { width: 130, height: 130 }],
+  // Roku (manifest: mm_icon_focus_* e splash_screen_*; tamanhos da doc channel-manifest).
+  ['roku/images/icon_focus_fhd.png', { width: 540, height: 405, boxScale: 0.6 }],
+  ['roku/images/icon_focus_hd.png', { width: 290, height: 218, boxScale: 0.6 }],
+  ['roku/images/splash_fhd.png', { width: 1920, height: 1080, boxScale: SPLASH_BOX }],
+  ['roku/images/splash_hd.png', { width: 1280, height: 720, boxScale: SPLASH_BOX }],
   ...DENSITIES.flatMap(([name, k]) => [
     [`${RES}/mipmap-${name}/ic_launcher.png`, { width: 48 * k, height: 48 * k, shape: 'rounded' }],
     [`${RES}/mipmap-${name}/ic_launcher_round.png`, { width: 48 * k, height: 48 * k, shape: 'circle' }],

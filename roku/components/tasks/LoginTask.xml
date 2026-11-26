@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Login em segundo plano: rede (roUrlTransfer) e cifra não podem rodar na render thread. -->
+<component name="LoginTask" extends="Task">
+    <interface>
+        <!-- { dns, username, password } -->
+        <field id="params" type="assocarray" />
+        <!-- { ok, error, errorDetail, session } de session.login -->
+        <field id="result" type="assocarray" />
+    </interface>
+</component>

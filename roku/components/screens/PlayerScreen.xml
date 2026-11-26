@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Player (port de src/components/VideoPlayerOverlay.vue na TV) com o nó Video nativo: abertura com a porcentagem do
+     buffer, OSD que some em 4 s, zapping pelas setas no ao vivo, retomar do ponto salvo, próximo episódio 20 s antes
+     do fim e o coração dos Favoritos. params = { state (playerState), dir, hidden }. Fora: Cast e PiP. -->
+<component name="PlayerScreen" extends="Group">
+    <interface>
+        <field id="params" type="assocarray" onChange="onParams" />
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <!-- Fechar de fora (deep link trocando o vídeo): o mesmo do Voltar, guarda o progresso e para o vídeo. -->
+        <field id="close" type="boolean" alwaysNotify="true" onChange="closePlayer" />
+    </interface>
+</component>

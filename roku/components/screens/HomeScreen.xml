@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Início (port da aba "home" de src/views/Dashboard.vue + src/components/SideMenu.vue, layout B do design 2.0):
+     menu lateral, destaque e as fileiras de filmes, séries e canais. Abas, detalhes e player entram nos próximos
+     passos (D5/D6); por enquanto o OK nelas não faz nada. -->
+<component name="HomeScreen" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <!-- Primeira fileira (ou o aviso de erro) desenhada: o MainScene dispara o AppLaunchComplete (launch.bs). -->
+        <field id="ready" type="boolean" value="false" />
+    </interface>
+</component>

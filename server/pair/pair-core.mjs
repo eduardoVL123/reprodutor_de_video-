@@ -225,7 +225,7 @@ export function createPairCore(options = {}) {
     maxSessions = DEFAULT_MAX_SESSIONS,
   } = options
   const limits = { ...DEFAULT_LIMITS, ...options.limits }
-  const sessions = new Map() // code -> { pub, secret, box, expiresAt }
+  const sessions = new Map() // code -> { pub, plain, secret, box, expiresAt }
   const limiter = createLimiter(now)
 
   function sweep() {
@@ -294,7 +294,10 @@ export function createPairCore(options = {}) {
     if (blockErr) return blockErr
 
     const body = await readJsonBody(request)
-    if (!isOpaqueText(body.pub, MAX_PUB_CHARS)) return fail(400, 'Chave pública inválida.')
+    // Sessão sem chave (Roku, sem ECDH: docs/roku/domains/09-pareamento-inbox.md): o celular manda a lista em
+    // base64url, protegida pelo TLS e pelo segredo que só a TV conhece.
+    const plain = body.plain === true && body.pub === undefined
+    if (!plain && !isOpaqueText(body.pub, MAX_PUB_CHARS)) return fail(400, 'Chave pública inválida.')
 
     sweep()
     if (sessions.size >= maxSessions) return fail(503, 'Serviço ocupado. Tente em instantes.')
@@ -304,7 +307,7 @@ export function createPairCore(options = {}) {
     crypto.getRandomValues(secretBytes)
     const secret = toBase64Url(secretBytes)
 
-    sessions.set(code, { pub: body.pub, secret, box: null, expiresAt: now() + ttlMs })
+    sessions.set(code, { pub: plain ? null : body.pub, plain, secret, box: null, expiresAt: now() + ttlMs })
     return sendJson(201, { code, secret, expiresIn: Math.round(ttlMs / 1000) })
   }
 
@@ -322,7 +325,7 @@ export function createPairCore(options = {}) {
 
     const s = liveSession(code)
     if (!s) return notFound(ip)
-    return sendJson(200, { pub: s.pub })
+    return sendJson(200, s.plain ? { pub: null, plain: true } : { pub: s.pub })
   }
 
   async function submitPayload(request, code, ip) {

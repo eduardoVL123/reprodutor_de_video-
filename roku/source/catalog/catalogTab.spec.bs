@@ -1,0 +1,83 @@
+' Casos de tests/catalogBrowser.test.js e das regras de src/components/CatalogBrowser.vue.
+namespace tests
+
+    function tabCategories() as object
+        return [{ category_id: "all", category_name: "Todos" }, { category_id: "7", category_name: "Ação" }]
+    end function
+
+    @suite("catalogTab")
+    class CatalogTabTests extends rooibos.BaseTestSuite
+
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+        @describe("CatalogBrowser — fileiras por categoria")
+        '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+        @it("catálogo vazio mostra a explicação correspondente (séries de lista M3U)")
+        function _()
+            m.assertEqual(catalogTab.emptyMessage("series", "m3u", "all"), { title: "Esta lista não tem séries.", detail: "Listas no formato M3U trazem canais e filmes. As séries aparecem quando o servidor da lista oferece esse catálogo." })
+            m.assertEqual(catalogTab.emptyMessage("series", "xtream", "all").title, "Nenhum item encontrado nesta categoria.")
+            m.assertEqual(catalogTab.emptyMessage("vod", "m3u", "all").title, "Nenhum item encontrado nesta categoria.")
+            m.assertEqual(catalogTab.emptyMessage("series", "m3u", "7").detail, "")
+        end function
+
+        @it("selo NOVO só no que entrou na lista nos últimos dias (dado do servidor), nunca em tudo")
+        function _()
+            now = 1800000000
+            m.assertEqual(catalogTab.newBadge("vod", { added: (now - 86400).toStr() }, now), "NOVO")
+            m.assertEqual(catalogTab.newBadge("vod", { added: "1700000000" }, now), "")
+            m.assertEqual(catalogTab.newBadge("vod", { name: "Sem data" }, now), "")
+            m.assertEqual(catalogTab.newBadge("series", { last_modified: (now - 3600).toStr() }, now), "NOVO EP")
+            m.assertEqual(catalogTab.newBadge("live", { added: (now - 60).toStr() }, now), "")
+        end function
+
+        @it("""Todos"" tem uma fileira por categoria (até 12), sem a própria Todos nem as bloqueadas")
+        function _()
+            cats = [{ category_id: "all", category_name: "Todos" }]
+            for i = 1 to 14
+                cats.push({ category_id: i.toStr(), category_name: "C" + i.toStr() })
+            end for
+            plan = catalogTab.rowCategories(cats, { "3": true })
+            m.assertEqual(plan.count(), 12)
+            m.assertEqual(plan[0].category_id, "1")
+            m.assertEqual(plan[2].category_id, "4")
+            m.assertEqual(catalogTab.rowCategories(tests.tabCategories(), {}).count(), 1)
+        end function
+
+        @it("título da aba e grade como o web: 5 pôsteres por linha ou 3 canais")
+        function _()
+            m.assertEqual(catalogTab.title("live"), "TV ao vivo")
+            m.assertEqual(catalogTab.title("vod"), "Filmes")
+            m.assertEqual(catalogTab.title("series"), "Séries")
+            m.assertEqual(catalogTab.gridLayout("vod"), { columns: 5, rowHeight: 384, gap: 20, pad: 16, width: 1624, height: 893, variant: "poster" })
+            m.assertEqual(catalogTab.gridLayout("live").columns, 3)
+            m.assertEqual(catalogTab.gridLayout("live").rowHeight, 160)
+        end function
+
+        @it("fileira rola só o necessário para o cartão focado aparecer inteiro (scroll-px-3)")
+        function _()
+            ' Fileira de 1624 px com 15 cartões de 176 + 16 (conteúdo 12 + 15×192 − 16 + 12 = 2888).
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 7 * 192, 176, 1624, 2888, 12), 0)
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 8 * 192, 176, 1624, 2888, 12), 112)
+            m.assertEqual(catalogTab.nearestScroll(112, 12, 176, 1624, 2888, 12), 0)
+            m.assertEqual(catalogTab.nearestScroll(0, 12 + 14 * 192, 176, 1624, 2888, 12), 1264)
+        end function
+
+        @it("destaque da aba: selo, nota, duração padrão e a sinopse de convite")
+        function _()
+            texts = catalogTab.heroTexts("vod", { name: "Filme" }, { name: "Filme X", rating: "0", year: "", duration: "", genre: "", plot: "Sem sinopse disponível." })
+            m.assertEqual(texts.badge, "FILME DA SUA LISTA")
+            m.assertEqual(texts.title, "Filme X")
+            m.assertEqual(texts.rating, "")
+            m.assertEqual(texts.duration, "Filme")
+            m.assertEqual(texts.synopsis, "Explore os melhores títulos do catálogo diretamente da sua lista conectada.")
+            texts = catalogTab.heroTexts("series", { name: "S", rating: "7.5" }, { name: "", rating: "", year: "2020", duration: "", genre: "Drama", plot: "Uma trama." })
+            m.assertEqual(texts.badge, "SÉRIE DA SUA LISTA")
+            m.assertEqual(texts.title, "S")
+            m.assertEqual(texts.rating, "Nota 7.5")
+            m.assertEqual(texts.duration, "Série")
+            m.assertEqual(texts.synopsis, "Uma trama.")
+        end function
+
+    end class
+
+end namespace

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Aba Favoritos (a "Minha lista" do src/views/Dashboard.vue), dentro do Início como as outras abas: os favoritos do
+     perfil na lista ativa, em grade de 4. Série abre os detalhes; filme, canal e "Reproduzir Tudo" tocam a fila dos
+     favoritos. Limpar Lista apaga tudo. exit = "left" quando Esquerda sai da aba (o Início foca o menu). -->
+<component name="FavoritesTab" extends="Group">
+    <interface>
+        <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <field id="exit" type="string" alwaysNotify="true" />
+    </interface>
+</component>
