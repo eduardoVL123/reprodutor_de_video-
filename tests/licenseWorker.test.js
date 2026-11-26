@@ -207,7 +207,8 @@ describe('Worker da licença', () => {
     const env = mockEnv()
     await post(env, '/v1/access', { deviceKey: 'd'.repeat(64), host: 'x.com' })
     const old = Date.now() - 800 * 24 * 3600e3
-    await env.DB.prepare('UPDATE devices SET first_seen_at = ?').bind(old).run()
+    // Parada há 800 dias: a guarda conta do último acesso (last_seen_at), não do primeiro.
+    await env.DB.prepare('UPDATE devices SET first_seen_at = ?, last_seen_at = ?').bind(old, old).run()
     return env
   }
   const devices = async (env) => (await env.DB.prepare('SELECT COUNT(*) AS n FROM devices').first()).n
