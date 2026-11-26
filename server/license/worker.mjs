@@ -18,7 +18,7 @@ const STATIC_FILES = new Set(['/revenda/', '/revenda/revenda.js', '/revenda/reve
 // Painel do dono (RFC-025 §5): só com o Cloudflare Access conferido.
 const OWNER_FILES = new Set(['/admin/', '/admin/admin.js', '/admin/admin.css'])
 // Páginas do site (RFC-021/025) -> caminho canônico nos assets (o Workers serve /x.html como /x e index.html como /).
-const SITE_PAGES = { '/': '/site/', '/enviar': '/site/enviar', '/cliente': '/site/cliente', '/assinar': '/site/assinar', '/creditos': '/site/creditos', '/pagar': '/site/pagar', '/privacidade': '/site/privacidade' }
+const SITE_PAGES = { '/': '/site/', '/enviar': '/site/enviar', '/cliente': '/site/cliente', '/assinar': '/site/assinar', '/creditos': '/site/creditos', '/pagar': '/site/pagar', '/privacidade': '/site/privacidade', '/privacy': '/site/privacy', '/privacy-ko': '/site/privacy-ko' }
 const TYPES = { js: 'text/javascript; charset=utf-8', css: 'text/css; charset=utf-8', svg: 'image/svg+xml' }
 const SWEEP_EVERY_MS = 60 * 1000
 const PURGE_HOUR_UTC = 6 // 3h em Brasília: a limpeza diária roda na madrugada

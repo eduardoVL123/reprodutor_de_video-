@@ -148,6 +148,20 @@ describe('arquivos do site', () => {
     expect(readFileSync(SITE + 'index.html', 'utf8')).toContain('href="/privacidade"')
   })
 
+  it.each([['privacy.html', 'en', 'Last updated: November 4, 2026'], ['privacy-ko.html', 'ko', '최종 업데이트: 2026년 11월 4일']])(
+    '%s (Samsung pede inglês e coreano) acompanha a data e as seções do PRIVACY.md', (page, lang, updated) => {
+      const html = readFileSync(SITE + page, 'utf8')
+      const md = readFileSync('PRIVACY.md', 'utf8')
+      expect(html).toContain(`lang="${lang}"`)
+      expect(html).not.toMatch(/<script>|\sstyle=|\son[a-z]+=/)
+      // Se o PRIVACY.md mudar de data, a tradução precisa ser refeita.
+      expect(md).toContain('Última atualização: 4 de novembro de 2026')
+      expect(html).toContain(updated)
+      expect(html.match(/<h[23]>/g).length).toBe(md.match(/^#{2,3} /gm).length)
+      expect(html.match(/<tr><td>/g).length).toBe(md.match(/^\| (?!Dado|---)/gm).length)
+      expect(html).toContain('href="/privacidade"')
+    })
+
   it('o favicon é servido e todas as páginas do site o usam', () => {
     for (const page of PAGES) expect(readFileSync(SITE + page, 'utf8')).toContain('href="/site/favicon.svg"')
   })
