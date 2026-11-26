@@ -137,7 +137,8 @@ export function createSubscriptionFlow({ db, now, mp, startFailed, declineChecks
           .bind(device.device_key, at, endsAt, 'subscription', sub.id, DELIVERED_BY),
         // 1ª parcela: o pedido de adesão vira entregue (as seguintes não mexem nele).
         db
-          .prepare("UPDATE orders SET status = 'delivered', paid_at = ?, delivery = ? WHERE id = ? AND status IN ('pending', 'expired')")
+          // 'failed' também: a adesão pode ter sido dada como falha antes de o Mercado Pago aprovar (auditoria 2026-11-26, item 13).
+          .prepare("UPDATE orders SET status = 'delivered', paid_at = ?, delivery = ? WHERE id = ? AND status IN ('pending', 'expired', 'failed')")
           .bind(at, JSON.stringify({ activationEndsAt: endsAt }), sub.id),
       ])
     } catch (err) {

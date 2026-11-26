@@ -884,6 +884,16 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(1)
   })
 
+  it('parcela aprovada com a adesão já marcada como falha: o pedido vira entregue e entra na receita (auditoria 2026-11-26, item 13)', async () => {
+    const sub = await subscribe()
+    await db.prepare("UPDATE orders SET status = 'failed' WHERE id = ?").bind(sub.orderId).run()
+    installment('7301', sub.preId)
+    await webhook('7301', { type: 'subscription_authorized_payment', requestId: 'req-7301' })
+    const order = await db.prepare('SELECT status, paid_at FROM orders WHERE id = ?').bind(sub.orderId).first()
+    expect(order.status).toBe('delivered')
+    expect(order.paid_at).not.toBeNull()
+  })
+
   it('timeout na adesão, nova tentativa e o aviso da 1ª chega depois: ela é cancelada, não vira 2ª cobrança (auditoria 2026-11-26, item 1)', async () => {
     let first = true
     mpReply = (url, init = {}) => {
