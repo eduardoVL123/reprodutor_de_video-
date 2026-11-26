@@ -417,7 +417,13 @@ namespace catalog
         for each id in counts
             if not seen.doesExist(id) and id <> "none" then order.push(id)
         end for
-        return { counts: counts, order: order, heads: heads }
+        ' Total de "Todos" = o que ele percorre (item em duas categorias conta duas vezes), não o número de itens: senão o
+        ' fim de "Todos" sumia e o desconto das escondidas não batia (auditoria 2026-11-26, item 16).
+        walkTotal = 0
+        for each id in order
+            walkTotal = walkTotal + counts[id]
+        end for
+        return { counts: counts, order: order, heads: heads, walkTotal: walkTotal }
     end function
 
     ' Grava o começo de cada categoria já normalizado (heads.json), para remoteItems servir sem rede.
@@ -452,7 +458,7 @@ namespace catalog
         path = catalog.sectionDir(dir, section)
         summary = catalog.remoteSummary(categories, streams)
         total = streams.count()
-        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
+        meta = { version: catalog.CATALOG_VERSION, remote: true, provisional: true, count: summary.walkTotal, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: 0, searchCount: 0, counts: summary.counts, order: summary.order, updatedAt: CreateObject("roDateTime").toISOString() }
         ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/search.json", "[]") and catalog.writeHeads(dir, section, summary.heads)
         if ok then WriteAsciiFile(path + "/meta.json", FormatJson(meta))
     end sub
@@ -509,7 +515,7 @@ namespace catalog
             written = last + 1
             chunks = n + 1
         end for
-        meta = { version: catalog.CATALOG_VERSION, remote: true, count: total, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
+        meta = { version: catalog.CATALOG_VERSION, remote: true, count: summary.walkTotal, total: total, chunkSize: catalog.CHUNK_SIZE, chunkCount: chunks, searchCount: written, counts: counts, order: order, updatedAt: CreateObject("roDateTime").toISOString() }
         ok = WriteAsciiFile(path + "/categories.json", FormatJson(categories)) and WriteAsciiFile(path + "/index.json", FormatJson(index)) and WriteAsciiFile(path + "/search.json", FormatJson(names))
         if ok then ok = WriteAsciiFile(path + "/meta.json", FormatJson(meta))
         if not ok then
