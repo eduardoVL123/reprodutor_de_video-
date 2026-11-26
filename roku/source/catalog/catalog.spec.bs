@@ -345,6 +345,9 @@ namespace tests
             m.assertEqual(found.name, "Item 1150")
             m.assertEqual(found.section, "vod")
             m.assertInvalid(catalog.findItem(tests.CATALOG_DIR, "vod", "99999"))
+            ' Painel que numera a partir de 0: o id 0 também é achado.
+            catalog.saveSection(tests.CATALOG_DIR, "live", [], [{ stream_id: 0, name: "Canal Zero", category_id: "1" }, { stream_id: 1, name: "Canal Um", category_id: "1" }])
+            m.assertEqual(catalog.findItem(tests.CATALOG_DIR, "live", "0").name, "Canal Zero")
             ' Pelo servidor (não coube): o 3 está no começo da categoria 1; o 1199 não (só os 40 primeiros ficam).
             catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
             m.assertEqual(catalog.findItem(tests.CATALOG_DIR, "vod", "3").name, "Item 3")

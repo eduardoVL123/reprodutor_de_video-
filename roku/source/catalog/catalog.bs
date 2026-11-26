@@ -117,7 +117,7 @@ namespace catalog
             return [single]
         end if
         candidates = [item.category_id]
-        if GetInterface(item.category_ids, "ifArray") <> invalid then candidates.append(item.category_ids)
+        candidates.append(item.category_ids)
         unique = []
         seen = {}
         for each id in candidates
@@ -820,7 +820,10 @@ namespace catalog
     function itemById(items as dynamic, id as string) as dynamic
         if GetInterface(items, "ifArray") = invalid then return invalid
         for each item in items
-            if utils.isObject(item) and utils.textOr(item.stream_id, "") = id then return item
+            ' textOr(0) devolve o padrão: o id numérico 0 é tratado à parte (como em categoriesOf).
+            if utils.isObject(item) then
+                if utils.textOr(item.stream_id, "") = id or (utils.isNumber(item.stream_id) and item.stream_id = 0 and id = "0") then return item
+            end if
         end for
         return invalid
     end function
