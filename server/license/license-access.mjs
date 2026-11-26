@@ -12,7 +12,7 @@ const fromB64Url = (text) => Uint8Array.from(atob(text.replace(/-/g, '+').replac
 const decodeJson = (part) => JSON.parse(new TextDecoder().decode(fromB64Url(part)))
 
 /** `team`: nome da equipe (vira <team>.cloudflareaccess.com) ou o domínio inteiro. */
-export const accessIssuer = (team) => `https://${team.includes('.') ? team : `${team}.cloudflareaccess.com`}`
+const accessIssuer = (team) => `https://${team.includes('.') ? team : `${team}.cloudflareaccess.com`}`
 
 /**
  * Cria o conferidor. `fetchImpl` e `now` são injetáveis nos testes.

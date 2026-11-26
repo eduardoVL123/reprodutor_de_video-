@@ -39,7 +39,7 @@ export const publicReseller = (r) => ({
   createdAt: r.created_at,
 })
 
-export const publicMovement = (m) => ({
+const publicMovement = (m) => ({
   id: m.id,
   delta: m.delta,
   kind: m.kind,

@@ -275,7 +275,7 @@ export async function purgeExpired(db, now) {
   const cutoff = now - RETENTION_MS
   await db.prepare('DELETE FROM inbox WHERE expires_at <= ?').bind(now).run()
   await db.prepare('DELETE FROM rate_limits WHERE window_start < ?').bind(now - 2 * 24 * 3600 * 1000).run()
-  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout.mjs, KEY_VISIBLE_MS).
+  // Chave de revenda que o comprador não buscou a tempo não fica guardada em texto (license-checkout-orders.mjs, KEY_VISIBLE_MS).
   await db
     .prepare("UPDATE orders SET delivery = json_remove(delivery, '$.resellerKey', '$.keyUntil') WHERE json_extract(delivery, '$.keyUntil') < ?")
     .bind(now)

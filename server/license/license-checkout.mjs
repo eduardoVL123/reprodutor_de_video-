@@ -15,7 +15,6 @@ import { CheckoutError, ALREADY_RENEWING } from './license-checkout-shared.mjs'
 import { createOrderFlow } from './license-checkout-orders.mjs'
 import { createSubscriptionFlow } from './license-checkout-subscriptions.mjs'
 
-export { KEY_VISIBLE_MS } from './license-checkout-orders.mjs'
 
 export const PIX_TTL_MS = 30 * 60 * 1000
 const PIX_EXPIRATION = 'PT30M' // mesmo prazo de PIX_TTL_MS, em ISO 8601 (o Mercado Pago aceita de 30 min a 30 dias)
