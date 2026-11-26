@@ -149,6 +149,8 @@ export const COLUMN_MIGRATIONS = [
   'CREATE INDEX IF NOT EXISTS activations_reseller ON activations (reseller_id, id)',
   'CREATE INDEX IF NOT EXISTS subscriptions_device ON subscriptions (device_code)',
   'CREATE INDEX IF NOT EXISTS partner_cycle_entries_partner ON partner_cycle_entries (partner_id, cycle_start)',
+  // Último acesso (no máximo 1 gravação por dia): a guarda de 24 meses conta a partir dele (auditoria 2026-11-26, item 12).
+  'ALTER TABLE devices ADD COLUMN last_seen_at INTEGER',
 ]
 
 /**
@@ -286,7 +288,7 @@ export async function purgeExpired(db, now) {
   await db.prepare('DELETE FROM activations WHERE COALESCE(revoked_at, ends_at) < ?').bind(cutoff).run()
   await db
     .prepare(
-      `DELETE FROM devices WHERE first_seen_at < ?
+      `DELETE FROM devices WHERE COALESCE(last_seen_at, first_seen_at) < ? -- parado há 24 meses, não "criado há".
        AND blocked_at IS NULL -- suspenso fica: apagado, voltaria sem bloqueio e com teste novo (auditoria RFC-025, item 4)
        AND device_key NOT IN (SELECT device_key FROM activations)
        AND device_key NOT IN (SELECT device_key FROM partner_cycle_entries)

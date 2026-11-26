@@ -208,6 +208,19 @@ describe('licença — guarda de 24 meses (PRIVACY.md)', () => {
     expect((await db.prepare('SELECT device_key FROM devices').all()).results.map((r) => r.device_key)).toEqual([fresh])
     expect((await db.prepare('SELECT id FROM orders').all()).results.map((r) => r.id)).toEqual(['novo']) // pedidos também
   })
+
+  it('TV vista há mais de 24 meses mas que continua abrindo o app não é apagada nem ganha teste novo (auditoria 2026-11-26, item 12)', async () => {
+    const { purgeExpired, RETENTION_MS } = await import('../server/license/license-db.mjs')
+    const tv = 'u'.repeat(64)
+    const first = await post('/v1/hello', { deviceKey: tv, platform: 'web' })
+    const code = first.body.code
+    clock += RETENTION_MS - 24 * 3600e3
+    await post('/v1/hello', { deviceKey: tv, platform: 'web' }) // abriu o app ontem (pelos padrões de hoje)
+    clock += 2 * 24 * 3600e3
+    await purgeExpired(db, clock)
+    const row = await db.prepare('SELECT code FROM devices WHERE device_key = ?').bind(tv).first()
+    expect(row && row.code).toBe(code)
+  })
 })
 
 describe('licença — aparelhos novos por IP (fraude contra parceiro)', () => {

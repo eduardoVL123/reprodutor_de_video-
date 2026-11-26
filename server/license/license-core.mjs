@@ -96,7 +96,12 @@ export function createLicenseHandler({ db, now = Date.now, adminToken = '', repo
   async function ensureDevice(deviceKey, platform, ip) {
     for (let attempt = 0; attempt < 5; attempt++) {
       const found = await findDevice(db, deviceKey)
-      if (found) return found
+      if (found) {
+        // Último acesso para a guarda de 24 meses; uma gravação por dia no máximo (o D1 cobra por escrita).
+        const at = now()
+        if (!found.last_seen_at || found.last_seen_at < at - DAY_MS) await db.prepare('UPDATE devices SET last_seen_at = ? WHERE device_key = ?').bind(at, deviceKey).run()
+        return found
+      }
       // No banco (não na memória do isolate): o limite vale para o serviço todo e sobrevive a reinícios.
       if (attempt === 0 && (await hitLimit(db, { bucket: 'device', key: ip, limit: ip.includes(':') ? limits.newDevicesPerDay : limits.newDevicesPerIPv4Day, windowMs: DAY_MS, now: now() }))) {
         throw Object.assign(new Error('Muitos aparelhos novos desta rede hoje.'), { status: 429 })
