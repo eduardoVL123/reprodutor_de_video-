@@ -790,25 +790,28 @@ namespace catalog
     function findItem(dir as string, section as string, id as string) as dynamic
         meta = catalog.getMeta(dir, section)
         if meta = invalid or id = "" then return invalid
-        lists = []
+        ' Um bloco por vez, parando no primeiro achado: a seção inteira na memória fechava o app numa TV de 512 MB.
         if catalog.isRemote(meta) then
             heads = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/heads.json")
             if utils.isObject(heads) then
                 for each cat in heads
-                    lists.push(catalog.unpackChunk(heads[cat], section))
+                    found = catalog.itemById(catalog.unpackChunk(heads[cat], section), id)
+                    if found <> invalid then return found
                 end for
             end if
-        else
-            for n = 0 to meta.chunkCount - 1
-                lists.push(catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + n.toStr() + ".json"), section))
-            end for
+            return invalid
         end if
-        for each items in lists
-            if GetInterface(items, "ifArray") <> invalid then
-                for each item in items
-                    if utils.isObject(item) and utils.textOr(item.stream_id, "") = id then return item
-                end for
-            end if
+        for n = 0 to meta.chunkCount - 1
+            found = catalog.itemById(catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + n.toStr() + ".json"), section), id)
+            if found <> invalid then return found
+        end for
+        return invalid
+    end function
+
+    function itemById(items as dynamic, id as string) as dynamic
+        if GetInterface(items, "ifArray") = invalid then return invalid
+        for each item in items
+            if utils.isObject(item) and utils.textOr(item.stream_id, "") = id then return item
         end for
         return invalid
     end function
