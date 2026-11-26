@@ -6,6 +6,8 @@
         <field id="exitApp" type="boolean" alwaysNotify="true" />
         <!-- main.bs avisa quando a rede do aparelho cai ou volta (roDeviceInfo, link status). -->
         <field id="offline" type="boolean" value="false" onChange="renderOffline" />
+        <!-- main.bs repassa o deep link (argumentos da abertura ou roInput): { contentId, mediaType }. -->
+        <field id="deepLink" type="assocarray" alwaysNotify="true" onChange="onDeepLink" />
     </interface>
     <children>
         <Group id="screens" />

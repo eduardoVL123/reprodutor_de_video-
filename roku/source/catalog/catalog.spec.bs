@@ -321,6 +321,20 @@ namespace tests
             catalog.deleteTree("tmp:/pulse-remote")
         end function
 
+        @it("deep link: acha o item pelo id no disco e, pelo servidor, no começo guardado das categorias")
+        function _()
+            streams = tests.numberedStreams(1200)
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [], streams)
+            found = catalog.findItem(tests.CATALOG_DIR, "vod", "1150")
+            m.assertEqual(found.name, "Item 1150")
+            m.assertEqual(found.section, "vod")
+            m.assertInvalid(catalog.findItem(tests.CATALOG_DIR, "vod", "99999"))
+            ' Pelo servidor (não coube): o 3 está no começo da categoria 1; o 1199 não (só os 40 primeiros ficam).
+            catalog.saveSection(tests.CATALOG_DIR, "vod", [{ category_id: "1", category_name: "A" }, { category_id: "2", category_name: "B" }], streams, 10)
+            m.assertEqual(catalog.findItem(tests.CATALOG_DIR, "vod", "3").name, "Item 3")
+            m.assertInvalid(catalog.findItem(tests.CATALOG_DIR, "vod", "1199"))
+        end function
+
         @it("progresso da gravação (onProgress do saveSection web): a fração a cada bloco gravado")
         function _()
             GetGlobalAA().savedProgress = []

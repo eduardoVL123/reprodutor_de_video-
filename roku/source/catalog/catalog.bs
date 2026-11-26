@@ -783,6 +783,36 @@ namespace catalog
         return items
     end function
 
+    ' Item pelo id (deep link). Seção no disco: percorre os blocos. Seção pelo servidor: só o começo guardado de cada
+    ' categoria (heads.json). invalid se não achar.
+    ' shortcut: numa seção pelo servidor, item fora do começo das categorias não é achado; buscar a categoria no
+    ' servidor se o deep link precisar cobrir isso.
+    function findItem(dir as string, section as string, id as string) as dynamic
+        meta = catalog.getMeta(dir, section)
+        if meta = invalid or id = "" then return invalid
+        lists = []
+        if catalog.isRemote(meta) then
+            heads = catalog.readJsonFile(catalog.sectionDir(dir, section) + "/heads.json")
+            if utils.isObject(heads) then
+                for each cat in heads
+                    lists.push(catalog.unpackChunk(heads[cat], section))
+                end for
+            end if
+        else
+            for n = 0 to meta.chunkCount - 1
+                lists.push(catalog.unpackChunk(catalog.readJsonFile(catalog.sectionDir(dir, section) + "/chunk-" + n.toStr() + ".json"), section))
+            end for
+        end if
+        for each items in lists
+            if GetInterface(items, "ifArray") <> invalid then
+                for each item in items
+                    if utils.isObject(item) and utils.textOr(item.stream_id, "") = id then return item
+                end for
+            end if
+        end for
+        return invalid
+    end function
+
     ' Categorias para a tela: "Todos" primeiro e só as que têm itens (publish do catalogStore).
     function publishList(dir as string, section as string) as object
         meta = catalog.getMeta(dir, section)

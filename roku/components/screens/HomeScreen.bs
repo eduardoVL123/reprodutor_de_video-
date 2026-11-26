@@ -268,7 +268,12 @@ function loadKey() as string
 end function
 
 sub onRail(event as object)
-    data = event.getData()
+    drawRail(event.getData())
+    ' A primeira resposta (fileira ou aviso) já está desenhada: o Início está pronto para o AppLaunchComplete.
+    if not m.top.ready then m.top.ready = true
+end sub
+
+sub drawRail(data as object)
     if not data.ok then
         ' A seção ficou sem fileira: o aviso aparece em cima, como o homeError do web.
         m.failed.push({ section: data.section, error: utils.textOr(data.error, "") })

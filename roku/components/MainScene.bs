@@ -15,6 +15,8 @@ import "pkg:/source/pairing/pairing.bs"
 import "pkg:/source/profiles/profiles.bs"
 import "pkg:/source/device/device.bs"
 import "pkg:/source/license/licensing.bs"
+import "pkg:/source/nav/launch.bs"
+import "pkg:/source/player/playerState.bs"
 
 sub init()
     m.top.backgroundColor = "0x0B0F0CFF"
@@ -29,6 +31,8 @@ sub init()
     m.top.backgroundUri = ""
     m.screens = m.top.findNode("screens")
     m.offlineNotice = m.top.findNode("offlineNotice")
+    m.launch = launch.create()
+    m.homeReady = false
     pushScreen(CreateObject("roSGNode", initialScreen()))
     askProfile()
 end sub
@@ -71,8 +75,60 @@ sub pushScreen(screen as object)
     if current <> invalid then current.visible = false
     m.screens.appendChild(screen)
     if screen.hasField("navigate") then screen.observeField("navigate", "onNavigate")
+    if screen.hasField("ready") then screen.observeField("ready", "onHomeReady")
     screen.visible = true
     screen.setFocus(true)
+    updateLaunch()
+end sub
+
+' Beacons de abertura da certificação (launch.bs): a tela do topo mudou ou o Início acabou de desenhar.
+sub updateLaunch()
+    current = topScreen()
+    if current = invalid then return
+    for each beacon in launch.onTop(m.launch, current.subtype(), m.homeReady)
+        m.top.signalBeacon(beacon)
+    end for
+end sub
+
+sub onHomeReady()
+    m.homeReady = true
+    updateLaunch()
+end sub
+
+' Deep link: filme e canal tocam direto, série abre os detalhes; link inválido ou item fora da lista fica onde está
+' (a Roku pede o Início). A busca do item roda numa Task (carrega a seção se ainda não estiver no disco).
+sub onDeepLink()
+    link = launch.deepLink(m.top.deepLink)
+    if link = invalid then return
+    m.deepLinkTask = CreateObject("roSGNode", "DeepLinkTask")
+    m.deepLinkTask.link = link
+    m.deepLinkTask.observeField("result", "onDeepLinkResult")
+    m.deepLinkTask.control = "run"
+end sub
+
+sub onDeepLinkResult(event as object)
+    result = event.getData()
+    m.deepLinkTask = invalid
+    if not utils.isObject(result.item) then return
+    current = topScreen()
+    ' Termos, login e bloqueio da licença continuam na frente: o deep link não passa por cima deles.
+    if current <> invalid and current.subtype() <> "ProfileScreen" and launch.isDialogScreen(current.subtype()) then return
+    if result.section = "series" then
+        request = { screen: "DetailsScreen", params: { item: result.item, section: "series" } }
+    else
+        request = playerState.openRequest(playerState.forItem(result.item))
+    end if
+    if request = invalid then return
+    ' Um vídeo só: o que estava tocando fecha (guarda o progresso) antes do novo.
+    if current <> invalid and current.subtype() = "PlayerScreen" then
+        ' Sem o "back" dele (se chegasse depois, fecharia o player novo): para o vídeo e sai da pilha aqui.
+        current.unobserveField("navigate")
+        current.close = true
+        m.screens.removeChild(current)
+    end if
+    screen = CreateObject("roSGNode", request.screen)
+    screen.params = request.params
+    pushScreen(screen)
 end sub
 
 ' Troca a tela atual (sem voltar para ela), como o router.replace do web.
@@ -121,6 +177,7 @@ sub popScreen()
     if count <= 1 then return
     m.screens.removeChildIndex(count - 1)
     focusTopScreen()
+    updateLaunch()
 end sub
 
 function topScreen() as dynamic

@@ -1,0 +1,22 @@
+import "pkg:/source/net/transport.bs"
+import "pkg:/source/device/storage.bs"
+import "pkg:/source/session/session.bs"
+import "pkg:/source/catalog/catalog.bs"
+
+sub init()
+    m.top.functionName = "runDeepLink"
+end sub
+
+sub runDeepLink()
+    link = m.top.link
+    current = session.hydrate(storage.create())
+    if current = invalid then
+        m.top.result = { section: link.section, item: invalid }
+        return
+    end if
+    ctx = catalog.contextFor(current)
+    loaded = catalog.loadShared(net.urlTransport(), ctx, link.section, false)
+    item = invalid
+    if loaded.ok then item = catalog.findItem(ctx.dir, link.section, link.id)
+    m.top.result = { section: link.section, item: item }
+end sub

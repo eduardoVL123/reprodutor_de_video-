@@ -5,5 +5,7 @@
 <component name="HomeScreen" extends="Group">
     <interface>
         <field id="navigate" type="assocarray" alwaysNotify="true" />
+        <!-- Primeira fileira (ou o aviso de erro) desenhada: o MainScene dispara o AppLaunchComplete (launch.bs). -->
+        <field id="ready" type="boolean" value="false" />
     </interface>
 </component>

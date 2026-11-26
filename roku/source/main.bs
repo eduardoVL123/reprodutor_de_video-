@@ -1,5 +1,5 @@
 ' Ponto de entrada do app Roku: abre a cena principal e espera ela fechar ou pedir para sair.
-sub Main(_args as dynamic)
+sub Main(args as dynamic)
     screen = CreateObject("roSGScreen")
     port = CreateObject("roMessagePort")
     screen.setMessagePort(port)
@@ -11,12 +11,17 @@ sub Main(_args as dynamic)
     deviceInfo.setMessagePort(port)
     deviceInfo.enableLinkStatusEvent(true)
     scene.offline = not deviceInfo.getLinkStatus()
+    ' Deep link: na abertura (args) e com o app aberto (roInput); a cena decide o que abrir (launch.deepLink).
+    scene.deepLink = args
+    input = CreateObject("roInput")
+    input.setMessagePort(port)
 
     while true
         msg = wait(0, port)
         msgType = type(msg)
         if msgType = "roSGScreenEvent" and msg.isScreenClosed() then return
         if msgType = "roSGNodeEvent" and msg.getField() = "exitApp" and msg.getData() = true then return
+        if msgType = "roInputEvent" and msg.isInput() then scene.deepLink = msg.getInfo()
         if msgType = "roDeviceInfoEvent" then
             info = msg.getInfo()
             if info <> invalid and GetInterface(info.linkStatus, "ifBoolean") <> invalid then scene.offline = not info.linkStatus
