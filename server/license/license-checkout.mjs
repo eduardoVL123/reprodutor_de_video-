@@ -280,7 +280,8 @@ export function createCheckoutRoutes({ db, now, json, limiter, mp, webhookSecret
     }
     const body = await readJsonBody(request, 16384).catch(() => ({}))
     const type = url.searchParams.get('type') || body.type
-    const dataId = url.searchParams.get('data.id') || (body.data && body.data.id)
+    // Só o id do endereço: é ele que a assinatura cobre (o do corpo poderia ser trocado num aviso reenviado).
+    const dataId = url.searchParams.get('data.id')
     const handler = Object.hasOwn(WEBHOOK_TOPICS, type) && WEBHOOK_TOPICS[type]
     if (!handler || !dataId) return json(200, { received: true })
     try {

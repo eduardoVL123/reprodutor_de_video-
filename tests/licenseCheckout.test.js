@@ -312,6 +312,23 @@ describe('POST /webhooks/mercadopago — confirmação e entrega (etapa 2)', () 
     expect(await activationRows()).toHaveLength(1)
   })
 
+  it('aviso sem data.id no endereço não age pelo id do corpo, que a assinatura não cobre (auditoria 2026-11-26, item 10)', async () => {
+    const { orderId } = await deviceOrder()
+    pay(orderId)
+    // Assinatura válida para um aviso sem id (só request-id e ts), com o id do pedido só no corpo.
+    const v1 = createHmac('sha256', SECRET).update(`request-id:req-x;ts:${clock};`).digest('hex')
+    const res = await handle(
+      new Request('http://license.test/webhooks/mercadopago?type=order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-signature': `ts=${clock},v1=${v1}`, 'x-request-id': 'req-x' },
+        body: JSON.stringify({ type: 'order', data: { id: `ORD-${orderId}` } }),
+      }),
+      '10.9.9.9',
+    )
+    expect(res.status).toBe(200)
+    expect(await activationEndsAt(db, KEY)).toBeNull()
+  })
+
   it('Pix pago perto do vencimento ainda é entregue, mesmo com o pedido já marcado como expirado', async () => {
     const { orderId, viewSecret } = await deviceOrder()
     clock += 31 * MIN
