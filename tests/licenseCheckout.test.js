@@ -867,6 +867,27 @@ describe('assinatura anual do aparelho no cartão (etapa 4)', () => {
     expect((await db.prepare('SELECT COUNT(*) AS n FROM subscriptions').first()).n).toBe(1)
   })
 
+  it('timeout na adesão, nova tentativa e o aviso da 1ª chega depois: ela é cancelada, não vira 2ª cobrança (auditoria 2026-11-26, item 1)', async () => {
+    let first = true
+    mpReply = (url, init = {}) => {
+      const reply = subscriptionReply(url, init) // a assinatura nasce no Mercado Pago mesmo quando a resposta se perde
+      if (first && url.endsWith('/preapproval') && init.method === 'POST') {
+        first = false
+        return { status: 504, body: {} }
+      }
+      return reply
+    }
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    await subscribe()
+    const lost = (await db.prepare('SELECT id FROM orders ORDER BY rowid LIMIT 1').first()).id
+    clock += 11 * 60e3 // a reserva "parada" vence e é apagada na nova tentativa
+    expect((await subscribe()).httpStatus).toBe(201)
+    await webhook(`pre-${lost}`, { type: 'subscription_preapproval', requestId: 'req-lost' })
+    spy.mockRestore()
+    expect((await db.prepare("SELECT COUNT(*) AS n FROM subscriptions WHERE status <> 'cancelled'").first()).n).toBe(1)
+    expect(preapprovals.get(`pre-${lost}`).status).toBe('cancelled')
+  })
+
   it('aparelho que já tem renovação no cartão não assina de novo (cobrança em dobro) (auditoria 3)', async () => {
     const first = await subscribe()
     expect(first.httpStatus).toBe(201)
